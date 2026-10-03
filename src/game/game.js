@@ -33,6 +33,7 @@ import * as politics from './politics.js';
 import { flashWarp } from '../ui/dom.js';
 import { toggleFullscreen } from '../ui/fullscreen.js';
 import { clamp, dist2 } from '../core/util.js';
+import { storageGet, storageSet } from '../core/storage.js';
 
 export const LUMEN_REFUEL_COST = 120;
 export const REPAIR_COST_PER_HP = 2.8;
@@ -64,7 +65,6 @@ const PATROL_MAX = 4;
 
 /** Selectable simulation speeds. The game ships at a deliberate ×0.5. */
 export const TIME_STEPS = [0.5, 1, 2, 3, 4];
-const TIME_KEY = 'thewinds.timescale';
 
 export class Game {
   constructor({ engine, ui }) {
@@ -83,12 +83,8 @@ export class Game {
     this._lastHull = 0;
     this._hintTimer = 0;
     this.timeScale = TIME_STEPS[0];
-    try {
-      const saved = Number(localStorage.getItem(TIME_KEY));
-      if (TIME_STEPS.includes(saved)) this.timeScale = saved;
-    } catch (err) {
-      /* first run */
-    }
+    const saved = Number(storageGet('timescale'));
+    if (TIME_STEPS.includes(saved)) this.timeScale = saved;
   }
 
   /** Step through the simulation speeds. dir 1 = faster, -1 = slower. */
@@ -96,11 +92,7 @@ export class Game {
     const idx = TIME_STEPS.indexOf(this.timeScale);
     const next = TIME_STEPS[(idx + dir + TIME_STEPS.length) % TIME_STEPS.length];
     this.timeScale = next;
-    try {
-      localStorage.setItem(TIME_KEY, String(next));
-    } catch (err) {
-      /* ignore */
-    }
+    storageSet('timescale', String(next));
     if (this.isActive()) this.ui.toasts.push(`Simulation speed ×${next}.`, next === 0.5 ? '' : 'warn');
     this.ui.speed?.sync();
   }

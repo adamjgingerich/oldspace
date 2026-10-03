@@ -1,10 +1,9 @@
 // Persistence: 15 adventure slots in localStorage, each a full self-contained save.
 
+import { storageGet, storageSet, storageRemove } from '../core/storage.js';
+
 export const SLOT_COUNT = 15;
 export const SAVE_VERSION = 2;
-const PREFIX = 'thewinds.save.';
-
-const keyFor = (slot) => `${PREFIX}${slot}`;
 
 export function saveToSlot(slot, state) {
   try {
@@ -21,7 +20,7 @@ export function saveToSlot(slot, state) {
       },
       state: state.toJSON(),
     };
-    localStorage.setItem(keyFor(slot), JSON.stringify(payload));
+    storageSet(`save.${slot}`, JSON.stringify(payload));
     return { ok: true };
   } catch (err) {
     console.error('[saves] write failed', err);
@@ -31,7 +30,7 @@ export function saveToSlot(slot, state) {
 
 export function readSlot(slot) {
   try {
-    const raw = localStorage.getItem(keyFor(slot));
+    const raw = storageGet(`save.${slot}`);
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || typeof data !== 'object' || !data.state) return null;
@@ -69,7 +68,7 @@ export function listSlots() {
 
 export function deleteSlot(slot) {
   try {
-    localStorage.removeItem(keyFor(slot));
+    storageRemove(`save.${slot}`);
     return true;
   } catch (err) {
     console.error('[saves] delete failed', err);

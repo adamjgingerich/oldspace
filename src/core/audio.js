@@ -1,6 +1,6 @@
 // Tiny synthesized audio engine (no assets): lasers, booms and engine hum.
 
-const PREFS_KEY = 'thewinds.audio';
+import { storageGet, storageSet } from './storage.js';
 
 export class AudioSys {
   constructor() {
@@ -14,7 +14,7 @@ export class AudioSys {
 
   _loadPrefs() {
     try {
-      const raw = localStorage.getItem(PREFS_KEY);
+      const raw = storageGet('audio');
       if (!raw) return;
       const prefs = JSON.parse(raw);
       if (typeof prefs.volume === 'number') this.volume = Math.max(0, Math.min(1, prefs.volume));
@@ -25,11 +25,7 @@ export class AudioSys {
   }
 
   _savePrefs() {
-    try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ volume: this.volume, muted: this.muted }));
-    } catch (err) {
-      /* ignore */
-    }
+    storageSet('audio', JSON.stringify({ volume: this.volume, muted: this.muted }));
   }
 
   _applyGain() {

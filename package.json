@@ -1,9 +1,9 @@
 {
-  "name": "thewinds",
+  "name": "oldspace",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "THEWINDS - a star-lane space trading & combat adventure built with Three.js",
+  "description": "Oldspace - a star-lane space trading & combat adventure built with Three.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

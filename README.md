@@ -1,4 +1,4 @@
-# THEWINDS
+# Oldspace
 
 **A star-lane trading & combat adventure in the browser.** Fly a ship of your own
 choosing across fifty-two systems, run cargo, take contracts, hunt bounties,
@@ -112,7 +112,7 @@ has its own governments, tech levels, markets, pirates and patrols.
 ## The 15 saved adventures
 
 - Starting a new adventure asks for a commander name and a **berth** (slot 1–15).
-- Saves live in your browser's `localStorage` (`thewinds.save.1` … `.15`), so
+- Saves live in your browser's `localStorage` (`oldspace.save.1` … `.15`), so
   they persist across reloads and restarts of the browser, on that machine.
 - **Autosave** writes to your chosen slot whenever you dock, undock or warp a
   lane. Manual saves are in the pause menu (`Esc`) and the station Berth tab.

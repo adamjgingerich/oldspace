@@ -3,8 +3,8 @@
 // Everything player-visible (title screen, page title, star chart) reads
 // from here.
 //
-// Note: localStorage keys elsewhere ("thewinds.save.*", "thewinds.audio",
-// "thewinds.timescale") are deliberately NOT derived from the title — they
+// Note: localStorage keys elsewhere ("oldspace.save.*", "oldspace.audio",
+// "oldspace.timescale") are deliberately NOT derived from the title — they
 // stay fixed so your 15 save slots survive any rename.
 // ------------------------------------------------------------------
 

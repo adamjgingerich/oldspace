@@ -1,10 +1,10 @@
 // Key bindings: defaults, player overrides, and pretty labels.
 //
-// Bindings are stored per browser under 'thewinds.keys' and read everywhere
-// through `binds.get(actionId)`. Rebinding swaps with any action that already
+// Bindings are stored per browser and read everywhere through
+// `binds.get(actionId)`. Rebinding swaps with any action that already
 // held the key, so no action is ever left unreachable.
 
-const STORE_KEY = 'thewinds.keys';
+import { storageGet, storageSet } from './storage.js';
 
 export const BIND_ACTIONS = [
   { id: 'thrust', label: 'Main drive', code: 'KeyW' },
@@ -56,7 +56,7 @@ class Keybinds {
     this.map = {};
     for (const a of BIND_ACTIONS) this.map[a.id] = a.code;
     try {
-      const raw = localStorage.getItem(STORE_KEY);
+      const raw = storageGet('keys');
       if (raw) {
         const saved = JSON.parse(raw);
         for (const [id, code] of Object.entries(saved)) {
@@ -105,11 +105,7 @@ class Keybinds {
   }
 
   save() {
-    try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(this.map));
-    } catch (err) {
-      /* storage full or blocked — bindings stay for this session */
-    }
+    storageSet('keys', JSON.stringify(this.map));
   }
 }
 

@@ -5,8 +5,8 @@
 // else snaps back. Panels are sized by their content — no resizing.
 import { el } from './dom.js';
 import { clamp } from '../core/util.js';
+import { storageGet, storageSet } from '../core/storage.js';
 
-const STORE_KEY = 'thewinds.hud-panels';
 const MARGIN = 6; // gap kept between a panel and anything it must not cover
 
 const DEFS = [
@@ -211,12 +211,12 @@ export function installScreenPanels(hud) {
         folded: e.folded,
       };
     }
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch { /* private mode */ }
+    try { storageSet('hud-panels', JSON.stringify(data)); } catch { /* private mode */ }
   }
 
   function load() {
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch { saved = {}; }
+    try { saved = JSON.parse(storageGet('hud-panels') || '{}') || {}; } catch { saved = {}; }
     for (const e of entries) {
       const s = saved[e.def.key];
       if (!s) continue;
