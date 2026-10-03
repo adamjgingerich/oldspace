@@ -8,7 +8,8 @@ import { SHIPS } from '../data/ships.js';
 import { FACTIONS } from '../data/factions.js';
 import { formatDeadline } from '../core/util.js';
 import { planetInfo, formatPopulation } from '../game/planetSurvey.js';
-import { levelFromXp, karmaLabel } from '../game/skills.js';
+import { levelFromXp, karmaLabel, KARMA_ACTS, karmaActCost, karmaActBlock, karmaActFaction } from '../game/skills.js';
+import { backgroundOf, driveOf } from '../game/character.js';
 import { MISSION_TAGS, tierStars, missionProgress } from '../game/missions.js';
 import { STORY_LINES, ensureStory } from '../game/story.js';
 import { SIDE_BY_ID } from '../game/sidequests.js';
@@ -22,6 +23,59 @@ function section(title, note = null) {
   const s = el('div', { class: 'panel' }, [el('h2', { text: title })]);
   if (note) s.append(el('p', { class: 'note', text: note }));
   return s;
+}
+
+/**
+ * Karma: what you are known as, the ledger behind it, and the acts that move
+ * it. A captain can lean on their own name here — money and medicine one way,
+ * drink and guns the other — a few times a day, at a rising price.
+ */
+export function karmaPanel(state, actions) {
+  const box = el('div', { class: 'karma-panel' });
+  box.append(el('p', {
+    class: 'note',
+    style: 'margin:8px 0 4px',
+    text: `Known as “${karmaLabel(state.karma || 0)}”. Karma drifts with what you do out there, and a captain can also work on it directly — each act below costs credits (or cargo), may be done a few times a day, and gets dearer with every repeat.`,
+  }));
+  for (const act of KARMA_ACTS) {
+    const block = karmaActBlock(state, act.id);
+    const cost = karmaActCost(state, act);
+    const fid = karmaActFaction(state, act);
+    const price = cost > 0 ? `₡${cost.toLocaleString()}` : act.cargo ? `${act.cargo.qty} × ${act.cargo.id}` : 'free';
+    const btn = el('button', {
+      class: `btn small ${act.delta > 0 ? '' : 'danger'}`,
+      type: 'button',
+      text: 'Do it',
+      title: block || `Pay ${price}`,
+    });
+    btn.disabled = !!block || !actions?.karmaAct;
+    btn.addEventListener('click', () => actions?.karmaAct?.(act.id));
+    box.append(el('div', { class: 'karma-act' }, [
+      el('div', { class: 'ktext' }, [
+        el('div', {
+          class: 'kname',
+          text: `${act.name} · ${price}${fid ? ` · ${FACTIONS[fid]?.name || fid} +${act.rep}` : ''}`,
+        }),
+        el('div', { class: 'kblurb', text: block || act.blurb }),
+      ]),
+      el('span', { class: `kdelta ${act.delta > 0 ? 'up' : 'down'}`, text: `${act.delta > 0 ? '+' : ''}${act.delta} karma` }),
+      btn,
+    ]));
+  }
+  const log = state.karmaLog || [];
+  if (log.length) {
+    const list = el('div', { class: 'karma-log' });
+    list.append(el('div', { class: 'kname', text: 'What moved it lately' }));
+    for (const e of log.slice(0, 6)) {
+      list.append(el('div', { class: 'krow' }, [
+        el('span', { text: `day ${e.day}` }),
+        el('span', { class: e.delta > 0 ? 'kup' : 'kdown', text: `${e.delta > 0 ? '+' : ''}${e.delta}` }),
+        el('span', { text: e.reason }),
+      ]));
+    }
+    box.append(list);
+  }
+  return box;
 }
 
 /* ------------------------------------------------------------------ */
@@ -154,7 +208,7 @@ function shipCard(def, state, unlocked) {
 /* Builder                                                            */
 /* ------------------------------------------------------------------ */
 
-export function buildLog(state, { style = '', missionLog = true } = {}) {
+export function buildLog(state, { style = '', missionLog = true, actions = null } = {}) {
   const wrap = el('div', {
     class: 'logwrap',
     style: `display:flex;flex-direction:column;gap:14px;overflow:auto;padding-right:8px;${style}`,
@@ -200,8 +254,13 @@ export function buildLog(state, { style = '', missionLog = true } = {}) {
   // ---- captain's record ----
   const rec = section("Captain's record");
   const lvl = levelFromXp(state.xp || 0);
+  const bg = backgroundOf(state);
+  const drive = driveOf(state);
   rec.append(
     kv('Commander', state.commander),
+    kv('Background', bg ? `${bg.name}${bg.role ? ` — ${bg.role}` : ''}` : '—'),
+    kv('Signature', bg?.signature?.name || '—'),
+    kv('Drive', drive?.name || '—'),
     kv('Level / XP', `${lvl} · ${state.xp || 0} xp`),
     kv('Karma', `${state.karma > 0 ? '+' : ''}${state.karma || 0} — ${karmaLabel(state.karma || 0)}`),
     kv('Skill points unspent', state.skillPoints || 0),
@@ -219,6 +278,7 @@ export function buildLog(state, { style = '', missionLog = true } = {}) {
     }));
   }
   rec.append(repRow);
+  rec.append(karmaPanel(state, actions));
   wrap.append(rec);
 
   // ---- codex ----

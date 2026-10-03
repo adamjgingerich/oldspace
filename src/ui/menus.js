@@ -93,7 +93,7 @@ export class Menus {
 
     const body = el('div');
     const modal = el('div', { class: 'overlay' }, [
-      el('div', { class: 'panel modal wide' }, [el('h2', { text: 'Open a new log' }), body]),
+      el('div', { class: 'panel modal wide newlog' }, [el('h2', { text: 'Open a new log' }), body]),
     ]);
     this._modal = modal;
     this.root.append(modal);
@@ -109,23 +109,51 @@ export class Menus {
         const perksText = describePerks(entry.perks).join(' · ') || 'no material perks';
         const tip = [
           entry.name,
+          entry.role ? `(${entry.role})` : null,
           '',
           entry.blurb,
           '',
           `Starting perks: ${perksText}`,
-          entry.leans ? `Leans toward: ${entry.leans} — the skill disciplines this past pairs with (a nudge, never a lock).` : null,
+          entry.strengths?.length ? `\nStrengths:\n· ${entry.strengths.join('\n· ')}` : null,
+          entry.tradeoffs?.length ? `\nTrade-offs:\n· ${entry.tradeoffs.join('\n· ')}` : null,
+          entry.signature ? `\nSignature — ${entry.signature.name}: ${entry.signature.desc}` : null,
+          entry.boon ? `\nBoon: ${entry.boon}` : null,
+          entry.cost ? `Cost: ${entry.cost}` : null,
+          entry.leans ? `\nLeans toward: ${entry.leans} — the disciplines this past pairs with (a nudge, never a lock).` : null,
         ].filter((x) => x !== null).join('\n');
         const card = el('div', {
           class: `card pick ${entry.id === selectedId ? 'sel' : ''}`,
           title: tip,
         }, [
-          el('h4', { text: entry.name }),
+          el('h4', {}, [
+            entry.name,
+            entry.role ? el('span', { class: 'h4tag', text: entry.role }) : null,
+          ]),
           entry.tags ? el('div', {
             class: 'ctags',
             title: 'Reputation tags — the circles where people start out knowing your name.',
             text: entry.tags.join(' · '),
           }) : null,
           el('div', { class: 'cdesc', text: entry.blurb }),
+          entry.signature ? el('div', {
+            class: 'csig',
+            title: 'Signature — what makes this past unlike any other start.',
+          }, [
+            el('b', { text: entry.signature.name }),
+            el('span', { text: ` — ${entry.signature.desc}` }),
+          ]) : null,
+          entry.strengths?.length ? el('div', { class: 'cpick-block up' }, [
+            el('h5', { text: 'Strengths' }),
+            el('ul', {}, entry.strengths.map((s) => el('li', { text: s }))),
+          ]) : null,
+          entry.tradeoffs?.length ? el('div', { class: 'cpick-block down' }, [
+            el('h5', { text: 'Trade-offs' }),
+            el('ul', {}, entry.tradeoffs.map((s) => el('li', { text: s }))),
+          ]) : null,
+          (entry.boon || entry.cost) ? el('div', { class: 'cpick-block' }, [
+            entry.boon ? el('div', { class: 'cline up', text: `Boon: ${entry.boon}` }) : null,
+            entry.cost ? el('div', { class: 'cline down', text: `Cost: ${entry.cost}` }) : null,
+          ]) : null,
           el('div', {
             class: 'cstats',
             title: 'Starting perks — granted the moment your log begins.',
@@ -352,9 +380,12 @@ export class Menus {
       ['Main drive', `${kb('thrust')} to burn`],
       ['Retro / reverse', `${kb('brake')} — kills your drift, then pushes astern`],
       ['Engine burst', `hold ${kb('burst')} — harder thrust than the drive; the tank recharges over time`],
-      ['Primary weapon', `${kb('fire')}`],
+      ['Primary weapon', `${kb('fire')} — every gun that is not a missile or a snare`],
       ['Secondary / missiles', `${kb('fireAlt')}`],
-      ['Cycle hostile target', `${kb('target')}`],
+      ['Disruptor snare', `${kb('disable')} — snare coils only bite a hull whose shields are down; three hits stop her dead`],
+      ['Claim a prize', `${kb('claim')} — take a snared or beaten ship whole; far cheaper in karma and reputation than a kill`],
+      ['Hail / communications', `${kb('comms')} — talk to stations, worlds, and ships you have snared or beaten`],
+      ['Select a ship', `${kb('target')} cycles contacts · or click a hull directly`],
       ['Fleet: focus target', `${kb('focusFire')}`],
       ['Fleet: regroup', `${kb('regroup')}`],
       ['Scramble docked craft', `${kb('scramble')}`],
@@ -362,7 +393,7 @@ export class Menus {
       ['Zoom view', `scroll wheel, trackpad pinch, or ${kb('zoomOut')} ${kb('zoomIn')}`],
       ['Fullscreen', `${kb('fullscreen')} or the corner button`],
       ['Volume / mute', `corner speaker button, or ${kb('mute')} to mute`],
-      ['Simulation speed', `corner ×N button · ${kb('speedUp')} faster · ${kb('speedDown')} slower`],
+      ['Simulation speed', `corner control · ${kb('speedDown')} slower · ${kb('speedUp')} faster · ${kb('speedReset')} back to ×0.5`],
       ['Dock', `${kb('dock')} when slowed at a station`],
       ['Scan a world or star', `${kb('dock')} when close and slow`],
       ['Ship’s computer', `${kb('chart')} or ${kb('jump')} — star map, missions, inventory, logs`],

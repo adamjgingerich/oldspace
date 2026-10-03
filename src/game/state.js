@@ -9,6 +9,7 @@ import { FACTIONS, FACTION_IDS } from '../data/factions.js';
 import { SAVE_VERSION } from './saves.js';
 import { rngOf } from '../core/rng.js';
 import { skillStatAdds, repAdds } from './skills.js';
+import { DEFAULT_SHIELD_TYPE, applyShieldProfile, defaultShieldType } from '../data/shields.js';
 
 export const DAY_SECONDS = 150; // one in-game day per 2.5 minutes of flight
 
@@ -47,6 +48,8 @@ export function computeStats(state) {
     const idx = outfit.add ? Math.min(level, outfit.add.length) - 1 : 0;
     if (outfit.add && outfit.stat && s[outfit.stat] !== undefined) s[outfit.stat] += outfit.add[idx];
     if (outfit.add2 && s[outfit.add2.stat] !== undefined) s[outfit.add2.stat] += outfit.add2.add[idx];
+    // a lattice refit replaces the weave, it does not add to it
+    if (outfit.shieldType) s.shieldType = outfit.shieldType;
   }
   // trained skills layer on top of outfits
   const skillAdds = skillStatAdds(state);
@@ -56,6 +59,9 @@ export function computeStats(state) {
   // hull limits are hard limits
   s.mounts = Math.min(s.mounts, s.maxMounts);
   s.bays = Math.min(s.bays, s.maxBays);
+  // the lattice character goes on last so its multipliers apply to the tuned
+  // pool, and so the HUD and the fight both read the same numbers
+  applyShieldProfile(s, s.shieldType || (state.allegiance ? defaultShieldType(state.allegiance, 'player') : DEFAULT_SHIELD_TYPE));
   return s;
 }
 
@@ -129,6 +135,8 @@ export class GameState {
     this.drive = opts.drive || null;
     this.allegiance = opts.allegiance || null; // faction id or null
     this.karma = opts.karma ?? 0; // -100 (black) .. +100 (beacon)
+    this.karmaLog = Array.isArray(opts.karmaLog) ? opts.karmaLog.map((e) => ({ ...e })) : [];
+    this.karmaActs = opts.karmaActs ? { ...opts.karmaActs } : {}; // day -> { actId: count }
     this.xp = opts.xp ?? 0;
     this.skillPoints = opts.skillPoints ?? 1;
     this.skills = opts.skills ? { ...opts.skills } : {}; // skillId -> rank
@@ -284,6 +292,8 @@ export class GameState {
       drive: this.drive,
       allegiance: this.allegiance,
       karma: this.karma,
+      karmaLog: this.karmaLog.map((e) => ({ ...e })),
+      karmaActs: { ...this.karmaActs },
       xp: this.xp,
       skillPoints: this.skillPoints,
       skills: { ...this.skills },
@@ -360,6 +370,8 @@ export class GameState {
     st.drive = obj.drive || null;
     st.allegiance = obj.allegiance || null;
     st.karma = obj.karma ?? 0;
+    st.karmaLog = Array.isArray(obj.karmaLog) ? obj.karmaLog.map((e) => ({ ...e })) : [];
+    st.karmaActs = obj.karmaActs && typeof obj.karmaActs === 'object' ? { ...obj.karmaActs } : {};
     st.xp = obj.xp ?? 0;
     st.skillPoints = obj.skillPoints ?? 1;
     st.skills = { ...(obj.skills || {}) };

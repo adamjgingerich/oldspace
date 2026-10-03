@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { withRim } from './materials.js';
 import { glowSprite } from './fx.js';
 import { rngOf } from './rng.js';
 import { FACTIONS } from '../data/factions.js';
@@ -16,6 +17,10 @@ export const factionColor = (id) => new THREE.Color(FACTIONS[id]?.color || '#8ef
 
 /* ------------------------------------------------------------------ */
 /* Shared materials                                                    */
+/*                                                                     */
+/* Every hull and station surface wears a fresnel rim so silhouettes    */
+/* stay bright against black space, and a small shared environment map  */
+/* gives the metals something to reflect. Tuned for clean, not grubby.  */
 /* ------------------------------------------------------------------ */
 
 const matCache = new Map();
@@ -27,31 +32,32 @@ function cached(key, make) {
   }
   return m;
 }
-const hullMat = (color) => cached(`hull-${color}`, () => new THREE.MeshStandardMaterial({
-  color, metalness: 0.42, roughness: 0.55,
-}));
-const plateMat = (color) => cached(`plate-${color}`, () => new THREE.MeshStandardMaterial({
-  color, metalness: 0.6, roughness: 0.42,
-}));
-const lightMat = () => cached('light-plate', () => new THREE.MeshStandardMaterial({
-  color: 0xd9e4f0, metalness: 0.3, roughness: 0.5,
-}));
-const darkMat = () => cached('dark', () => new THREE.MeshStandardMaterial({
-  color: 0x232833, metalness: 0.7, roughness: 0.5,
-}));
-const ventMat = () => cached('vent', () => new THREE.MeshStandardMaterial({
-  color: 0x11141a, metalness: 0.5, roughness: 0.85,
-}));
-const glassMat = () => cached('glass', () => new THREE.MeshPhysicalMaterial({
-  color: 0x081a28, metalness: 0.9, roughness: 0.08, clearcoat: 1, clearcoatRoughness: 0.12,
-  emissive: 0x0a2e4c, emissiveIntensity: 0.8,
-}));
-const accentMat = (hex) => cached(`acc-${hex}`, () => new THREE.MeshStandardMaterial({
-  color: hex, metalness: 0.45, roughness: 0.5, emissive: hex, emissiveIntensity: 0.55,
-}));
-const nozzleMat = () => cached('nozzle', () => new THREE.MeshStandardMaterial({
-  color: 0x3c4250, metalness: 0.85, roughness: 0.35, side: THREE.DoubleSide,
-}));
+const hullMat = (color) => cached(`hull-${color}`, () => withRim(new THREE.MeshStandardMaterial({
+  color, metalness: 0.44, roughness: 0.48, envMapIntensity: 1.3,
+}), { color: 0x9fe8ff, power: 2.7, strength: 0.4, lift: 0.05 }));
+const plateMat = (color) => cached(`plate-${color}`, () => withRim(new THREE.MeshStandardMaterial({
+  color, metalness: 0.62, roughness: 0.34, envMapIntensity: 1.45,
+}), { color: 0xc8f2ff, power: 2.3, strength: 0.5, lift: 0.06 }));
+const lightMat = () => cached('light-plate', () => withRim(new THREE.MeshStandardMaterial({
+  color: 0xe4eefa, metalness: 0.3, roughness: 0.44, envMapIntensity: 1.35,
+}), { color: 0xffffff, power: 2.1, strength: 0.58, lift: 0.07 }));
+const darkMat = () => cached('dark', () => withRim(new THREE.MeshStandardMaterial({
+  color: 0x2a3040, metalness: 0.72, roughness: 0.42, envMapIntensity: 1.2,
+}), { color: 0x7cc4ff, power: 3, strength: 0.26, lift: 0.03 }));
+const ventMat = () => cached('vent', () => withRim(new THREE.MeshStandardMaterial({
+  color: 0x161a22, metalness: 0.5, roughness: 0.8, envMapIntensity: 0.8,
+}), { color: 0x5a86a8, power: 3.2, strength: 0.18 }));
+const glassMat = () => cached('glass', () => withRim(new THREE.MeshPhysicalMaterial({
+  color: 0x0c2436, metalness: 0.85, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.08,
+  emissive: 0x11405f, emissiveIntensity: 1.05, envMapIntensity: 1.7,
+}), { color: 0xbdf0ff, power: 1.9, strength: 0.72, lift: 0.08 }));
+const accentMat = (hex) => cached(`acc-${hex}`, () => withRim(new THREE.MeshStandardMaterial({
+  color: hex, metalness: 0.42, roughness: 0.44, emissive: hex, emissiveIntensity: 0.72,
+  envMapIntensity: 1.3,
+}), { color: hex, power: 2.2, strength: 0.5, lift: 0.06 }));
+const nozzleMat = () => cached('nozzle', () => withRim(new THREE.MeshStandardMaterial({
+  color: 0x4a5262, metalness: 0.86, roughness: 0.3, side: THREE.DoubleSide, envMapIntensity: 1.4,
+}), { color: 0xa8d8ff, power: 2.5, strength: 0.44, lift: 0.05 }));
 
 /* ------------------------------------------------------------------ */
 /* Geometry helpers                                                    */
@@ -2494,13 +2500,17 @@ export function buildStation(station) {
   const scale = rng.float(0.85, 1.45);
   const spinDir = rng.chance(0.5) ? 1 : -1;
 
-  const metal = (c, m = 0.55, r = 0.5) => new THREE.MeshStandardMaterial({ color: c, metalness: m, roughness: r });
+  // station plating: clean machined metal, with a rim so it reads against the
+  // dark and an environment to reflect
+  const metal = (c, m = 0.55, r = 0.44) => withRim(new THREE.MeshStandardMaterial({
+    color: c, metalness: m, roughness: r, envMapIntensity: 1.35,
+  }), { color: 0xbfe8ff, power: 2.5, strength: 0.42, lift: 0.06 });
   const hull = metal(hullTint);
-  const dark = metal(darkTint, 0.5, 0.62);
-  const pane = metal(new THREE.Color(hullTint).lerp(new THREE.Color(0xffffff), 0.28).getHex(), 0.35, 0.45);
-  const litWindows = new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
-  const darkWindows = new THREE.MeshBasicMaterial({ color: 0x18242f, transparent: true, opacity: 0.95, depthWrite: false });
-  const glowBand = (opacity = 0.8) => new THREE.MeshBasicMaterial({ color: beaconTint, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
+  const dark = metal(darkTint, 0.5, 0.56);
+  const pane = metal(new THREE.Color(hullTint).lerp(new THREE.Color(0xffffff), 0.34).getHex(), 0.35, 0.36);
+  const litWindows = new THREE.MeshBasicMaterial({ color: 0xffe6bc, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+  const darkWindows = new THREE.MeshBasicMaterial({ color: 0x1d2c3a, transparent: true, opacity: 0.95, depthWrite: false });
+  const glowBand = (opacity = 0.9) => new THREE.MeshBasicMaterial({ color: beaconTint, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
 
   /** A ring of lit / dark cabins — some rooms flicker out by seed. */
   const windows = (radius, count, y, w, h, lit = 0.75) => {
@@ -2954,9 +2964,9 @@ export function buildStation(station) {
         group.add(hoop);
       }
       for (const s of [-1, 1]) {
-        const panel = new THREE.Mesh(new THREE.BoxGeometry(96, 2, 40), new THREE.MeshStandardMaterial({
-          color: 0x1e3a5c, metalness: 0.3, roughness: 0.7, emissive: 0x0a1a30,
-        }));
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(96, 2, 40), withRim(new THREE.MeshStandardMaterial({
+          color: 0x2a4c74, metalness: 0.3, roughness: 0.6, emissive: 0x14304e, emissiveIntensity: 1.1, envMapIntensity: 1.2,
+        }), { color: 0x9fe0ff, power: 2.4, strength: 0.4 }));
         panel.position.set(0, 0, s * 62);
         panel.rotation.y = s * 0.3;
         group.add(panel);
@@ -2988,7 +2998,9 @@ export function buildStation(station) {
       const hub = new THREE.Mesh(new THREE.CylinderGeometry(24, 28, 46, 10), hull);
       group.add(hub);
       windows(26.5, 10, 8, 6, 3.8, 0.7);
-      const panelMat = new THREE.MeshStandardMaterial({ color: 0x1e3a5c, metalness: 0.35, roughness: 0.65, emissive: 0x14324e });
+      const panelMat = withRim(new THREE.MeshStandardMaterial({
+        color: 0x2a4c74, metalness: 0.35, roughness: 0.55, emissive: 0x1a4064, emissiveIntensity: 1.1, envMapIntensity: 1.25,
+      }), { color: 0x9fe0ff, power: 2.4, strength: 0.42 });
       for (const s of [-1, 1]) {
         const wing = new THREE.Mesh(new THREE.BoxGeometry(56, 2.4, 26), panelMat);
         wing.position.set(s * 64, 0, 0);

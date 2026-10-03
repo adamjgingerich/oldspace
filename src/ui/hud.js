@@ -33,13 +33,22 @@ const OBJ_COLORS = {
   WARP: '#56e6ff',
 };
 
+/** Hull bars run green → amber → red as the plating is opened. */
+function hullGradient(ratio) {
+  const r = clamp(ratio, 0, 1);
+  const hue = 6 + r * 132; // 6 = red, 138 = healthy green
+  return `linear-gradient(180deg, hsl(${hue} 92% 64%), hsl(${hue} 82% 34%))`;
+}
+
 export class Hud {
   constructor(root, labelsRoot) {
     this.root = root;
     this.labelsRoot = labelsRoot;
     this.visible = false;
     this._labels = new Map();
+    this._plates = new Map();
     this._lastUniverse = null;
+    this._lastPlatesUniverse = null;
     this._project = new THREE.Vector3();
     this._project2 = new THREE.Vector3();
 
@@ -51,15 +60,16 @@ export class Hud {
 
     // ---- top-left: ship status ----
     this.shipName = el('div', { class: 'stitle', text: '—' });
-    this.barArmor = this._bar('armor');
-    this.barShield = this._bar('shield');
-    this.barEnergy = this._bar('energy');
+    this.barArmor = this._bar('armor', 'Hull');
+    this.barShield = this._bar('shield', 'Shields');
+    this.barEnergy = this._bar('energy', 'Energy');
+    this.shieldNote = el('div', { class: 'snote', text: '' });
     this.statSpeed = el('b', { text: '0' });
     this.statDrift = el('b', { text: '0°' });
     this.statZoom = el('b', { text: '×1.0' });
     const tlInner = el('div', { class: 'rack' }, [
       this.shipName,
-      this.barArmor.wrap, this.barShield.wrap, this.barEnergy.wrap,
+      this.barArmor.wrap, this.barShield.wrap, this.shieldNote, this.barEnergy.wrap,
       el('div', { class: 'statline' }, [el('span', { text: 'Speed' }), el('span', {}, [this.statSpeed, ' u/s'])]),
       el('div', { class: 'statline' }, [el('span', { text: 'Drift' }), el('span', {}, [this.statDrift])]),
       el('div', { class: 'statline' }, [el('span', { text: 'View' }), el('span', {}, [this.statZoom])]),
@@ -84,10 +94,12 @@ export class Hud {
     // ---- target plate ----
     this.tName = el('div', { class: 'tname', text: '' });
     this.tMeta = el('div', { class: 'tmeta', text: '' });
-    this.tHull = this._bar('hull');
-    this.tShield = this._bar('shield');
+    this.tState = el('div', { class: 'tstate hidden', text: '' });
+    this.tShield = this._bar('shield', 'Shields');
+    this.tHull = this._bar('hull', 'Hull');
+    this.tSnare = this._bar('snare', 'Snare');
     this.targetPlate = el('div', { class: 'hud-box hud-target targetplate' }, [
-      this.tName, this.tMeta, this.tShield.wrap, this.tHull.wrap,
+      this.tName, this.tMeta, this.tState, this.tShield.wrap, this.tHull.wrap, this.tSnare.wrap,
     ]);
 
     // ---- prompt ----
@@ -102,10 +114,14 @@ export class Hud {
     this._radarCtx = this.radar.getContext('2d');
   }
 
-  _bar(kind) {
+  _bar(kind, label = '') {
     const fill = el('div', { class: `fill ${kind}` });
-    const wrap = el('div', { class: 'bar lbl' }, [fill]);
-    return { wrap, fill };
+    const value = el('span', { class: 'bval', text: '' });
+    const wrap = el('div', { class: 'bar' }, [
+      el('div', { class: 'lbl' }, [el('span', { text: label }), value]),
+      fill,
+    ]);
+    return { wrap, fill, value };
   }
 
   show() {
@@ -119,6 +135,7 @@ export class Hud {
     this.root.classList.add('hidden');
     this.labelsRoot.classList.add('hidden');
     this._clearLabels();
+    this._clearPlates();
   }
 
   update(ctx) {
@@ -126,10 +143,28 @@ export class Hud {
     const { state, universe: u, player: p } = ctx;
     const st = p.stats;
 
+    // ---- your own hull: colour-coded, with the numbers spelled out ----
     this.shipName.textContent = `${state.shipName} · ${p.def.name}`;
-    this.barArmor.fill.style.width = `${clamp((p.hull / st.hull) * 100, 0, 100)}%`;
-    this.barShield.fill.style.width = `${clamp((p.shield / st.shield) * 100, 0, 100)}%`;
-    this.barEnergy.fill.style.width = `${clamp((p.energy / st.energy) * 100, 0, 100)}%`;
+    const hullRatio = clamp(p.hull / st.hull, 0, 1);
+    const shieldRatio = clamp(p.shield / st.shield, 0, 1);
+    this.barArmor.fill.style.width = `${hullRatio * 100}%`;
+    this.barArmor.value.textContent = `${Math.max(0, Math.round(p.hull))}/${Math.round(st.hull)}`;
+    this.barArmor.fill.style.background = hullGradient(hullRatio);
+    this.barArmor.wrap.classList.toggle('critical', hullRatio < 0.35);
+    this.barShield.fill.style.width = `${shieldRatio * 100}%`;
+    this.barShield.value.textContent = `${Math.max(0, Math.round(p.shield))}/${Math.round(st.shield)}`;
+    this.barShield.fill.style.background = p.shipProfile?.css || '';
+    this.barShield.wrap.classList.toggle('down', p.shield <= 0);
+    this.barShield.wrap.classList.toggle('low', shieldRatio > 0 && shieldRatio < 0.3);
+    this.barEnergy.fill.style.width = `${clamp(p.energy / st.energy, 0, 1) * 100}%`;
+    this.barEnergy.value.textContent = `${Math.round(p.energy)}/${Math.round(st.energy)}`;
+    this.shieldNote.textContent = p.disabled
+      ? 'SNARED — drives, guns and helm are dead'
+      : p.shield <= 0
+        ? `SHIELDS DOWN — ${p.shipProfile?.name || 'lattice'} recharging`
+        : `${p.shipProfile?.name || 'Deflector Lattice'} · +${Math.round(st.shieldRegen * 10) / 10}/s`;
+    this.shieldNote.classList.toggle('warn', p.disabled || p.shield <= 0);
+
     this.statSpeed.textContent = Math.round(p.speed);
     this.statDrift.textContent = `${p.speed > 6 ? Math.round(p.driftDeg) : 0}°`;
     this.statZoom.textContent = `×${u.zoomLevel.toFixed(2)}`;
@@ -213,10 +248,33 @@ export class Hud {
       const bearing = Math.atan2(t.x - p.x, t.z - p.z);
       const offBore = Math.abs(wrapAngle(bearing - p.heading));
       const arcOk = offBore <= (p.trackCone ?? 0.5);
+      const tp = t.shipProfile;
       this.tMeta.innerHTML = `${t.def.cls} · ${t.faction.toUpperCase()} · ${Math.round(d)} m · `
-        + `<b style="color:${arcOk ? '#8fe08f' : '#c98a6a'}">${arcOk ? 'SOLVED' : 'OUT OF ARC'}</b>`;
-      this.tShield.fill.style.width = `${clamp((t.shield / t.stats.shield) * 100, 0, 100)}%`;
-      this.tHull.fill.style.width = `${clamp((t.hull / t.stats.hull) * 100, 0, 100)}%`;
+        + `<b style="color:${arcOk ? '#8fe08f' : '#c98a6a'}">${arcOk ? 'SOLVED' : 'OUT OF ARC'}</b>`
+        + `<br><span style="color:${tp?.css || '#6fd8ff'}">${tp?.name || 'Deflector Lattice'}</span>`;
+      this.targetPlate.style.setProperty('--tcol', tp?.css || '#6fd8ff');
+      this.tShield.fill.style.width = `${clamp(t.shield / t.stats.shield, 0, 1) * 100}%`;
+      this.tShield.fill.style.background = tp?.css || '';
+      this.tShield.value.textContent = `${Math.max(0, Math.round(t.shield))}/${Math.round(t.stats.shield)}`;
+      this.tShield.wrap.classList.toggle('down', t.shield <= 0);
+      this.tHull.fill.style.width = `${clamp(t.hull / t.stats.hull, 0, 1) * 100}%`;
+      this.tHull.fill.style.background = hullGradient(t.hull / t.stats.hull);
+      this.tHull.value.textContent = `${Math.max(0, Math.round(t.hull))}/${Math.round(t.stats.hull)}`;
+      this.tHull.wrap.classList.toggle('critical', t.hull / t.stats.hull < 0.35);
+
+      // what state they are in, and whether the snare is ready to bite
+      const bits = [];
+      if (t.disabled) bits.push(`SNARED · ${Math.max(0, t.disableTimer).toFixed(1)}s`);
+      else if (t.surrendered) bits.push('STRUCK COLOURS — C to claim');
+      if (!t.disabled && t.shield <= 0) {
+        bits.push(t.disruptImmune > 0 ? `lattice down · snare-immune ${t.disruptImmune.toFixed(0)}s` : 'lattice down · X to snare');
+      }
+      this.tState.textContent = bits.join(' · ');
+      this.tState.classList.toggle('hidden', bits.length === 0);
+      const snare = t.disabled ? 0 : t.snareProgress;
+      this.tSnare.wrap.classList.toggle('hidden', !(snare > 0.01));
+      this.tSnare.fill.style.width = `${snare * 100}%`;
+      this.tSnare.value.textContent = `${Math.round(snare * 100)}%`;
     } else {
       this.targetPlate.classList.remove('on');
       this.targetPlate.classList.add('hidden');
@@ -226,6 +284,7 @@ export class Hud {
     this._drawRadar(ctx);
     this._updateLabels(ctx);
     this._updateReticle(ctx);
+    this._updatePlates(ctx);
   }
 
   /* ---------------------------------------------------------------- */
@@ -700,6 +759,105 @@ export class Hud {
         item.node.remove();
         this._labels.delete(key);
       }
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Ship condition plates                                             */
+  /* ---------------------------------------------------------------- */
+
+  _clearPlates() {
+    for (const item of this._plates.values()) item.node.remove();
+    this._plates.clear();
+  }
+
+  _plateFor(ship) {
+    let item = this._plates.get(ship);
+    if (!item) {
+      const shieldFill = el('i');
+      const hullFill = el('i');
+      const snareFill = el('i');
+      const name = el('span', { class: 'pname' });
+      const state = el('span', { class: 'pstate' });
+      const shieldBar = el('div', { class: 'pbar shield' }, [shieldFill]);
+      const hullBar = el('div', { class: 'pbar hull' }, [hullFill]);
+      const snareBar = el('div', { class: 'pbar snare' }, [snareFill]);
+      const node = el('div', { class: 'splate' }, [
+        el('div', { class: 'phead' }, [name, state]),
+        shieldBar, hullBar, snareBar,
+      ]);
+      this.labelsRoot.append(node);
+      item = { node, name, state, shieldFill, hullFill, snareFill, shieldBar, hullBar, snareBar };
+      this._plates.set(ship, item);
+    }
+    return item;
+  }
+
+  /**
+   * Minimalist condition plates: two thin bars that appear over a hull the
+   * player is locked onto or has been firing at, and over any ship running
+   * less than full shields or an opened hull. Colour-coded — the shield bar
+   * wears the lattice's own colour, the hull bar runs green to red.
+   */
+  _updatePlates(ctx) {
+    const { universe: u, player: p } = ctx;
+    if (this._lastPlatesUniverse !== u) {
+      this._clearPlates();
+      this._lastPlatesUniverse = u;
+    }
+    const cam = u.camera;
+    const now = u.time;
+    const seen = new Set();
+
+    for (const s of u.ships) {
+      if (s.isPlayer || !s.alive || s.despawn) continue;
+      const shieldRatio = clamp(s.shield / s.stats.shield, 0, 1);
+      const hullRatio = clamp(s.hull / s.stats.hull, 0, 1);
+      const isTarget = ctx.target === s;
+      const engaged = (s._playerFireT ?? -99) > now - 6;
+      const hurt = shieldRatio < 0.999 || hullRatio < 0.999 || s.disabled;
+      if (!isTarget && !engaged && !hurt) continue;
+
+      const d = dist2(p.x, p.z, s.x, s.z);
+      if (d > 3400) continue;
+      this._project.set(s.x, 0, s.z).project(cam);
+      if (this._project.z > 1) continue; // behind the camera
+      const sx = (this._project.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-this._project.y * 0.5 + 0.5) * window.innerHeight;
+      if (sx < -80 || sy < -60 || sx > window.innerWidth + 80 || sy > window.innerHeight + 60) continue;
+
+      const item = this._plateFor(s);
+      seen.add(s);
+      const loud = isTarget || engaged;
+      item.node.className = `splate${loud ? ' loud' : ''}${isTarget ? ' target' : ''}`
+        + `${s.disabled ? ' snared' : s.surrendered ? ' yielded' : ''}${hurt && !loud ? ' quiet' : ''}`;
+      item.node.style.left = `${sx}px`;
+      item.node.style.top = `${sy - 26}px`;
+      item.node.style.opacity = String(clamp(1.1 - d / 3400, 0.25, 1));
+      // the bars are sized off the hull so a cruiser's plate reads bigger
+      item.node.style.setProperty('--pw', `${clamp(38 + (s.def?.len ?? 20) * 1.15, 40, 132)}px`);
+
+      item.name.textContent = s.name;
+      item.shieldFill.style.width = `${shieldRatio * 100}%`;
+      item.shieldFill.style.background = s.shipProfile?.css || '';
+      item.hullFill.style.width = `${hullRatio * 100}%`;
+      item.hullFill.style.background = hullGradient(hullRatio);
+      const snare = s.disabled ? 0 : s.snareProgress;
+      item.snareBar.classList.toggle('hidden', !(snare > 0.01));
+      item.snareFill.style.width = `${snare * 100}%`;
+      item.state.textContent = s.disabled
+        ? `SNARED ${Math.max(0, s.disableTimer).toFixed(0)}s`
+        : s.surrendered
+          ? 'STRUCK'
+          : shieldRatio <= 0 && isTarget
+            ? 'SHIELDS DOWN'
+            : '';
+    }
+
+    for (const [ship, item] of this._plates) {
+      if (seen.has(ship)) continue;
+      item.node.remove();
+      this._plates.delete(ship);
     }
   }
 

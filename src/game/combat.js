@@ -29,6 +29,7 @@ export class Combat {
   /** Attempt to fire a weapon slot. Returns true if a shot left the rail. */
   fire(ship, slot, targetShip = null) {
     if (!ship.alive) return false;
+    if (ship.disabled) return false; // a snared hull has no guns
     const weaponId = ship.weapons?.[slot];
     if (!weaponId) return false;
     const w = WEAPON_BY_ID[weaponId];
@@ -57,6 +58,9 @@ export class Combat {
     }
     const spread = (w.spread || 0) * (ship.spreadMult ?? 1) + (ship.aimError || 0) + (ship.focusErr || 0);
     const aimAngle = Math.atan2(aim.x - ship.x, aim.z - ship.z) + (Math.random() - 0.5) * 2 * spread;
+
+    // the HUD reads this to put a condition plate over hulls the player engages
+    if (ship.isPlayer && targetShip) targetShip._playerFireT = this.universe.time;
 
     const nose = ship.nosePoint(w.kind === 'missile' ? 0.35 : 0.62);
     if (w.kind === 'beam') {
@@ -89,6 +93,7 @@ export class Combat {
     const vol = ship.isPlayer ? 1 : 0.38;
     if (w.kind === 'missile') this.audio.missile(vol);
     else if (w.kind === 'kinetic') this.audio.kinetic(vol);
+    else if (w.kind === 'disruptor') this.audio.shieldHit(vol * 0.8);
     else this.audio.laser(w.size === 'heavy', vol);
   }
 
@@ -98,10 +103,12 @@ export class Combat {
     const dirZ = Math.cos(angle);
     let hitShip = null;
     let hitDist = w.range;
+    // in the ring there are no colours to respect — every hull is a target
+    const melee = !!this.universe.melee;
 
     for (const s of this.universe.ships) {
       if (!s.alive || s === ship) continue;
-      if (!ship.isPlayer && !s.isPlayer && s.faction === ship.faction) continue;
+      if (!melee && !ship.isPlayer && !s.isPlayer && s.faction === ship.faction) continue;
       if (!ship.isPlayer && ship.role === 'escort' && s.isPlayer) continue;
       if (ship.isPlayer && s.role === 'escort') continue;
       const rx = s.x - x;
@@ -136,7 +143,11 @@ export class Combat {
     this._spawnBeam(x, z, ex, ez, w.color, w.size === 'heavy' ? 5 : 2.6);
 
     if (hitShip) {
-      const res = hitShip.damage(w.dmg * (ship.dmgMult || 1), { fx: this.fx });
+      const dealt = this._resolveDamage(
+        { dmg: w.dmg * (ship.dmgMult || 1), shieldBonus: w.shieldBonus || 1, hullBonus: w.hullBonus, hullFactor: w.hullFactor },
+        hitShip,
+      );
+      const res = hitShip.damage(dealt, { fx: this.fx });
       const hitVol = hitShip.isPlayer ? 1 : 0.55;
       if (res.shieldHit) {
         this.audio.shieldHit(hitVol);
@@ -146,7 +157,7 @@ export class Combat {
         this.fx.hitFlash({ x: ex, y: 5, z: ez }, { size: 24, color: 0xffb060 });
       }
       if (res.destroyed) this.universe.onShipDestroyed(hitShip, ship);
-      else if (!hitShip.isPlayer) this.universe.onShipAttacked(hitShip, ship, w.dmg * (ship.dmgMult || 1));
+      else if (!hitShip.isPlayer) this.universe.onShipAttacked(hitShip, ship, dealt);
     }
   }
 
@@ -171,6 +182,7 @@ export class Combat {
   _spawn(owner, w, x, z, angle, targetShip) {
     const spr = glowSprite(w.color, 18);
     if (w.kind === 'missile') spr.scale.set(w.size === 'heavy' ? 16 : 12, w.size === 'heavy' ? 16 : 12, 1);
+    else if (w.kind === 'disruptor') spr.scale.set(14, 14, 1);
     else spr.scale.set(9, 24, 1);
     spr.position.set(x, 6, z);
     this.scene.add(spr);
@@ -181,6 +193,9 @@ export class Combat {
       vz: Math.cos(angle) * w.speed,
       dmg: w.dmg * (owner.dmgMult || 1),
       shieldBonus: w.shieldBonus || 1,
+      hullBonus: w.hullBonus || 1,
+      hullFactor: w.hullFactor || 1,
+      disablePower: w.disablePower || 0,
       color: w.color,
       kind: w.kind,
       speed: w.speed,
@@ -190,6 +205,43 @@ export class Combat {
       turn: w.turn || 0,
       trailTimer: 0,
     });
+  }
+
+  /**
+   * A weapon's bite, resolved against the target's lattice. Breaker warheads
+   * gain while the shield holds (less so against a lattice built to shrug them
+   * off); armour-crackers gain once it drops; shield-flayers lose everything.
+   */
+  _resolveDamage(p, target) {
+    if (target.shield > 0) {
+      const breaker = target.stats.shieldBreak ?? 1;
+      const bonus = p.shieldBonus > 1 ? 1 + (p.shieldBonus - 1) * breaker : 1;
+      return p.dmg * bonus;
+    }
+    return p.dmg * (p.hullBonus ?? p.hullFactor ?? 1);
+  }
+
+  /** A snare bolt lands: report whether the lattice held or the drives slept. */
+  _snareHit(p, ship) {
+    const r = ship.addDisrupt(p.disablePower);
+    if (r.held) {
+      // the gate: a raised lattice eats snare coils whole
+      this.audio.shieldHit(ship.isPlayer ? 1 : 0.5);
+      this.fx.hitFlash({ x: p.x, y: 5, z: p.z }, { size: 20, color: ship.shipProfile.color });
+      return;
+    }
+    if (r.immune) {
+      this.fx.hitFlash({ x: p.x, y: 5, z: p.z }, { size: 15, color: 0x8a7fbf });
+      return;
+    }
+    if (r.disabled) {
+      this.audio.alarm();
+      ship.snareGlow.material.opacity = 0.85;
+      this.fx.explosion({ x: p.x, y: 6, z: p.z }, { size: 36, color: 0xb08cff, sparkCount: 8 });
+      this.universe.onEvent?.('shipSnared', { ship, attacker: p.owner });
+      return;
+    }
+    this.fx.hitFlash({ x: p.x, y: 5, z: p.z }, { size: 18, color: 0xb08cff });
   }
 
   update(dt) {
@@ -226,13 +278,13 @@ export class Combat {
       p.life -= dt;
       p.mesh.position.set(p.x, 6, p.z);
 
-      if (p.kind === 'missile') {
+      if (p.kind === 'missile' || p.kind === 'disruptor') {
         p.trailTimer -= dt;
         if (p.trailTimer <= 0) {
           p.trailTimer = 0.05;
           this.fx.trailPuff(
             { x: p.x, y: 5, z: p.z },
-            { color: p.color || 0xff8fb0, size: 9, life: 0.4, vx: -p.vx * 0.12, vz: -p.vz * 0.12 },
+            { color: p.color || 0xff8fb0, size: p.kind === 'missile' ? 9 : 7, life: 0.4, vx: -p.vx * 0.12, vz: -p.vz * 0.12 },
           );
         }
       }
@@ -244,30 +296,32 @@ export class Combat {
 
       // --- ships ---
       let hit = false;
+      const melee = !!u.melee;
       for (const ship of ships) {
         if (!ship.alive || ship === p.owner) continue;
         // AI shots respect their own colours; player shots respect nothing
-        if (!p.owner.isPlayer && !ship.isPlayer && ship.faction === p.owner.faction) continue;
+        if (!melee && !p.owner.isPlayer && !ship.isPlayer && ship.faction === p.owner.faction) continue;
         // your wing never hits you, and your guns never hit your wing
         if (!p.owner.isPlayer && p.owner.role === 'escort' && ship.isPlayer) continue;
         if (p.owner.isPlayer && ship.role === 'escort') continue;
         const rr = ship.radius + (p.kind === 'missile' ? 14 : 8);
         if (distSq2(p.x, p.z, ship.x, ship.z) < rr * rr) {
-          // shield-breaker warheads bite hardest while the lattice holds
-          const dealt = p.shieldBonus > 1 && ship.shield > 0 ? p.dmg * p.shieldBonus : p.dmg;
+          const dealt = this._resolveDamage(p, ship);
           const res = ship.damage(dealt, { fx: this.fx });
           const hitVol = ship.isPlayer ? 1 : 0.55;
           if (res.shieldHit) {
             this.audio.shieldHit(hitVol);
-            this.fx.hitFlash({ x: p.x, y: 5, z: p.z }, { size: 22, color: 0x8fd8ff });
-          } else {
+            this.fx.hitFlash({ x: p.x, y: 5, z: p.z }, { size: 22, color: ship.shipProfile.color });
+          } else if (p.disablePower <= 0) {
             this.audio.hit(hitVol);
             this.fx.hitFlash({ x: p.x, y: 5, z: p.z }, { size: 26, color: 0xffb060 });
           }
           if (res.destroyed) {
             u.onShipDestroyed(ship, p.owner);
-          } else if (!ship.isPlayer) {
-            u.onShipAttacked(ship, p.owner, dealt);
+          } else {
+            // a disruptor coils round an unshielded hull and sleeps its drives
+            if (p.disablePower > 0) this._snareHit(p, ship);
+            if (!ship.isPlayer) u.onShipAttacked(ship, p.owner, dealt);
           }
           hit = true;
           break;

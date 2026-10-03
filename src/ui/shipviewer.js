@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { buildShip } from '../core/meshes.js';
+import { applyEnvironment } from '../core/materials.js';
 
 export class ShipViewer {
   constructor(host) {
@@ -22,13 +23,16 @@ export class ShipViewer {
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 8000);
 
     // lighting matches the flight scene (see Backdrop / Universe)
-    this.scene.add(new THREE.HemisphereLight(0x9cc4ff, 0x0a0e16, 0.9));
+    this.scene.add(new THREE.HemisphereLight(0x9cc4ff, 0x1a2434, 1.05));
     const key = new THREE.DirectionalLight(0xfff2d8, 1.85);
     key.position.set(400, 1600, 700);
     this.scene.add(key);
     const rim = new THREE.DirectionalLight(0x6fb6ff, 0.8);
     rim.position.set(700, 600, -1100);
     this.scene.add(rim);
+    // the yard glass shows the same materials as the lanes, so it needs the
+    // same environment for the metals to read
+    applyEnvironment(this.scene, this.renderer);
 
     this.pivot = new THREE.Group();
     this.scene.add(this.pivot);

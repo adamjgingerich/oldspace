@@ -74,6 +74,10 @@ const LAYOUT = {
   scarmarch: [0.140, 0.550],
   brokenjaw: [0.090, 0.420],
   wreckerbay: [0.680, 0.130],
+  // the melee rings — off the trade lanes, on nobody's charts but a contender's
+  thelists: [0.430, 0.930],
+  gallowsring: [0.690, 0.960],
+  emberdrome: [0.885, 0.075],
 };
 
 /** Star chart view limits (scale 1 = the whole cluster fit to the canvas). */

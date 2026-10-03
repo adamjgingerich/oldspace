@@ -778,7 +778,7 @@ export class DockUI {
   /* ------------------------------------------------------------------ */
 
   _renderLog() {
-    this.body.append(buildLog(this.ctx.state));
+    this.body.append(buildLog(this.ctx.state, { actions: this.ctx.actions }));
   }
 
   /* ------------------------------------------------------------------ */

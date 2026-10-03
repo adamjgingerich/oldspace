@@ -9,6 +9,7 @@ import {
   buildBeacon, buildPod, buildWreck, buildWormhole,
 } from '../core/meshes.js';
 import { buildStarfield, buildNebula, buildFarGalaxies, buildGasClouds, buildDustPatches, buildComet, buildDebrisField } from '../core/starfield.js';
+import { applyEnvironment } from '../core/materials.js';
 import { Fx } from '../core/fx.js';
 import { makeTopDownCamera } from '../core/engine.js';
 import { Combat, leadPoint } from './combat.js';
@@ -28,6 +29,24 @@ import { trafficFactor } from './traffic.js';
 /** Character progress earned per kill, by the victim's role. */
 const XP_BY_ROLE = { pirate: 30, bounty: 30, navy: 28, trader: 22, house: 28, transit: 80 };
 const KARMA_BY_ROLE = { pirate: 3, bounty: 4, navy: -12, trader: -10, house: -6, transit: 0 };
+
+/**
+ * Taking a hull whole is not the same as breaking it. Blowing a patrol out of
+ * the sky is butchery; snaring it, boarding it and putting the crew off at the
+ * next berth is business. Captures pay a fraction of the karma and reputation
+ * cost of a kill — and a spared crew is worth a little goodwill with their flag.
+ */
+const CAPTURE_KARMA = { pirate: 2, bounty: 3, navy: -2, trader: -2, house: -1, transit: 1 };
+const CAPTURE_REP = {
+  pirate: { vigil: 1, combine: 1, reaver: -1 },
+  trader: { reaver: 1, combine: -1, free: -1 },
+  navy: { vigil: -2, combine: -1, reaver: 1 },
+  house: { kreth: -2 },
+  transit: { vigil: -2 },
+};
+/** Goodwill for putting a beaten crew ashore instead of leaving them to die. */
+const MERCY_KARMA = 1;
+const MERCY_REP = 3;
 
 /** Global dampener on unprovoked attacks — one knob for every system's temper. */
 const AMBIENT_ATTACK_TRIM = 0.55;
@@ -193,6 +212,7 @@ export class Universe {
     this._capitalCd = 0; // cooldown between capital transits (see _maybeCapitalTransit)
     this._hailTimer = 0; // radio chatter pacing
     this._sightTimer = 0;
+    this._pick = new THREE.Vector3(); // scratch vector for click-to-select
     this.nearStation = null;
     this.nearWormhole = null;
     this.nearStar = null;
@@ -225,6 +245,8 @@ export class Universe {
     if (!sys) throw new Error(`Unknown system ${systemId}`);
     this.systemId = systemId;
     this.system = sys;
+    // a melee ring: a free-for-all with no law and no ledger
+    this.melee = !!sys.melee;
     if (this.state?.visited) this.state.visited[systemId] = true; // the fog lifts where you fly
     this.ships = [];
     this.stations = [];
@@ -275,8 +297,24 @@ export class Universe {
     star.position.y = -(sys.star.size + 10); // stars never occlude ships
     this.scene.add(star);
     this.visuals.push(star);
-    this.scene.add(new THREE.HemisphereLight(sys.star.color, 0x18242f, 0.75));
-    this.scene.add(buildStarLight(sys.star, 1.35));
+    this.scene.add(new THREE.HemisphereLight(sys.star.color, 0x243748, 1.05));
+    this.scene.add(buildStarLight(sys.star, 1.5));
+
+    // --- a three-point rig so hulls read clean and bright, not flat --------
+    // key: the star, from above and one side — this is what shapes a hull
+    const key = new THREE.DirectionalLight(0xfff4e0, 1.55);
+    key.position.set(0.55, 1, 0.35).multiplyScalar(600);
+    this.scene.add(key);
+    // fill: cool, opposite the key, lifts the shadowed flank out of black
+    const fill = new THREE.DirectionalLight(0x7fc4ff, 0.62);
+    fill.position.set(-0.6, 0.5, -0.45).multiplyScalar(600);
+    this.scene.add(fill);
+    // rim: from behind and below, traces the silhouette edge
+    const rim = new THREE.DirectionalLight(0xbfe8ff, 0.5);
+    rim.position.set(-0.25, -0.6, -0.9).multiplyScalar(600);
+    this.scene.add(rim);
+    // the shared environment gives every metal something to reflect
+    applyEnvironment(this.scene, this.engine.renderer);
 
     // --- planets (sunk below the flight plane so ships always pass overhead) ---
     for (const p of sys.planets) {
@@ -463,6 +501,21 @@ export class Universe {
 
   _manageSpawns(initial = false) {
     const cfg = this.system.danger;
+    // --- melee rings ------------------------------------------------------
+    // No patrols, no shipping, no law: just contenders. They arrive to fight
+    // each other and anyone else in the ring, and the population is topped up
+    // as they die. Nothing else in the spawn system applies here.
+    if (this.melee) {
+      let contenders = 0;
+      for (const s of this.ships) {
+        if (s.isPlayer || s.despawn || s.role === 'escort') continue;
+        contenders++;
+      }
+      const threat = threatLevel(this.state);
+      const target = clamp(3 + Math.round(threat / 3), 3, 9);
+      if (contenders < target) this._spawnContender(rngOf(this.state.worldSeed, 'melee', this.systemId, Math.floor(this.time)));
+      return;
+    }
     let pirates = 0;
     let navy = 0;
     let traders = 0;
@@ -525,7 +578,60 @@ export class Universe {
     return { x: Math.cos(a) * d, z: Math.sin(a) * d };
   }
 
+  /**
+   * A contender in the ring. Same airframes as the lanes see, but flagged
+   * `contender`: nothing it does — and nothing done to it — touches karma or
+   * reputation, and every other hull in the system is fair game.
+   */
+  _spawnContender(rng) {
+    const threat = threatLevel(this.state);
+    const pool = threat <= 6
+      ? ['sparrowhawk', 'marlin', 'rampart', 'corsair']
+      : threat <= 14
+        ? ['corsair', 'voskar', 'clipper', 'hussar', 'merlin']
+        : threat <= 24
+          ? ['corsair', 'voskar', 'dragoon', 'anvil', 'tempest']
+          : ['dragoon', 'legion', 'redoubt', 'monarch', 'anvil'];
+    const shipId = rng.pick(pool);
+    const p = this._edgePoint(rng, !!this.system.asteroids);
+    const weapons = [
+      rng.chance(0.5) ? 'twinpulse' : 'pulse',
+      rng.chance(0.35) ? 'harpoon' : rng.chance(0.6) ? 'damping' : null,
+      rng.chance(0.25) ? 'snare' : null,
+    ];
+    const ship = Ship.npc(shipId, {
+      scene: this.scene, x: p.x, z: p.z, heading: rng.float(0, TAU),
+      // contenders fly in from every march, wearing their own colours
+      faction: rng.pick(['free', 'reaver', 'combine', 'kreth', 'vigil']),
+      role: 'pirate',
+      name: `${rng.pick(PIRATE_FIRST)} ${rng.pick(PIRATE_EPITHET)}`,
+      // the ring is where every lattice in the sky turns up to be tested
+      shieldType: rng.pick(['lattice', 'flowweave', 'duelist', 'ledger', 'ember', 'aegis', 'capacitor', 'faraday', 'ghostveil']),
+      loadout: { weapons },
+    });
+    ship.weapons = weapons;
+    ship.ammo = { harpoon: 5 };
+    ship.contender = true;
+    ship.hull = ship.stats.hull;
+    ship.shield = ship.stats.shield;
+    // the ring sharpens with the captain, like every other lane — a green
+    // pilot meets sloppy brawlers, a famous one meets the best in the Reach
+    const skill = threat <= 4 ? { aim: 0.06, dmg: 0.5, cd: 1.4 }
+      : threat <= 8 ? { aim: 0.045, dmg: 0.65, cd: 1.25 }
+        : threat <= 14 ? { aim: 0.03, dmg: 0.8, cd: 1.12 }
+          : threat <= 22 ? { aim: 0.02, dmg: 0.95, cd: 1.02 }
+            : { aim: 0.012, dmg: 1.08, cd: 0.95 };
+    ship.aimError = skill.aim;
+    ship.dmgMult = skill.dmg;
+    ship.cdMult = skill.cd;
+    // nobody comes to the ring to run
+    if (ship.ai) ship.ai.bravado = 1;
+    this._addNpc(ship, 'pirate', p);
+  }
+
   _spawnPirate(rng) {
+    if (this.melee) return this._spawnContender(rng);
+    if (this.melee) return this._spawnContender(rng);
     const threat = threatLevel(this.state);
     const danger = this.system.danger.pirates;
     // the raiders you meet grow with your renown — knife-fights are earned
@@ -571,6 +677,12 @@ export class Universe {
     if (shipId === 'legion') weapons = ['flenser', 'flenser', 'twinpulse', rng.chance(0.5) ? 'harpoon' : null];
     if (shipId === 'redoubt') weapons = ['flenser', 'flenser', 'twinpulse', rng.chance(0.6) ? 'harpoon' : null, null];
     if (shipId === 'monarch') weapons = ['flenser', 'flenser', 'twinpulse', 'harpoon', null, null];
+    // veteran clans hunt prizes as readily as kills — a snare coil goes into a
+    // free hardpoint once the lanes get serious, and shows on the hull
+    if (threat >= 15 && rng.chance(0.3)) {
+      const free = weapons.indexOf(null);
+      if (free >= 0) weapons[free] = threat >= 26 ? 'damping' : 'snare';
+    }
     const ship = Ship.npc(shipId, {
       scene: this.scene, x: p.x, z: p.z, heading: rng.float(0, TAU),
       faction: 'reaver', role: 'pirate', name: 'Reaver raider',
@@ -945,6 +1057,8 @@ export class Universe {
   npcHostileToPlayer(npc) {
     const st = this.state;
     if (!npc.alive) return false;
+    // in the ring, everyone is here for the same reason
+    if (this.melee) return npc.role !== 'escort';
     const grudge = this.grudgeActive(npc.faction);
     switch (npc.role) {
       case 'pirate':
@@ -963,6 +1077,7 @@ export class Universe {
   /** Days a faction holds a grudge after its kin are attacked — at least one warp. */
   noteGrudge(faction) {
     if (!faction) return;
+    if (this.melee) return; // nothing done in the ring follows you out
     const st = this.state;
     st.grudge[faction] = Math.max(st.grudge[faction] || 0, st.day + 2);
   }
@@ -1064,6 +1179,17 @@ export class Universe {
     if (!a || !b || a === b || !a.alive || !b.alive) return false;
     // a hull that has struck its colours is out of the fight — nobody targets prizes
     if (a.surrendered || b.surrendered) return false;
+    // neither is a snared hull worth a shot: it is drifting, and it is salvage
+    if (a.disabled || b.disabled) return false;
+    // --- the ring ---------------------------------------------------------
+    // In a melee system every hull is a contender: no flags, no kin, no rules.
+    // Wings are still yours, because your own escorts are not contenders.
+    if (this.melee) {
+      if (a.role === 'escort' || b.role === 'escort') {
+        return (a.role === 'escort') !== (b.role === 'escort');
+      }
+      return true;
+    }
     if (a.isPlayer || a.role === 'escort') return this.npcHostileToPlayer(b);
     if (b.isPlayer || b.role === 'escort') return this.npcHostileToPlayer(a);
     if (a.faction === b.faction) return false;
@@ -1144,37 +1270,47 @@ export class Universe {
     if (killer === this.player) {
       const st = this.state;
       st.stats.kills++;
-      if (ship.role === 'pirate') {
-        st.addRep('vigil', 2);
-        st.addRep('combine', 1);
-        st.addRep('reaver', -2);
-        this.onEvent?.('bountyKill', { ship });
-      } else if (ship.role === 'trader') {
-        st.stats.traderKills++;
-        st.addRep('reaver', 2);
-        if (ship.faction === 'combine') st.addRep('combine', -4);
-        else st.addRep('free', -3);
-        this.onEvent?.('traderKill', { ship });
-      } else if (ship.role === 'navy') {
-        st.stats.navyKills++;
-        st.addRep('vigil', -7);
-        st.addRep('combine', -4);
-        st.addRep('reaver', 3);
-        this.onEvent?.('navyKill', { ship });
-      } else if (ship.role === 'house') {
-        st.addRep('kreth', -7);
-        this.onEvent?.('houseKill', { ship });
-      } else if (ship.role === 'transit') {
-        // word travels fast when a capital goes down — its owners take it badly
-        if (ship.faction === 'vigil') st.addRep('vigil', -9);
-        else if (ship.faction === 'kreth') st.addRep('kreth', -9);
-        else if (ship.faction === 'reaver') st.addRep('reaver', -4);
-        else if (ship.faction === 'combine') st.addRep('combine', -6);
-        this.onEvent?.('capitalDown', { ship });
+      // A kill in the ring is a bout, not a crime: no flag is watching, no
+      // ledger is kept, and nothing you do here follows you out. Experience
+      // still counts — it is a competition, after all.
+      const melee = this.melee || ship.contender;
+      if (!melee) {
+        if (ship.role === 'pirate') {
+          st.addRep('vigil', 2);
+          st.addRep('combine', 1);
+          st.addRep('reaver', -2);
+          this.onEvent?.('bountyKill', { ship });
+        } else if (ship.role === 'trader') {
+          st.stats.traderKills++;
+          st.addRep('reaver', 2);
+          if (ship.faction === 'combine') st.addRep('combine', -4);
+          else st.addRep('free', -3);
+          this.onEvent?.('traderKill', { ship });
+        } else if (ship.role === 'navy') {
+          st.stats.navyKills++;
+          st.addRep('vigil', -7);
+          st.addRep('combine', -4);
+          st.addRep('reaver', 3);
+          this.onEvent?.('navyKill', { ship });
+        } else if (ship.role === 'house') {
+          st.addRep('kreth', -7);
+          this.onEvent?.('houseKill', { ship });
+        } else if (ship.role === 'transit') {
+          // word travels fast when a capital goes down — its owners take it badly
+          if (ship.faction === 'vigil') st.addRep('vigil', -9);
+          else if (ship.faction === 'kreth') st.addRep('kreth', -9);
+          else if (ship.faction === 'reaver') st.addRep('reaver', -4);
+          else if (ship.faction === 'combine') st.addRep('combine', -6);
+          this.onEvent?.('capitalDown', { ship });
+        }
+      } else if (ship.contender) {
+        this.onEvent?.('meleeBout', { ship, outcome: 'destroyed' });
       }
       // character progression: experience and karma
       const xpRes = addXp(st, XP_BY_ROLE[ship.role] || 20);
-      addKarma(st, KARMA_BY_ROLE[ship.role] || 0);
+      if (!melee) {
+        addKarma(st, KARMA_BY_ROLE[ship.role] || 0, `destroyed a ${ship.role} — ${ship.def.name}`);
+      }
       this.onEvent?.('xpGain', { ...xpRes, role: ship.role });
       if (ship.bountyMissionId) {
         this.onEvent?.('bountyContractComplete', { missionId: ship.bountyMissionId, ship });
@@ -1199,6 +1335,33 @@ export class Universe {
   }
 
   /**
+   * A hull taken rather than broken: prize crew aboard, prisoners in the hold,
+   * and a very different ledger entry from a kill. Destroys nothing, so none of
+   * the destroy reputation or karma is paid — only the much smaller capture toll.
+   * @param {object} ship the claimed hull
+   * @param {{mercy?: boolean}} [opts] mercy = the crew was put ashore alive
+   */
+  onShipCaptured(ship, { mercy = false } = {}) {
+    const st = this.state;
+    const role = ship.role;
+    st.stats.captures = (st.stats.captures || 0) + 1;
+    // In the ring a prize is a prize: the bout ends, the hull changes hands,
+    // and nobody keeps a file on it. Only outside the ring does the ledger run.
+    if (this.melee || ship.contender) {
+      this.onEvent?.('shipCaptured', { ship, mercy, role });
+      if (ship.contender) this.onEvent?.('meleeBout', { ship, outcome: 'captured' });
+      return;
+    }
+    const karma = CAPTURE_KARMA[role] ?? 0;
+    addKarma(st, karma + (mercy ? MERCY_KARMA : 0), `took a ${role} hull as a prize`);
+    const reps = CAPTURE_REP[role];
+    if (reps) for (const [fid, delta] of Object.entries(reps)) st.addRep(fid, delta);
+    if (mercy && ship.faction) st.addRep(ship.faction, MERCY_REP);
+    st.grudge[ship.faction] = Math.max(st.grudge[ship.faction] || 0, 0);
+    this.onEvent?.('shipCaptured', { ship, mercy, role });
+  }
+
+  /**
    * Crippled crews strike their colours: hull shot through and shields gone,
    * a beaten ship near the player may heave to and wait to be claimed (C).
    * Contract marks and the disciplined core of the Vigil seldom do.
@@ -1219,6 +1382,37 @@ export class Universe {
       ship.surrendered = true;
       this.onEvent?.('shipSurrendered', { ship });
     }
+  }
+
+  /**
+   * The hull under the cursor, for click-to-select. Projects every live contact
+   * and takes the nearest to the pointer inside a generous grab radius, so
+   * picking a ship in a furball does not demand pixel accuracy.
+   */
+  shipAtScreen(px, py, maxPx = 46) {
+    if (!this.camera || !this.player?.alive) return null;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    let best = null;
+    let bestD = maxPx * maxPx;
+    for (const s of this.ships) {
+      if (s.isPlayer || !s.alive || s.despawn) continue;
+      const d = dist2(s.x, s.z, this.player.x, this.player.z);
+      if (d > 2800) continue;
+      this._pick.copy({ x: s.x, y: 0, z: s.z });
+      this._pick.project(this.camera);
+      if (this._pick.z > 1) continue; // behind the camera
+      const sx = (this._pick.x * 0.5 + 0.5) * w;
+      const sy = (-this._pick.y * 0.5 + 0.5) * h;
+      // a big hull is easier to hit than a fighter at the same distance
+      const pad = maxPx + (s.def?.len ?? 20) * 0.5;
+      const dx = sx - px;
+      const dy = sy - py;
+      const dd = dx * dx + dy * dy;
+      if (dd > pad * pad) continue;
+      if (dd < bestD) { bestD = dd; best = s; }
+    }
+    return best;
   }
 
   /** Raiders announce themselves before they bite — one voice at a time. */

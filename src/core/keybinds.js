@@ -13,6 +13,8 @@ export const BIND_ACTIONS = [
   { id: 'turnRight', label: 'Turn right', code: 'KeyD' },
   { id: 'fire', label: 'Primary weapon', code: 'Space' },
   { id: 'fireAlt', label: 'Secondary / missiles', code: 'KeyQ' },
+  { id: 'disable', label: 'Disruptor snare', code: 'KeyX' },
+  { id: 'comms', label: 'Hail / communications', code: 'KeyT' },
   { id: 'burst', label: 'Engine burst (hold)', code: 'ShiftLeft' },
   { id: 'target', label: 'Cycle hostile target', code: 'Tab' },
   { id: 'dock', label: 'Dock / scan', code: 'KeyE' },
@@ -27,8 +29,9 @@ export const BIND_ACTIONS = [
   { id: 'regroup', label: 'Fleet: regroup', code: 'KeyN' },
   { id: 'zoomIn', label: 'Zoom in', code: 'Equal' },
   { id: 'zoomOut', label: 'Zoom out', code: 'Minus' },
-  { id: 'speedUp', label: 'Simulation faster', code: 'KeyX' },
-  { id: 'speedDown', label: 'Simulation slower', code: 'KeyZ' },
+  { id: 'speedUp', label: 'Simulation faster', code: 'BracketRight' },
+  { id: 'speedDown', label: 'Simulation slower', code: 'BracketLeft' },
+  { id: 'speedReset', label: 'Simulation back to ×0.5', code: 'Backslash' },
   { id: 'fullscreen', label: 'Fullscreen', code: 'KeyF' },
   { id: 'mute', label: 'Mute', code: 'KeyV' },
 ];
@@ -61,6 +64,15 @@ class Keybinds {
         const saved = JSON.parse(raw);
         for (const [id, code] of Object.entries(saved)) {
           if (id in this.map && typeof code === 'string' && code) this.map[id] = code;
+        }
+        // Migration: X and Z used to be the simulation-speed keys, and X is the
+        // snare trigger now. A stored map from that era would leave a captain
+        // with no way to fire their disruptors, so move them across.
+        if (!('disable' in saved) && saved.speedUp === 'KeyX') {
+          this.map.speedUp = 'BracketRight';
+          if (!('speedDown' in saved) || saved.speedDown === 'KeyZ') this.map.speedDown = 'BracketLeft';
+          this.map.speedReset = 'Backslash';
+          this.save();
         }
       }
     } catch (err) {

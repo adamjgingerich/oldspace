@@ -58,6 +58,16 @@ export class AIController {
       return;
     }
 
+    // a snared hull has no helm, no guns and nothing to say — it drifts
+    if (ship.disabled) {
+      this.state = 'snared';
+      this.target = null;
+      ship.turnInput = 0;
+      ship.throttleCmd = 0;
+      ship.brakeCmd = 0;
+      return;
+    }
+
     this._thinkTimer -= dt;
     if (this._thinkTimer <= 0) {
       this._thinkTimer = 0.25;

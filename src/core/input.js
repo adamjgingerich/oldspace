@@ -3,9 +3,9 @@
 import { binds } from './keybinds.js';
 
 const GAME_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyF', 'KeyQ', 'KeyJ', 'KeyM', 'KeyV', 'KeyX', 'KeyZ',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyF', 'KeyQ', 'KeyJ', 'KeyM', 'KeyV', 'KeyX', 'KeyZ', 'KeyT',
   'Space', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'ShiftLeft', 'ShiftRight',
+  'ShiftLeft', 'ShiftRight', 'BracketLeft', 'BracketRight', 'Backslash',
 ]);
 
 export class Input {

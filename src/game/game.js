@@ -17,8 +17,9 @@ import * as sidequests from './sidequests.js';
 import { saveToSlot, readSlot } from './saves.js';
 import { planetInfo } from './planetSurvey.js';
 import {
-  addXp, addKarma, joinFaction, renounceFaction, learnSkill, combatMods, economyMods, levelFromXp,
+  addXp, addKarma, joinFaction, renounceFaction, learnSkill, combatMods, economyMods, levelFromXp, doKarmaAct,
 } from './skills.js';
+import { shieldProfile } from '../data/shields.js';
 import { applyCharacter } from './character.js';
 import { binds } from '../core/keybinds.js';
 import { openKeybinds } from '../ui/keys.js';
@@ -26,6 +27,7 @@ import {
   addToFleet, removeFromFleet, entryByUid, fleetSellValue, freeEscortSlots, freeBays, nextFreeBay,
 } from './fleet.js';
 import { rngOf } from '../core/rng.js';
+import { RUMORS } from '../data/names.js';
 import { TWIST_INFO, HAILS, RELIC_OPENED } from '../data/voices.js';
 import * as wormholes from './wormholes.js';
 import * as expeditions from './expeditions.js';
@@ -87,13 +89,35 @@ export class Game {
     if (TIME_STEPS.includes(saved)) this.timeScale = saved;
   }
 
-  /** Step through the simulation speeds. dir 1 = faster, -1 = slower. */
+  /**
+   * Step through the simulation speeds. dir 1 = faster, -1 = slower.
+   * Faster wraps off the top back to the deliberate ×0.5; slower stops at
+   * ×0.5 rather than wrapping, so slowing down can never overshoot.
+   */
   cycleTimeScale(dir = 1) {
     const idx = TIME_STEPS.indexOf(this.timeScale);
-    const next = TIME_STEPS[(idx + dir + TIME_STEPS.length) % TIME_STEPS.length];
+    const raw = idx + dir;
+    if (dir < 0 && raw < 0) {
+      if (this.timeScale !== TIME_STEPS[0]) this.setTimeScale(TIME_STEPS[0]);
+      else this.ui.speed?.sync();
+      return;
+    }
+    const next = TIME_STEPS[raw % TIME_STEPS.length];
+    this.setTimeScale(next);
+  }
+
+  /** Straight back to the ship's cruising ×0.5, from any speed. */
+  resetTimeScale() {
+    this.setTimeScale(TIME_STEPS[0]);
+  }
+
+  setTimeScale(next) {
+    const changed = this.timeScale !== next;
     this.timeScale = next;
     storageSet('timescale', String(next));
-    if (this.isActive()) this.ui.toasts.push(`Simulation speed ×${next}.`, next === 0.5 ? '' : 'warn');
+    if (changed && this.isActive()) {
+      this.ui.toasts.push(`Simulation speed ×${next}.`, next === 0.5 ? '' : 'warn');
+    }
     this.ui.speed?.sync();
   }
 
@@ -233,6 +257,12 @@ export class Game {
       input.endFrame();
       return;
     }
+    if (this.mode === 'comms') {
+      if (input.wasPressed(binds.get('pause')) || input.wasPressed(binds.get('comms'))) this.closeComms();
+      this.ui.hud.update(this.hudContext());
+      input.endFrame();
+      return;
+    }
 
     const p = this.universe.player;
     const st = this.state;
@@ -262,10 +292,11 @@ export class Game {
         && dist2(p.x, p.z, this.target.x, this.target.z) < 2800;
       if (!targetOk) this.target = null;
       if (input.isDown(binds.get('fire'))) {
-        // every non-missile hardpoint fires together
+        // every non-missile hardpoint fires together — snare coils excepted:
+        // they have their own trigger so a broadside never wastes a coil
         for (let s = 0; s < p.weapons.length; s++) {
           const w = WEAPON_BY_ID[p.weapons[s]];
-          if (w && w.kind !== 'missile') this.universe.fireShip(p, s, this.target);
+          if (w && w.kind !== 'missile' && w.kind !== 'disruptor') this.universe.fireShip(p, s, this.target);
         }
       }
       if (input.wasPressed(binds.get('fireAlt'))) {
@@ -277,12 +308,19 @@ export class Game {
             if (!ok && (st.ammo[p.weapons[s]] || 0) <= 0) {
               this.ui.toasts.push('Missile racks empty. Buy more at a station.', 'warn');
             }
-          } else {
+          } else if (w.kind !== 'disruptor') {
             this.universe.fireShip(p, s, this.target);
           }
         }
       }
+      if (input.isDown(binds.get('disable'))) this.fireDisruptors();
       if (input.wasPressed(binds.get('target'))) this.cycleTarget();
+      // click a hull in the sky and it is yours to shoot at
+      if (input.mouse.pressed) {
+        const picked = this.universe.shipAtScreen(input.mouse.x, input.mouse.y);
+        if (picked) this.setTarget(picked);
+      }
+      if (input.wasPressed(binds.get('comms'))) this.openComms();
       // the wing reads your lock for focus fire
       this.universe.playerTarget = this.target;
       // ---- fleet commands ----
@@ -308,6 +346,7 @@ export class Game {
     // ---- clock & time scale ----
     if (input.wasPressed(binds.get('speedUp'))) this.cycleTimeScale(1);
     if (input.wasPressed(binds.get('speedDown'))) this.cycleTimeScale(-1);
+    if (input.wasPressed(binds.get('speedReset'))) this.resetTimeScale();
     const simDt = dt * this.timeScale;
     const dayChanged = st.tickClock(simDt);
     if (dayChanged) this.onDayChanged();
@@ -359,6 +398,14 @@ export class Game {
     if (!u.warpBlock) this.hint('warp', 'Press J in open space to warp a lane — one lumen per jump.');
     if (u.player.speed > 75) this.hint('burst', 'Hold SHIFT for an engine burst — a hard shove of thrust that recharges over time.');
     if (this.state.credits < 1500) this.hint('broke', 'Low on credits? Dock and check the Contracts board, or buy low and sell high.');
+    // press T near anyone and the radio opens
+    if (!this.state.hints?.radio && (this.target || u.nearStation || u.nearPlanet)) {
+      this.hint('radio', 'Press T to open a channel — hail a station, a world, or a ship you have snared or beaten.');
+    }
+    // the ring has its own rules, and they are worth stating plainly
+    if (u.melee) {
+      this.hint('melee', 'This is a melee ring: every hull in the sky is a contender, and every one of them is fair game. Nothing you do here — killing, snaring, or taking a ship whole — costs you karma or standing with any flag. Fly in and fight.');
+    }
   }
 
   hint(key, text) {
@@ -426,7 +473,12 @@ export class Game {
       return { text: `Slow below ${SCAN_SPEED_LIMIT} to take deep-core readings`, warn: true };
     }
     const prize = this.nearestPrize();
-    if (prize) return { key: 'C', text: `Claim the surrendered ${prize.def.name}` };
+    if (prize) {
+      return {
+        key: 'C',
+        text: prize.disabled ? `Claim the snared ${prize.def.name} — she is drifting` : `Claim the surrendered ${prize.def.name}`,
+      };
+    }
     if (!u.warpBlock) return { key: 'J', text: 'Warp — plot a lane' };
     if ((this.state.outfits?.warpplotter || 0) > 0) {
       return { text: `Warp dampened — ${Math.round(u.warpBlock.dist)} m to clear space`, warn: true };
@@ -446,8 +498,36 @@ export class Game {
       return;
     }
     const idx = candidates.indexOf(this.target);
-    this.target = candidates[(idx + 1) % candidates.length];
+    this.setTarget(candidates[(idx + 1) % candidates.length]);
+  }
+
+  /** Lock a hull up. Shared by the Tab cycle and click-to-select. */
+  setTarget(ship) {
+    if (!ship || this.target === ship) return;
+    this.target = ship;
     audio.ui();
+  }
+
+  /**
+   * Fire every fitted snare coil. X is deliberately its own trigger: the
+   * disruptor is a capturing tool, not part of the broadside, and it does
+   * nothing at all to a hull whose lattice is still up.
+   */
+  fireDisruptors() {
+    const p = this.universe?.player;
+    if (!p?.alive || p.disabled) return;
+    let fitted = false;
+    for (let s = 0; s < p.weapons.length; s++) {
+      const w = WEAPON_BY_ID[p.weapons[s]];
+      if (!w || w.kind !== 'disruptor') continue;
+      fitted = true;
+      this.universe.fireShip(p, s, this.target);
+    }
+    if (!fitted) {
+      this.hint('snarefit', 'No snare coil fitted — a disruptor mounts in a hardpoint like any other gun, and fires on X.');
+    } else if (this.target?.alive && this.target.shield > 0) {
+      this.hint('snaregate', 'A snare will not hold a raised lattice — strip the shields first, then press X.');
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -481,6 +561,37 @@ export class Game {
         this.ui.toasts.push(`A ${payload.ship.def.name} strikes its colours — close alongside and press C to claim the prize.`, 'good');
         this.hint('prize', 'Claimed prizes need a free escort slot or docking bay — otherwise the hulk is stripped for salvage credits.');
         break;
+      case 'shipSnared': {
+        const s = payload.ship;
+        const mine = payload.attacker === this.universe?.player;
+        if (mine) {
+          this.ui.toasts.push(`${s.name}'s drives are snared — she is drifting. Claim her with C, or open a channel with T.`, 'good');
+          this.hint('snareclaim', 'A snared hull is helpless: press C to take her as a prize. Taking a ship whole costs far less karma and reputation than killing her.');
+        } else if (s.isPlayer) {
+          this.ui.toasts.push('SYSTEMS SNARED — drives, guns and helm are dead. Hold on.', 'bad');
+        }
+        break;
+      }
+      case 'shipCaptured': {
+        const s = payload.ship;
+        this.ui.toasts.push(
+          payload.mercy
+            ? `${s.def.name} taken — the crew is put ashore at the next berth. A prize, not a funeral.`
+            : `${s.def.name} taken and broken up for parts.`,
+          'good',
+        );
+        break;
+      }
+      case 'meleeBout': {
+        const s = payload.ship;
+        this.ui.toasts.push(
+          payload.outcome === 'captured'
+            ? `Bout over — ${s.name}'s hull is yours. No flag files a protest in the ring.`
+            : `Bout over — ${s.name} is out of the ring. The book will remember the name.`,
+          'good',
+        );
+        break;
+      }
       case 'hullSighted': {
         const def = SHIP_BY_ID[payload.shipId];
         if (def) this.ui.toasts.push(`New hull sighted: ${def.name} — filed in the ship's log.`, 'good');
@@ -718,6 +829,32 @@ export class Game {
     const tl = this.state.outfits?.targeting || 0;
     p.trackCone = tl === 0 ? 0.5 : [0.5, 1.05, 2.1, Math.PI][Math.min(tl, 3)];
     p.spreadMult = tl === 0 ? 1 : [1, 0.8, 0.65, 0.5][Math.min(tl, 3)];
+    this._syncLattice(p, stats);
+  }
+
+  /** Keep the hull's lattice look in step with the stats it is flying. */
+  _syncLattice(ship, stats) {
+    const prof = shieldProfile(stats.shieldType);
+    if (ship.shipProfile?.id === prof.id) return;
+    ship.shipProfile = prof;
+    ship.shieldGlow?.material.color?.set(prof.color);
+  }
+
+  /**
+   * Deliberate karma: pay for an act and the ledger moves. Called from the
+   * captain's record at any station.
+   */
+  karmaAct(id) {
+    const res = doKarmaAct(this.state, id);
+    if (!res.ok) {
+      this.ui.toasts.push(res.error, 'warn');
+      return;
+    }
+    if (res.karma >= 0) audio.coin();
+    else audio.ui();
+    this.ui.toasts.push(res.text, res.karma >= 0 ? 'good' : 'warn');
+    this.autosave();
+    this.ui.dock.refreshIfOpen();
   }
 
   /** Award XP and celebrate level-ups. */
@@ -1479,33 +1616,41 @@ export class Game {
   /* ------------------------------------------------------------------ */
 
   /** Nearest hull that has struck its colours, within claiming distance. */
+  /** The nearest hull you can take: struck colours, or snared and drifting. */
   nearestPrize() {
     const u = this.universe;
     if (!u?.player?.alive) return null;
     let best = null;
-    let bd = 260;
+    let bd = 300;
     for (const s of u.ships) {
-      if (s.isPlayer || !s.alive || s.despawn || !s.surrendered) continue;
+      if (s.isPlayer || !s.alive || s.despawn) continue;
+      if (!s.surrendered && !s.disabled) continue;
       const d = dist2(s.x, s.z, u.player.x, u.player.z);
       if (d < bd) { bd = d; best = s; }
     }
     return best;
   }
 
-  /** Claim a surrendered ship: into the fleet, or stripped for salvage. */
+  /**
+   * Claim a beaten ship: into the fleet, or stripped for salvage. Taking a hull
+   * whole is the merciful option — the crew goes ashore alive, and the ledger
+   * charges a fraction of what a kill would cost in karma and reputation.
+   */
   actClaimPrize() {
     const u = this.universe;
     const st = this.state;
     if (!u || !u.player?.alive) return;
     const prize = this.nearestPrize();
     if (!prize) {
-      this.ui.toasts.push('No struck-colours hull alongside to claim.', 'warn');
+      this.ui.toasts.push('No struck-colours or snared hull alongside to claim.', 'warn');
       return;
     }
     const def = prize.def;
+    const snared = !!prize.disabled;
     this.noteSighting(def.id, 'prize');
     st.stats.prizes = (st.stats.prizes || 0) + 1;
     const res = addToFleet(st, def.id);
+    const mercy = res.ok; // a hull you fly on is a crew you put ashore
     if (res.ok) {
       this.ui.toasts.push(`The ${def.name} joins your fleet — “${res.entry.name}”.`, 'good');
       if (res.entry.status === 'escort') {
@@ -1518,6 +1663,8 @@ export class Game {
       audio.coin();
       this.ui.toasts.push(`No free berth — the ${def.name} is stripped for parts and records: +₡${strip.toLocaleString()}.`, 'good');
     }
+    if (snared) this.ui.toasts.push('You took her engines intact. The crew is off at the next berth.', '');
+    u.onShipCaptured(prize, { mercy });
     audio.dock();
     prize.despawn = true;
     this.autosave();
@@ -1756,6 +1903,72 @@ export class Game {
     this.mode = 'flight';
     this.ui.skilltree.close();
     input.reset();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Communications                                                     */
+  /* ------------------------------------------------------------------ */
+
+  /** Raise the radio. Pauses the helm — talking is not a driving task. */
+  openComms() {
+    if (this.mode !== 'flight' || !this.ui.comms) return;
+    this.mode = 'comms';
+    this.ui.comms.open(this.commsContext());
+    input.reset();
+  }
+
+  closeComms() {
+    if (this.mode !== 'comms') return;
+    this.mode = 'flight';
+    this.ui.comms?.close();
+    input.reset();
+  }
+
+  commsContext() {
+    const u = this.universe;
+    return {
+      state: this.state,
+      universe: u,
+      system: u.system,
+      player: u.player,
+      target: this.target,
+      actions: {
+        setTarget: (ship) => this.setTarget(ship),
+        log: (text, kind = '') => this.ui.toasts.push(text, kind),
+        rumour: () => this._commsRumour(),
+        postings: (station) => this._commsPostings(station),
+        surrender: (ship) => this._commsSurrender(ship),
+        release: (ship) => this._commsRelease(ship),
+      },
+      onClose: () => this.closeComms(),
+    };
+  }
+
+  _commsSurrender(ship) {
+    if (!ship || ship.surrendered) return;
+    ship.surrendered = true;
+    ship.throttleCmd = 0;
+    this.universe.onEvent?.('shipSurrendered', { ship });
+  }
+
+  /** Put a beaten crew ashore. Word of it travels. */
+  _commsRelease(ship) {
+    const st = this.state;
+    addKarma(st, 2, `let a beaten ${ship.role} crew go`);
+    if (ship.faction) st.addRep(ship.faction, 4);
+    this.ui.toasts.push(`The ${ship.def.name} limps away under escort terms. Their flag will hear of it.`, 'good');
+    ship.despawn = true;
+    this.autosave();
+  }
+
+  _commsRumour() {
+    const rng = rngOf(this.state.worldSeed, 'rumour', this.state.systemId, this.state.day, Math.floor(this.universe.time));
+    return rng.pick(RUMORS);
+  }
+
+  _commsPostings(station) {
+    const board = missions.generateBoard(this.state, station.record || station);
+    return board.length;
   }
 
   jumpTo(toId) {

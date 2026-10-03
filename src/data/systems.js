@@ -409,7 +409,7 @@ export const SYSTEMS = {
     star: { color: 0xff8a5a, size: 80 },
     theme: { bg: 0x0d0704, nebula: [0x6a3416, 0x3a1e0e] },
     tech: 4, gov: 'reaver',
-    links: ['coldvane', 'pelican', 'emberlight', 'wreckerbay'],
+    links: ['coldvane', 'pelican', 'emberlight', 'wreckerbay', 'emberdrome'],
     economy: { produces: ['ore'], demands: ['grain', 'medicine', 'textiles'] },
     stations: [
       {
@@ -566,7 +566,7 @@ export const SYSTEMS = {
     star: { color: 0x9a88b8, size: 70 },
     theme: { bg: 0x060608, nebula: [0x3a2a4e, 0x221a30] },
     tech: 6, gov: 'free',
-    links: ['ashfall', 'saintsrest', 'deadmansmile', 'houndstooth', 'glassfall', 'graverest'],
+    links: ['ashfall', 'saintsrest', 'deadmansmile', 'houndstooth', 'glassfall', 'graverest', 'thelists'],
     economy: { produces: ['ice'], demands: ['electronics', 'luxuries'] },
     stations: [
       {
@@ -590,7 +590,7 @@ export const SYSTEMS = {
     star: { color: 0xc08868, size: 55 },
     theme: { bg: 0x060506, nebula: [0x3a2430, 0x201420] },
     tech: 3, gov: 'reaver',
-    links: ['vesper', 'caldera', 'quietus', 'northgate', 'cordon'],
+    links: ['vesper', 'caldera', 'quietus', 'northgate', 'cordon', 'gallowsring'],
     economy: { produces: ['ash'], demands: ['medicine', 'textiles', 'grain'] },
     stations: [
       {
@@ -614,7 +614,7 @@ export const SYSTEMS = {
     star: { color: 0xffb08a, size: 86 },
     theme: { bg: 0x0a0604, nebula: [0x5e2e16, 0x341a0e] },
     tech: 5, gov: 'combine',
-    links: ['meridian', 'northgate', 'deadmansmile', 'glassfall', 'sentinels', 'lattice'],
+    links: ['meridian', 'northgate', 'deadmansmile', 'glassfall', 'sentinels', 'lattice', 'gallowsring'],
     economy: { produces: ['ore'], demands: ['ice', 'grain', 'medicine'] },
     stations: [
       {
@@ -638,7 +638,7 @@ export const SYSTEMS = {
     star: { color: 0xd8f0ff, size: 78 },
     theme: { bg: 0x06080c, nebula: [0x2e4e5e, 0x1c3038] },
     tech: 6, gov: 'free',
-    links: ['ashfall', 'orchard', 'quietus', 'caldera', 'meridian'],
+    links: ['ashfall', 'orchard', 'quietus', 'caldera', 'meridian', 'thelists'],
     economy: { produces: ['luxuries'], demands: ['machinery', 'ore', 'grain'] },
     stations: [
       {
@@ -1339,7 +1339,7 @@ export const SYSTEMS = {
     star: { color: 0xffb08a, size: 74 },
     theme: { bg: 0x0a0604, nebula: [0x4a3428, 0x2c2018] },
     tech: 4, gov: 'reaver',
-    links: ['tinderbox', 'emberlight', 'pelican'],
+    links: ['tinderbox', 'emberlight', 'pelican', 'emberdrome'],
     economy: { produces: ['ash'], demands: ['machinery', 'medicine'] },
     stations: [
       {
@@ -1356,6 +1356,91 @@ export const SYSTEMS = {
     asteroids: { count: 70, dist: 1500, spread: 540 },
     danger: { pirates: 0.8, navy: 0.1 },
     desc: 'The Clans\' wrecker bay on the inner edge of their space. Wrecks come in, warships go out.',
+  },
+
+  /* ------------------------------------------------------------------ */
+  /* The melee systems.                                                  */
+  /*                                                                     */
+  /* Old arenas, prison circuits and cinder rings where the lanes settle */
+  /* their arguments in the open. One station, no patrols, no law: every */
+  /* hull in the sky is a contender, and nothing that happens inside      */
+  /* these orbits follows a captain home. `melee: true` is read by        */
+  /* universe.js — it spawns contenders instead of traffic, makes every   */
+  /* ship hostile to every other, and suspends karma and reputation for   */
+  /* anything done to a hull that is under way in here.                   */
+  /* ------------------------------------------------------------------ */
+
+  thelists: {
+    id: 'thelists', name: 'The Lists', tagline: 'Sanctioned blood sport',
+    star: { color: 0xff9a6a, size: 76 },
+    theme: { bg: 0x0c0508, nebula: [0x5e2a3a, 0x2a1420] },
+    tech: 4, gov: 'free', melee: true,
+    links: ['quietus', 'glassfall'],
+    economy: { produces: ['ore'], demands: ['medicine', 'luxuries', 'wine'] },
+    stations: [
+      {
+        id: 'thelists-crosstree', name: 'Crosstree', type: 'haven', owner: 'free',
+        services: ['trade', 'refuel', 'bar', 'mechanic', 'shipyard'],
+        dist: 620, angle: 0.9,
+        desc: 'A ring of scaffolds and betting boards. The book is kept on paper, the winners are paid in cash, and the wounded are patched for a fee.',
+      },
+    ],
+    planets: [
+      { name: 'The Lists', radius: 72, dist: 900, angle: 3.0, color: 0x8a5a4a, type: 'rocky' },
+      { name: 'Booth', radius: 24, dist: 1180, angle: 5.2, color: 0x9a9a9a, type: 'moon' },
+    ],
+    asteroids: { count: 110, dist: 1450, spread: 620 },
+    danger: { pirates: 1, navy: 0 },
+    desc: 'A hollow belt of scaffold platforms where captains settle scores in the open. Bring a hull, declare a name, and nobody asks why. What happens in the ropes stays in the ropes — the bookmaker sees to it.',
+  },
+
+  gallowsring: {
+    id: 'gallowsring', name: 'Gallows Ring', tagline: 'The old prison circuit',
+    star: { color: 0xc8d0e0, size: 62 },
+    theme: { bg: 0x06080c, nebula: [0x2e3a4e, 0x1a2028] },
+    tech: 3, gov: 'free', melee: true,
+    links: ['deadmansmile', 'caldera'],
+    economy: { produces: ['ice'], demands: ['medicine', 'grain', 'machinery'] },
+    stations: [
+      {
+        id: 'gallowsring-wardens', name: "Warden's Rest", type: 'bastion', owner: 'free',
+        services: ['trade', 'refuel', 'bar', 'mechanic'],
+        dist: 680, angle: 2.4,
+        desc: 'The last block of a decommissioned prison ring. The cells hold cargo now, and the exercise yard is a duelling floor.',
+      },
+    ],
+    planets: [
+      { name: 'Gallows', radius: 66, dist: 880, angle: 1.2, color: 0x6a6a72, type: 'rocky' },
+      { name: 'Rope', radius: 22, dist: 1150, angle: 4.6, color: 0x8a8a8a, type: 'moon' },
+    ],
+    asteroids: { count: 80, dist: 1520, spread: 560 },
+    danger: { pirates: 1, navy: 0 },
+    desc: 'A dead prison ring the Watch abandoned and nobody claimed. Wardens are gone; the rules they left behind are not. Contenders fly in from both marches to fight where no flag keeps a file.',
+  },
+
+  emberdrome: {
+    id: 'emberdrome', name: 'Emberdrome', tagline: 'Cinders and grudges',
+    star: { color: 0xff8a4a, size: 88 },
+    theme: { bg: 0x0b0402, nebula: [0x6a2c14, 0x301408] },
+    tech: 5, gov: 'free', melee: true,
+    links: ['wreckerbay', 'tinderbox'],
+    economy: { produces: ['ash', 'machinery'], demands: ['medicine', 'ice', 'grain'] },
+    stations: [
+      {
+        id: 'emberdrome-cinder', name: 'Cinder Gate', type: 'spacedock', owner: 'free',
+        parent: 'Emberdrome',
+        services: ['trade', 'refuel', 'bar', 'mechanic', 'shipyard'],
+        dist: 700, angle: 1.6,
+        desc: 'A dock hung over a molten hemisphere, built from the hulls that lost. Its yards will sell you a hull and bet against you in the same breath.',
+      },
+    ],
+    planets: [
+      { name: 'Emberdrome', radius: 92, dist: 900, angle: 1.6, color: 0xa8482a, type: 'molten' },
+      { name: 'Slag', radius: 25, dist: 1200, angle: 4.1, color: 0x7a6a5a, type: 'moon' },
+    ],
+    asteroids: { count: 65, dist: 1560, spread: 500 },
+    danger: { pirates: 1, navy: 0 },
+    desc: 'A cinder world with a ring of scaffold duelling floors, run by whoever last won them. The Clans send their arguments here to be settled in the ash.',
   },
 };
 

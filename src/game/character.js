@@ -6,11 +6,12 @@ import { BACKGROUNDS, BACKGROUND_BY_ID, DRIVES, DRIVE_BY_ID } from '../data/back
 import { OUTFIT_BY_ID } from '../data/outfits.js';
 import { WEAPON_BY_ID } from '../data/weapons.js';
 import { COMMODITY_BY_ID } from '../data/commodities.js';
+import { SKILL_BY_ID } from '../data/skills.js';
 import { clamp } from '../core/util.js';
 
 export { BACKGROUNDS, BACKGROUND_BY_ID, DRIVES, DRIVE_BY_ID };
 
-const REP_NAMES = { vigil: 'Vigil', combine: 'Combine', reaver: 'Reavers', free: 'Free ports' };
+const REP_NAMES = { vigil: 'Vigil', combine: 'Combine', reaver: 'Reavers', free: 'Free ports', kreth: 'Kreth Houses' };
 
 /** Short human-readable list of what a perk block grants. */
 export function describePerks(perks = {}) {
@@ -25,6 +26,11 @@ export function describePerks(perks = {}) {
     for (const [id, qty] of Object.entries(perks.cargo)) out.push(`${qty}× ${COMMODITY_BY_ID[id]?.name || id}`);
   }
   if (perks.weapons) out.push(`${WEAPON_BY_ID[perks.weapons.id]?.name || perks.weapons.id} fitted`);
+  if (perks.skills) {
+    for (const [id, rank] of Object.entries(perks.skills)) {
+      out.push(`${SKILL_BY_ID[id]?.name || id} rank ${rank}`);
+    }
+  }
   if (perks.rep) {
     for (const [faction, amount] of Object.entries(perks.rep)) {
       out.push(`${REP_NAMES[faction] || faction} ${amount > 0 ? '+' : ''}${amount}`);
@@ -49,6 +55,11 @@ function applyPerks(state, perks = {}) {
   if (perks.weapons) {
     state.weapons[perks.weapons.slot] = perks.weapons.id;
     if (perks.weapons.ammo) state.ammo[perks.weapons.id] = (state.ammo[perks.weapons.id] || 0) + perks.weapons.ammo;
+  }
+  if (perks.skills) {
+    for (const [id, rank] of Object.entries(perks.skills)) {
+      state.skills[id] = Math.max(state.skills[id] || 0, rank);
+    }
   }
   if (perks.rep) {
     for (const [faction, amount] of Object.entries(perks.rep)) state.addRep(faction, amount);

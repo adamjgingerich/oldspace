@@ -16,6 +16,7 @@ import { installKeybindButton } from './ui/keys.js';
 import { installVolumeControl } from './ui/volume.js';
 import { installSpeedControl } from './ui/speed.js';
 import { SkillTreeUI, installSkillsButton } from './ui/skilltree.js';
+import { CommsUI } from './ui/comms.js';
 import { installScreenPanels } from './ui/panels.js';
 import { DevMode } from './ui/dev.js';
 import { Backdrop } from './ui/backdrop.js';
@@ -33,8 +34,9 @@ function boot() {
   const computer = new ComputerUI($('#overlays'));
   const planet = new PlanetUI($('#overlays'));
   const skilltree = new SkillTreeUI($('#overlays'));
+  const comms = new CommsUI($('#overlays'));
   const backdrop = new Backdrop(engine);
-  const ui = { toasts, hud, menus, dock, computer, planet, skilltree };
+  const ui = { toasts, hud, menus, dock, computer, planet, skilltree, comms };
   ui.panels = installScreenPanels(hud); // fold / drag the flight-screen panels
   const game = new Game({ engine, ui });
   ui.dev = new DevMode($('#app'), game);

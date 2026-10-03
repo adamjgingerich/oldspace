@@ -59,8 +59,110 @@ export function addXp(state, amount) {
   return { levels, points: levels, level: after };
 }
 
-export function addKarma(state, delta) {
-  state.karma = clamp((state.karma || 0) + delta, -100, 100);
+export function addKarma(state, delta, reason = '') {
+  const before = state.karma || 0;
+  state.karma = clamp(before + delta, -100, 100);
+  const applied = state.karma - before;
+  if (applied !== 0 && reason) {
+    if (!Array.isArray(state.karmaLog)) state.karmaLog = [];
+    state.karmaLog.unshift({ day: state.day, delta: applied, reason, karma: state.karma });
+    if (state.karmaLog.length > 40) state.karmaLog.length = 40;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Deliberate karma: acts, not accidents                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A captain can work on their own name. Every act is a ledger entry with a
+ * price: charity and medicine brighten it, arming raiders and drinking with
+ * them darken it. An act is limited to a few a day and each repeat costs more,
+ * so a reputation is leaned on rather than simply bought.
+ */
+export const KARMA_ACTS = [
+  {
+    id: 'relief', name: 'Fund a relief convoy', delta: 4, base: 8000,
+    blurb: 'Grain, blankets and spare parts to whoever the last raid left short. The clerks file it; the lanes hear it.',
+  },
+  {
+    id: 'triage', name: 'Fly medicine to a fever port', delta: 8, base: 0,
+    cargo: { id: 'medicine', qty: 3 },
+    blurb: 'Three crates of medicine off your own manifest, handed to a port that has none. Costly, and it shows.',
+  },
+  {
+    id: 'wake', name: 'Stand a round at a Clan wake', delta: -4, base: 8000,
+    blurb: 'Drink to the fallen of a raider crew and pay for the room. The Clans approve. The Vigil notes it.',
+  },
+  {
+    id: 'guns', name: 'Sell surplus guns to the Clans', delta: -8, base: 15000,
+    blurb: 'Warheads and plate, no questions, no manifest. It pays well, and it is written down somewhere.',
+  },
+  {
+    id: 'restitution', name: 'Pay restitution', delta: 2, base: 24000, rep: 12,
+    blurb: 'An indemnity to the flag that likes you least, for damage you may or may not have caused. Money, then manners.',
+  },
+];
+
+export const KARMA_ACT_BY_ID = Object.fromEntries(KARMA_ACTS.map((a) => [a.id, a]));
+
+function actCount(state, day, id) {
+  return state.karmaActs?.[day]?.[id] || 0;
+}
+
+/** What the act costs today: repeats within the day get dearer. */
+export function karmaActCost(state, act) {
+  const n = actCount(state, state.day, act.id);
+  return Math.round((act.base || 0) * (1 + n * 0.55));
+}
+
+/** The faction restitution would pay off: whoever likes you least. */
+export function karmaActFaction(state, act) {
+  if (!act.rep) return null;
+  let worst = null;
+  let worstRep = Infinity;
+  for (const id of Object.keys(FACTIONS)) {
+    const r = state.rep?.[id] ?? 0;
+    if (r < worstRep) { worstRep = r; worst = id; }
+  }
+  return worst;
+}
+
+/** Why an act cannot be done right now — or null if it can. */
+export function karmaActBlock(state, actId) {
+  const act = KARMA_ACT_BY_ID[actId];
+  if (!act) return 'Unknown act.';
+  if (actCount(state, state.day, act.id) >= 3) return 'That is enough of that for one day.';
+  const cost = karmaActCost(state, act);
+  if (cost > (state.credits || 0)) return `Not enough credits — that costs ₡${cost.toLocaleString()}.`;
+  if (act.cargo && (state.cargo?.[act.cargo.id] || 0) < act.cargo.qty) {
+    return `You would need ${act.cargo.qty} × ${act.cargo.id} in the hold.`;
+  }
+  if (act.delta > 0 && (state.karma || 0) >= 100) return 'Your name cannot get any cleaner.';
+  if (act.delta < 0 && (state.karma || 0) <= -100) return 'Your name cannot get any blacker.';
+  return null;
+}
+
+/** Do the act, pay for it, and log it. Returns { ok, error?, text? }. */
+export function doKarmaAct(state, actId) {
+  const act = KARMA_ACT_BY_ID[actId];
+  if (!act) return { ok: false, error: 'Unknown act.' };
+  const block = karmaActBlock(state, actId);
+  if (block) return { ok: false, error: block };
+  const cost = karmaActCost(state, act);
+  if (cost > 0) state.addCredits(-cost);
+  if (act.cargo) state.removeCargo(act.cargo.id, act.cargo.qty);
+  state.karmaActs = state.karmaActs || {};
+  // only the last few days are ever consulted
+  for (const key of Object.keys(state.karmaActs)) {
+    if (Number(key) < state.day - 3) delete state.karmaActs[key];
+  }
+  const day = (state.karmaActs[state.day] = state.karmaActs[state.day] || {});
+  day[act.id] = (day[act.id] || 0) + 1;
+  const fid = karmaActFaction(state, act);
+  if (fid) state.addRep(fid, act.rep);
+  addKarma(state, act.delta, act.name.toLowerCase());
+  return { ok: true, karma: state.karma, text: `${act.name} — karma ${state.karma >= 0 ? '+' : ''}${state.karma}.` };
 }
 
 export function karmaLabel(karma) {

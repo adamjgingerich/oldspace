@@ -5,6 +5,7 @@ import { buildShip, factionColor } from '../core/meshes.js';
 import { glowSprite } from '../core/fx.js';
 import { clamp, wrapAngle } from '../core/util.js';
 import { SHIP_BY_ID } from '../data/ships.js';
+import { DEFAULT_SHIELD_TYPE, applyShieldProfile, shieldProfile, shieldTypeFor } from '../data/shields.js';
 
 /**
  * Engine burst (hold Shift): extra forward thrust for a short burn, with a
@@ -12,6 +13,21 @@ import { SHIP_BY_ID } from '../data/ships.js';
  * so the tank cannot be stuttered at zero.
  */
 export const BURST = { duration: 1.8, recharge: 6.5, rearm: 0.3, accel: 1.4 };
+
+/**
+ * Disruptor snares. A snare coil does nothing to a raised lattice — three
+ * clean hits on an unshielded hull put the drives, guns and helm to sleep for
+ * DISABLE_TIME. A hull that shakes a snare off is briefly immune, so nobody
+ * can be locked down forever.
+ */
+export const DISRUPT_NEED = 3;
+export const DISABLE_TIME = 9;
+/**
+ * A snared hull with you aboard reboots faster: the crew is motivated. Nine
+ * seconds of dead stick is fair for a prize; it is a death sentence in a ring.
+ */
+export const PLAYER_DISABLE_TIME = 5;
+export const DISRUPT_IMMUNITY = 8;
 
 /**
  * Wake styles — every hull design trails the lanes its own way. The style is
@@ -35,8 +51,8 @@ function wakeStyleFor(def) {
   return ['steady', 'long', 'pulse', 'heavy', 'steady', 'long', 'heavy', 'pulse'][h % 8];
 }
 
-export function baseStats(def) {
-  return {
+export function baseStats(def, { faction = 'free', role = 'neutral', shieldType = null } = {}) {
+  return applyShieldProfile({
     hull: def.hull,
     shield: def.shield,
     shieldRegen: def.shieldRegen,
@@ -50,17 +66,18 @@ export function baseStats(def) {
     lumenMax: 6,
     radar: 1400,
     armorRegen: 0,
-  };
+  }, shieldType || shieldTypeFor(def, faction, role));
 }
 
 export class Ship {
   constructor({
     def, stats, scene, x = 0, z = 0, heading = 0, faction = 'free',
-    isPlayer = false, name = '', role = 'neutral', loadout = null,
+    isPlayer = false, name = '', role = 'neutral', loadout = null, shieldType = null,
   }) {
     this.def = def;
-    this.stats = stats || baseStats(def);
+    this.stats = stats || baseStats(def, { faction, role, shieldType });
     this.scene = scene;
+    this.shipProfile = shieldProfile(this.stats.shieldType || DEFAULT_SHIELD_TYPE);
     this.isPlayer = isPlayer;
     this.faction = faction;
     this.name = name || def.name;
@@ -73,10 +90,23 @@ export class Ship {
     this.api = api;
     scene.add(group);
 
-    // shield bubble glow
-    this.shieldGlow = glowSprite(0x6fd8ff, def.len * 2.6);
+    // shield bubble glow — tinted by the lattice the hull actually flies
+    this.shieldGlow = glowSprite(this.shipProfile.color, def.len * 2.6);
     this.shieldGlow.material.opacity = 0;
     group.add(this.shieldGlow);
+
+    // hull glow — a wound sheen that only appears once the plating is opened
+    this.hullGlow = glowSprite(0xff7040, def.len * 2.1);
+    this.hullGlow.material.opacity = 0;
+    this.hullGlow.visible = false;
+    group.add(this.hullGlow);
+
+    // snare glow — the cold violet crackle of a snared drive
+    this.snareGlow = glowSprite(0xb08cff, def.len * 3);
+    this.snareGlow.material.opacity = 0;
+    this.snareGlow.visible = false;
+    group.add(this.snareGlow);
+    this._snarePhase = Math.random() * Math.PI * 2;
 
     // enemy halo — a soft light-red sheen worn while this hull is hostile
     this.hostileGlow = glowSprite(0xff6a6a, def.len * 3.1);
@@ -110,6 +140,13 @@ export class Ship {
     this.shieldRegenDelay = 0;
     this.alive = true;
     this.despawn = false;
+
+    // disruptor state: charge carries between hits, a snare stops the ship dead
+    this.disabled = false;
+    this.disableTimer = 0;
+    this.disruptCharge = 0;
+    this.disruptImmune = 0;
+    this._shieldFlashT = 0;
     this.wakeStyle = wakeStyleFor(def);
     this._trailTimer = 0;
     this._pulseTimer = Math.random() * 0.9;
@@ -137,6 +174,26 @@ export class Ship {
   update(dt, fx) {
     if (!this.alive) return;
     const st = this.stats;
+
+    // --- snare timers ---
+    if (this.disruptImmune > 0) this.disruptImmune = Math.max(0, this.disruptImmune - dt);
+    if (this._shieldFlashT > 0) this._shieldFlashT = Math.max(0, this._shieldFlashT - dt);
+    if (this.disabled) {
+      this.disableTimer -= dt;
+      if (this.disableTimer <= 0) this.recover();
+    } else if (this.disruptCharge > 0) {
+      // the charge leaks away again: a snare only holds a hull whose lattice
+      // has stayed down
+      this.disruptCharge = Math.max(0, this.disruptCharge - dt * 0.55);
+    }
+    const offline = this.disabled;
+    if (offline) {
+      // dead stick — the helm, the drive and the burst are all somebody else's
+      this.throttleCmd = 0;
+      this.brakeCmd = 0;
+      this.turnInput = 0;
+      this.boostInput = false;
+    }
 
     // --- helm ---
     this.heading = wrapAngle(this.heading + this.turnInput * st.turn * dt);
@@ -192,7 +249,7 @@ export class Ship {
     // --- regeneration ---
     this.energy = Math.min(st.energy, this.energy + st.energyRegen * dt);
     this.shieldRegenDelay = Math.max(0, this.shieldRegenDelay - dt);
-    if (this.shieldRegenDelay === 0 && this.shield < st.shield) {
+    if (!offline && this.shieldRegenDelay === 0 && this.shield < st.shield) {
       this.shield = Math.min(st.shield, this.shield + st.shieldRegen * dt);
     }
     if (st.armorRegen > 0 && this.hull < st.hull) {
@@ -287,10 +344,29 @@ export class Ship {
       }
     }
 
-    // shield bubble shimmer
-    const target = this.shield > 0 ? 0.06 : 0;
+    // --- condition sheen: shield, wounds and snare, readable at a glance ---
+    const shieldRatio = st.shield > 0 ? clamp(this.shield / st.shield, 0, 1) : 0;
+    const now = performance.now() * 0.001;
+    const shieldBase = shieldRatio > 0 ? 0.06 + shieldRatio * 0.15 : 0;
+    const shimmer = shieldRatio > 0 ? 0.025 * Math.sin(now * 2 + this._hostilePhase) : 0;
     const cur = this.shieldGlow.material.opacity;
-    this.shieldGlow.material.opacity = Math.max(target, cur - dt * 1.4);
+    this.shieldGlow.visible = shieldRatio > 0;
+    this.shieldGlow.material.opacity = Math.max(shieldBase + shimmer, cur - dt * 1.4);
+
+    // opened plating glows, and a wreck glows a lot
+    const hullRatio = clamp(this.hull / st.hull, 0, 1);
+    const wound = hullRatio < 0.62 ? (1 - hullRatio / 0.62) * 0.32 : 0;
+    this.hullGlow.visible = wound > 0.002;
+    this.hullGlow.material.opacity += (wound - this.hullGlow.material.opacity) * Math.min(1, dt * 4);
+
+    // a snared drive crackles violet until it is shaken off
+    if (offline) {
+      this.snareGlow.visible = true;
+      this.snareGlow.material.opacity = 0.34 + 0.16 * Math.sin(now * 7.5 + this._snarePhase);
+    } else if (this.snareGlow.visible) {
+      this.snareGlow.material.opacity = Math.max(0, this.snareGlow.material.opacity - dt * 1.2);
+      if (this.snareGlow.material.opacity <= 0.01) this.snareGlow.visible = false;
+    }
   }
 
   nosePoint(offset = 0.6) {
@@ -313,7 +389,10 @@ export class Ship {
   }
 
   /**
-   * Apply damage. Shields absorb first; armour takes the rest.
+   * Apply damage. The lattice character decides how much gets through: a
+   * shield absorbs the bulk, `shieldBleed` leaks a little of what it eats,
+   * and `shieldHull` is the fraction of the remainder that carries on to the
+   * plating (1 = the lattice stops everything until it drops).
    * @returns {{destroyed: boolean, shieldHit: boolean, hullHit: number}}
    */
   damage(amount, { fx = null } = {}) {
@@ -326,9 +405,11 @@ export class Ship {
       this.shield -= absorbed;
       remaining -= absorbed;
       shieldHit = absorbed > 0;
-      this.shieldGlow.material.opacity = 0.55;
+      this.shieldGlow.material.opacity = 0.6;
+      this._shieldFlashT = 0.2;
+      remaining = remaining * (1 - (this.stats.shieldHull ?? 1)) + absorbed * (this.stats.shieldBleed ?? 0);
     }
-    this.shieldRegenDelay = 3;
+    this.shieldRegenDelay = this.stats.shieldDelay ?? 3;
     let hullHit = 0;
     if (remaining > 0) {
       hullHit = remaining;
@@ -336,6 +417,57 @@ export class Ship {
     }
     const destroyed = this.hull <= 0;
     return { destroyed, shieldHit, hullHit };
+  }
+
+  /** 0..1 progress towards a snare — what the HUD reads to show the charge. */
+  get snareProgress() {
+    return clamp(this.disruptCharge / DISRUPT_NEED, 0, 1);
+  }
+
+  /**
+   * Feed a disruptor hit into the snare. A raised lattice shrugs the coil off
+   * entirely — the hardshield gate the whole mechanic hangs on — and a hull
+   * that just shook one off is briefly immune.
+   * @returns {{disabled: boolean, held: boolean, immune: boolean, progress: number}}
+   */
+  addDisrupt(power = 1) {
+    const none = { disabled: false, held: false, immune: false, progress: this.snareProgress };
+    if (!this.alive || this.disabled) return none;
+    if (this.shield > 0) return { ...none, held: true };
+    if (this.disruptImmune > 0) return { ...none, immune: true };
+    const resist = this.stats.shieldDisrupt ?? 0;
+    this.disruptCharge += power * (1 - resist);
+    if (this.disruptCharge >= DISRUPT_NEED) {
+      this.snare();
+      return { disabled: true, held: false, immune: false, progress: 1 };
+    }
+    return { disabled: false, held: false, immune: false, progress: this.snareProgress };
+  }
+
+  /** Stop the ship: drives, guns and helm all go quiet. */
+  snare() {
+    this.disabled = true;
+    this.disableTimer = this.isPlayer ? PLAYER_DISABLE_TIME : DISABLE_TIME;
+    this.disruptCharge = 0;
+    this.throttleCmd = 0;
+    this.brakeCmd = 0;
+    this.turnInput = 0;
+    this.boostInput = false;
+    this.boostActive = false;
+    this.shieldRegenDelay = Math.max(this.shieldRegenDelay, DISABLE_TIME);
+    // a snared hull is out of the fight — nobody shoots a drifting wreck
+    this.aggroed = false;
+    this.hunting = false;
+    if (this.ai) this.ai.state = 'idle';
+  }
+
+  /** Shake the snare off: controls return, with a short immunity to follow. */
+  recover() {
+    this.disabled = false;
+    this.disableTimer = 0;
+    this.disruptCharge = 0;
+    this.disruptImmune = DISRUPT_IMMUNITY;
+    this.shieldRegenDelay = Math.max(this.shieldRegenDelay, 1.5);
   }
 
   destroy(fx) {

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { buildStarfield, buildNebula } from '../core/starfield.js';
 import { buildShip, buildStation, buildPlanet } from '../core/meshes.js';
 import { glowSprite } from '../core/fx.js';
+import { applyEnvironment } from '../core/materials.js';
 import { SHIP_BY_ID } from '../data/ships.js';
 import { FACTIONS } from '../data/factions.js';
 
@@ -30,6 +31,7 @@ export class Backdrop {
 
     this.scene.add(buildStarfield({ count: 3400, radius: 14000 }));
     this.scene.add(buildNebula(0x2c5480, 0x3c2a52));
+    applyEnvironment(this.scene, this.engine.renderer);
 
     // --- distant scenery: star, planet, station ---
     const star = glowSprite(0xffd9a0, 3200);
