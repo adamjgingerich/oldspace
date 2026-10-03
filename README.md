@@ -10,6 +10,17 @@ stations, sounds and systems here are original procedural work — no assets.
 
 ---
 
+## Play it
+
+No install needed — the game runs entirely in your browser:
+
+**https://adamjgingerich.github.io/oldspace/**
+
+Deployed automatically from the `main` branch to GitHub Pages. To run it
+locally instead, see Quick start below.
+
+---
+
 ## Quick start
 
 ```bash
