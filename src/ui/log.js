@@ -1,0 +1,249 @@
+// Ship's log & codex: mission details, career record and data-bank briefs
+// on every system, planet, station and hull in the lanes. Rendered both in
+// the star-chart overlay and (reduced) as a dock tab.
+
+import { el } from './dom.js';
+import { SYSTEMS } from '../data/systems.js';
+import { SHIPS } from '../data/ships.js';
+import { FACTIONS } from '../data/factions.js';
+import { formatDeadline } from '../core/util.js';
+import { planetInfo, formatPopulation } from '../game/planetSurvey.js';
+import { levelFromXp, karmaLabel } from '../game/skills.js';
+import { MISSION_TAGS, tierStars, missionProgress } from '../game/missions.js';
+import { STORY_LINES, ensureStory } from '../game/story.js';
+import { SIDE_BY_ID } from '../game/sidequests.js';
+
+const kv = (k, v, color = null) => el('div', { class: 'kv' }, [
+  el('span', { text: k }),
+  el('b', { style: color ? `color:${color}` : '', text: String(v) }),
+]);
+
+function section(title, note = null) {
+  const s = el('div', { class: 'panel' }, [el('h2', { text: title })]);
+  if (note) s.append(el('p', { class: 'note', text: note }));
+  return s;
+}
+
+/* ------------------------------------------------------------------ */
+/* Mission log                                                        */
+/* ------------------------------------------------------------------ */
+
+export function missionCard(state, m) {
+  const line = m.story ? STORY_LINES[m.story.line] : null;
+  const sideQ = m.side ? SIDE_BY_ID[m.side.group] : null;
+  const tag = line ? `${line.name} · CH ${m.story.chapter}`
+    : sideQ ? `${sideQ.name} · step ${m.side.step + 1}/${sideQ.steps.length}`
+      : (MISSION_TAGS[m.type] || 'CONTRACT');
+  const attrs = { class: `mission ${m.type}` };
+  if (line) attrs.style = `--mcol: ${line.color}`;
+  else if (sideQ) attrs.style = `--mcol: ${sideQ.color}`;
+  const issuerSys = SYSTEMS[m.issuer?.systemId];
+  const card = el('div', attrs, [
+    el('div', {
+      class: 'mtag',
+      html: `${tag} · ${tierStars(m.tier)}${m.urgent ? ' · <span class="urgent">URGENT</span>' : ''} · ${formatDeadline(m.deadlineDay, state.day)}`,
+    }),
+    el('h4', { text: m.title }),
+    el('div', { class: 'mwhere' }, [
+      el('span', { class: 'mdest', text: `▸ ${SYSTEMS[m.dest.systemId]?.name || '—'}` }),
+      el('span', { class: 'note', text: `issued at ${issuerSys ? issuerSys.name : '—'} · fee ₡${m.reward.toLocaleString()}` }),
+    ]),
+    el('p', { text: m.desc }),
+  ]);
+  const prog = missionProgress(m);
+  if (prog) card.append(el('p', { class: 'note', style: 'color: var(--mcol, #8fd0ff)', text: prog }));
+  if (m.cargoLoaded) card.append(el('p', { class: 'note', text: `In the hold: ${m.cargoLoaded.qty} × ${m.cargoLoaded.id}` }));
+  return card;
+}
+
+/* ------------------------------------------------------------------ */
+/* Codex                                                              */
+/* ------------------------------------------------------------------ */
+
+function systemCard(id, sys) {
+  const card = el('div', { class: 'panel', style: 'margin-bottom:10px' }, [
+    el('h3', { text: `${sys.name} — ${sys.tagline}` }),
+    kv('Government', FACTIONS[sys.gov]?.name || sys.gov),
+    kv('Tech level', sys.tech),
+    kv('Pirate activity', `${Math.round(sys.danger.pirates * 100)}%`),
+    kv('Vigil presence', `${Math.round(sys.danger.navy * 100)}%`),
+    el('p', { class: 'note', text: sys.desc }),
+    el('p', {
+      class: 'note',
+      text: `Berths: ${sys.stations.map((s) => s.name).join(' · ')}`,
+    }),
+    el('p', {
+      class: 'note',
+      text: `Worlds: ${sys.planets.map((p) => p.name).join(' · ')}`,
+    }),
+  ]);
+  return card;
+}
+
+function planetCard(state, rec) {
+  const info = planetInfo(state, rec.name, rec);
+  const surveyed = state.planets?.[rec.name];
+  const card = el('div', { class: 'panel', style: 'margin-bottom:10px' }, [
+    el('h3', {}, [
+      rec.name,
+      el('span', { class: 'chip', style: `margin-left:8px${surveyed ? ';color:#63ffc0' : ''}`, text: surveyed ? 'surveyed' : 'unsurveyed' }),
+    ]),
+    el('p', { class: 'note', text: `${info.typeLabel} · pop ${formatPopulation(info.population)} · ${info.gravity}g · ${info.atmosphere}` }),
+    el('p', { class: 'note', text: `Resources: ${info.resources.join(', ')}` }),
+    el('p', { style: 'font-size:12px', text: info.flavor }),
+  ]);
+  return card;
+}
+
+function stationCard(sys, stn) {
+  return el('div', { class: 'panel', style: 'margin-bottom:10px' }, [
+    el('h3', { text: stn.name }),
+    el('p', { class: 'note', text: `${stn.type} · ${FACTIONS[stn.owner]?.name || stn.owner} · ${sys.name}` }),
+    el('p', { style: 'font-size:12px', text: stn.desc || 'No public record — the berth keeps its own books.' }),
+    el('p', { class: 'note', text: `Services: ${stn.services.join(', ')}` }),
+  ]);
+}
+
+function acquisitionText(def, unlocked) {
+  if (def.capture) {
+    return 'Prize only — force a crew flying this hull to strike its colours, then claim the hulk in flight (C). Never sold anywhere.';
+  }
+  if (def.unique) {
+    const line = STORY_LINES[def.unique];
+    if (line) return `Licensed — walk the ${line.name} story path, then order one at a shipyard.`;
+    const chain = SIDE_BY_ID[def.unique];
+    if (chain) return `Won — finish the “${chain.name}” chain, then order one at a shipyard.`;
+    return 'Licensed — earned through a story path, then order one at a shipyard.';
+  }
+  if (def.yards) {
+    const where = def.yards.map((id) => SYSTEMS[id]?.name || id).join(' and ');
+    return `Built to order — stocked only at the ${where} yards.`;
+  }
+  return `On sale at shipyards with tech ${def.minTech || 0} or better.`;
+}
+
+function shipCard(def, state, unlocked) {
+  const known = unlocked.has(def.id) || !!state.sighted?.[def.id] || state.shipId === def.id;
+  if (!known) {
+    return el('div', { class: 'panel', style: 'margin-bottom:10px;opacity:0.7' }, [
+      el('h3', { text: 'Unrecorded hull' }),
+      el('p', { class: 'note', text: 'No sighting on record. Something flies this design out in the lanes — see it on patrol, in a shipyard’s slips, or over a prize crew’s shoulder, and the codex fills in.' }),
+    ]);
+  }
+  const price = def.capture ? 'not for sale — prize only'
+    : def.price ? `₡${def.price.toLocaleString()}` : 'issued to new pilots';
+  const sight = state.sighted?.[def.id];
+  const chip = def.unique && unlocked.has(def.id)
+    ? el('span', { class: 'chip', style: 'margin-left:8px;color:#ffd166', text: 'licensed' })
+    : def.capture ? el('span', { class: 'chip', style: 'margin-left:8px;color:#ff9a70', text: 'prize ship' }) : null;
+  const card = el('div', { class: 'panel', style: 'margin-bottom:10px' }, [
+    el('h3', {}, [def.name, chip]),
+    kv('Class', def.cls),
+    kv('Price', price),
+    kv('Acquired', acquisitionText(def, unlocked)),
+    kv('Hull / Shield', `${def.hull} / ${def.shield}`),
+    kv('Mounts (max) / bays (max)', `${def.mounts ?? 2} (${def.maxMounts ?? def.mounts ?? 2}) / ${def.bays ?? 0} (${def.maxBays ?? def.bays ?? 0})`),
+    kv('Hold', `${def.cargo}t`),
+    sight ? kv('First sighted', `day ${sight.day} · ${SYSTEMS[sight.systemId]?.name || sight.systemId}`) : null,
+    el('p', { style: 'font-size:12px', text: def.desc }),
+  ]);
+  return card;
+}
+
+/* ------------------------------------------------------------------ */
+/* Builder                                                            */
+/* ------------------------------------------------------------------ */
+
+export function buildLog(state, { style = '', missionLog = true } = {}) {
+  const wrap = el('div', {
+    class: 'logwrap',
+    style: `display:flex;flex-direction:column;gap:14px;overflow:auto;padding-right:8px;${style}`,
+  });
+
+  // ---- active contracts ----
+  if (missionLog) {
+    const missionsSec = section('Mission log', state.missions.length
+      ? 'Everything on your manifest, with full briefs. Jobs can be dropped from the missions menu or the contracts board.'
+      : 'Nothing signed right now. Boards at station bars and the missions menu carry work.');
+    if (state.missions.length) {
+      for (const m of state.missions) missionsSec.append(missionCard(state, m));
+    } else {
+      missionsSec.append(el('p', { class: 'note', text: '— manifest empty —' }));
+    }
+    missionsSec.append(el('p', {
+      class: 'note',
+      text: `Completed ${state.missionsDone || 0} · failed ${state.missionsFailed || 0} · day ${state.day}`,
+    }));
+    wrap.append(missionsSec);
+  }
+
+  // ---- story paths ----
+  const storySec = section('Story paths', 'Three lines run through the Ten. The fourth chapter of any line is an oath; taking one closes the others.');
+  const s = ensureStory(state);
+  for (const line of Object.values(STORY_LINES)) {
+    const rank = s.rank[line.id] || 0;
+    const pips = Array.from({ length: line.chapters.length }, (_, i) => (i < rank ? '●' : '○')).join(' ');
+    const closed = s.oath && s.oath !== line.id;
+    const done = rank >= line.chapters.length;
+    const status = closed ? 'path closed' : done ? 'finished' : rank ? `chapter ${rank} of ${line.chapters.length} done` : 'not started';
+    const box = el('div', { style: `border-left:3px solid ${line.color};padding-left:10px;margin:8px 0` }, [
+      el('div', { class: 'kv' }, [
+        el('span', { style: `color:${line.color}`, text: `${line.name}  ${pips}` }),
+        el('b', { text: status }),
+      ]),
+      el('p', { class: 'note', text: closed ? 'The oath you swore closed this path — its remaining chapters will never be offered.' : line.blurb }),
+    ]);
+    storySec.append(box);
+  }
+  wrap.append(storySec);
+
+  // ---- captain's record ----
+  const rec = section("Captain's record");
+  const lvl = levelFromXp(state.xp || 0);
+  rec.append(
+    kv('Commander', state.commander),
+    kv('Level / XP', `${lvl} · ${state.xp || 0} xp`),
+    kv('Karma', `${state.karma > 0 ? '+' : ''}${state.karma || 0} — ${karmaLabel(state.karma || 0)}`),
+    kv('Skill points unspent', state.skillPoints || 0),
+    kv('Ship', state.shipName || '—'),
+    kv('Record', `${state.stats.kills} raiders · ${state.stats.navyKills} patrols · ${state.stats.traderKills} traders · ${state.stats.deaths} deaths · ${state.stats.jumps} jumps`),
+    kv('Prizes taken', state.stats.prizes || 0),
+  );
+  const repRow = el('div', { class: 'chips', style: 'margin-top:6px' });
+  for (const [fid, f] of Object.entries(FACTIONS)) {
+    const rep = state.rep[fid] ?? 0;
+    repRow.append(el('span', {
+      class: 'chip',
+      style: `color:${f.color}`,
+      text: `${f.name} ${rep >= 0 ? '+' : ''}${rep}`,
+    }));
+  }
+  rec.append(repRow);
+  wrap.append(rec);
+
+  // ---- codex ----
+  const sysSec = section('Codex · Systems', 'Briefs on every charted system in the Ten and beyond.');
+  for (const [id, sys] of Object.entries(SYSTEMS)) sysSec.append(systemCard(id, sys));
+  wrap.append(sysSec);
+
+  const planetSec = section('Codex · Planets', 'Dossiers compile from survey data — scan a world up close to file your own.');
+  for (const sys of Object.values(SYSTEMS)) {
+    for (const rec2 of sys.planets) planetSec.append(planetCard(state, rec2));
+  }
+  wrap.append(planetSec);
+
+  const stnSec = section('Codex · Stations');
+  for (const sys of Object.values(SYSTEMS)) {
+    for (const stn of sys.stations) stnSec.append(stationCard(sys, stn));
+  }
+  wrap.append(stnSec);
+
+  const shipSec = section('Codex · Ships', 'Hulls seen in the lanes. Licensed hulls appear in shipyards once their path is walked.');
+  const unlocked = new Set(s.unlocked || []);
+  const seenCount = SHIPS.filter((d) => unlocked.has(d.id) || state.sighted?.[d.id] || state.shipId === d.id).length;
+  shipSec.append(el('p', { class: 'note', text: `Hulls sighted ${seenCount}/${SHIPS.length} — patrol the lanes, visit shipyard slips, and take prizes to fill the ledger.` }));
+  for (const def of SHIPS) shipSec.append(shipCard(def, state, unlocked));
+  wrap.append(shipSec);
+
+  return wrap;
+}
