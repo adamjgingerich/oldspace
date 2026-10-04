@@ -796,6 +796,27 @@ function makeRacer(c, i, isPlayer = false) {
     if (offRoad) fail(`${offRoad} pickups are off the road or of no known kind`);
   }
 
+  // and the lobby reads the track as a sentence rather than a tally: every
+  // feature the chute has, nothing at all about the ones it does not, and never
+  // a plural with a one in front of it
+  {
+    const c = makeChute(1, 5);
+    for (const tier of [1, 3, 6, 9]) {
+      c.tier = tier;
+      c._planKey = null;
+      const read = c._chuteRead();
+      const plan = c._chutePlan();
+      if (/(^|· )0 /.test(read)) fail(`the chute read-out tallies nothing: "${read}"`);
+      if (/(^|· )1 \w+s( ·|$)/.test(read)) fail(`the chute read-out pluralises a one: "${read}"`);
+      if (!read.startsWith(`${CHUTE_SPEC.rivals + 1} flying`)) fail(`the chute read-out does not say how many are flying: "${read}"`);
+      if (!read.includes(`${plan.gates.length} gates`)) fail(`the chute read-out hides its gates: "${read}"`);
+      if (!read.includes(`${plan.stars.length} stars`)) fail(`the chute read-out hides its stars: "${read}"`);
+    }
+    // and the checks themselves catch the read-out they replaced
+    if (!/(^|· )0 /.test('6 flying · 7 gates · 0 lane rifts')) fail('the read-out check misses a tally of nothing');
+    if (!/(^|· )1 \w+s( ·|$)/.test('6 flying · 7 gates · 1 splits')) fail('the read-out check misses a plural one');
+  }
+
   // a hit in the chute takes a rival's drive, not its hull
   {
     const g = makeChute(2, 9);

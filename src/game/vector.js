@@ -542,6 +542,7 @@ export class VectorChallenge {
   _showResults(result) {
     clear(this.over);
     const r = this.rec;
+    const gates = this.chute ? this.chute.gates.length : 0;
     const place = ['', 'first', 'second', 'third'][result.place] || `${result.place}th`;
     this.over.append(el('div', { class: 'vec-panel' }, [
       el('h2', { text: result.forfeit ? 'You stepped out' : result.place === 1 ? 'The field is yours' : `You took ${place}` }),
@@ -550,7 +551,7 @@ export class VectorChallenge {
         el('div', { class: 'vec-stat' }, [
           el('span', { class: 'vs-label', text: result.mode === 'chute' ? 'Time' : 'Score' }),
           el('span', { class: 'vs-value', text: result.mode === 'chute' ? `${(result.timeSec || 0).toFixed(1)}s` : String(result.score) }),
-          el('span', { class: 'vs-note', text: result.mode === 'chute' ? `${this.chute ? this.chute.gates.length : 0} gates · ${this.pilots.length} flying` : `circuit best: ${Math.max(r.best || 0, result.score)}` }),
+          el('span', { class: 'vs-note', text: result.mode === 'chute' ? `${gates} gate${gates === 1 ? '' : 's'} · ${this.pilots.length} flying` : `circuit best: ${Math.max(r.best || 0, result.score)}` }),
         ]),
         el('div', { class: 'vec-stat' }, [
           el('span', { class: 'vs-label', text: 'Payout' }),
@@ -2522,12 +2523,27 @@ export class VectorChallenge {
   }
 
   /** A one-line read of the track the rig is about to lay — what is on it. */
+  /**
+   * The track in a sentence rather than a tally: what the rig is about to lay
+   * down, in the order a pilot meets it. Whatever this chute does not have is
+   * left out of the sentence altogether — a read-out of zeroes is not a read.
+   */
   _chuteRead() {
     const p = this._chutePlan();
     const jumps = p.ramps.filter((r) => !r.lane).length;
     const rifts = p.ramps.filter((r) => r.lane).length;
-    const field = CHUTE.rivals + 1;
-    return `${field} flying · ${p.gates.length} gates · ${jumps} jumps · ${p.forks.length} splits · ${rifts} lane rifts · ${p.pinches.length} squeezes · ${p.stars.length} stars · ${p.pads.length - p.stars.length} plates`;
+    const bits = [
+      [p.gates.length, 'gate'],
+      [jumps, 'jump'],
+      [p.forks.length, 'split'],
+      [rifts, 'lane rift'],
+      [p.pinches.length, 'squeeze'],
+      [p.stars.length, 'star'],
+      [p.pads.length - p.stars.length, 'plate'],
+    ]
+      .filter(([n]) => n > 0)
+      .map(([n, what]) => `${n} ${what}${n === 1 ? '' : 's'}`);
+    return `${CHUTE.rivals + 1} flying · ${bits.join(' · ')}`;
   }
 
   /**
