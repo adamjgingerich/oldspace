@@ -2061,7 +2061,10 @@ export class Game {
 
   closeVectorChallenge() {
     if (this.mode !== 'challenge') return;
-    // the sim tears its own rig down in quit(); here the world simply resumes
+    // quit() is idempotent and owns the teardown (overlay, listeners, GL
+    // context); it re-enters here through onQuit, which is why the guard above
+    // and the flag inside quit() both matter.
+    this.challenge?.quit();
     this.challenge = null;
     this.mode = this._preChallengeMode === 'docked' ? 'docked' : 'flight';
     input.enabled = true;

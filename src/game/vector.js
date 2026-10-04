@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import { buildShip } from '../core/meshes.js';
 import { glowSprite } from '../core/fx.js';
 import { SHIP_BY_ID, SHIPS } from '../data/ships.js';
+import { computeStats } from './state.js';
 import { audio } from '../core/audio.js';
 import { rngOf } from '../core/rng.js';
 import { clamp } from '../core/util.js';
@@ -516,11 +517,17 @@ export class VectorChallenge {
   _makePilot(i, isPlayer) {
     const def = SHIP_BY_ID[this._pilotShipId(i)] || SHIP_BY_ID.wayfarer;
     const color = isPlayer ? PLAYER_COLOR : AI_COLORS[(i - 1) % AI_COLORS.length];
-    const { group, api } = buildShip(def, {
-      accent: color,
-      isPlayer,
-      loadout: { weapons: def.defaultWeapons || ['pulse', null] },
-    });
+    // the sim reads your registry: your hull, your guns, your rigging. Rivals
+    // fly their own hull's standard fit.
+    const loadout = isPlayer
+      ? {
+        weapons: this.state.weapons || def.defaultWeapons,
+        outfits: this.state.outfits || {},
+        mountCap: computeStats(this.state).mounts,
+        showEmpty: true,
+      }
+      : { weapons: def.defaultWeapons || ['pulse', null] };
+    const { group, api } = buildShip(def, { accent: color, isPlayer, loadout });
     vectorize(group, color);
     const s = clamp(26 / Math.max(14, def.len), 0.3, 1.5);
     group.scale.setScalar(s);
@@ -765,7 +772,9 @@ export class VectorChallenge {
 
       const g = this.groundAt(p.x, p.z);
       p.group.position.set(p.x, g + p.y + 6 + Math.sin(this.t * 2.2 + p.wobble) * 1.2, p.z);
-      p.group.rotation.y = -p.heading;
+      // nose is +Z, forward is (sin h, cos h) — the same convention the lanes
+      // use, so the helm turns the way the nose points
+      p.group.rotation.y = p.heading;
       p.api.pulse(this.t);
       p.api.setThrottle(clamp(p.speed / 200, 0.08, 1));
     }
@@ -793,9 +802,13 @@ export class VectorChallenge {
   /* ------------------------------------------------------------------ */
 
   _playerStep(p, dt) {
+    // The helm's own mapping is written for the top-down lane view. This rig
+    // looks over the hull's shoulder instead, so starboard — forward crossed
+    // with up — turns clockwise on screen: a right-hand input has to walk the
+    // heading down, or the nose swings the wrong way.
     let turn = 0;
-    if (this._keys.has('KeyA') || this._keys.has('ArrowLeft')) turn -= 1;
-    if (this._keys.has('KeyD') || this._keys.has('ArrowRight')) turn += 1;
+    if (this._keys.has('KeyA') || this._keys.has('ArrowLeft')) turn += 1; // to port
+    if (this._keys.has('KeyD') || this._keys.has('ArrowRight')) turn -= 1; // to starboard
     p.heading += turn * 2.7 * dt;
     const accel = p.boost > 0 ? 400 : 240;
     if (this._keys.has('KeyW') || this._keys.has('ArrowUp')) p.speed += accel * dt;
@@ -899,7 +912,7 @@ export class VectorChallenge {
     mesh.material.color.setHex(p.isPlayer ? PLAYER_COLOR : p.color);
     const groundY = this.groundAt(p.x, p.z) + p.y + 6;
     mesh.position.set(p.x + Math.sin(p.heading) * 14, groundY + 2, p.z + Math.cos(p.heading) * 14);
-    mesh.rotation.y = -p.heading;
+    mesh.rotation.y = p.heading;
     this.shots.push({ x: p.x, z: p.z, y: groundY + 2, vx, vz, owner: p, life: 1.5, mesh });
     audio.laser(false, 0.5);
   }
