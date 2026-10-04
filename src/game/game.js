@@ -267,6 +267,13 @@ export class Game {
       input.endFrame();
       return;
     }
+    if (this.mode === 'warp') {
+      // the fold plays out in real time; the helm is in somebody else's hands
+      this.universe.update(dt * this.timeScale, dt);
+      this.ui.hud.update(this.hudContext());
+      input.endFrame();
+      return;
+    }
 
     const p = this.universe.player;
     const st = this.state;
@@ -614,7 +621,7 @@ export class Game {
         this.ui.toasts.push(rngOf(st.worldSeed, 'relicopen', m.id).pick(RELIC_OPENED), 'good');
         this.ui.toasts.push(
           `Relic recovered — ${relic.itemName} (band ${['', 'I', 'II', 'III'][relic.band] || 'I'}). `
-          + `The collector pays ₡${paid.toLocaleString()}; any mechanic will fit the find now.`,
+          + `The collector pays ₡${paid.toLocaleString()}; any mechanic will fit the find now.${done.extraNote ? ` · ${done.extraNote}` : ''}`,
           'good',
         );
         st.stats.relics = (st.stats.relics || 0) + 1;
@@ -644,7 +651,7 @@ export class Game {
         if (m) {
           const done = missions.finishMission(this.state, m);
           const paid = done.rewardAwarded ?? done.reward;
-          this.ui.toasts.push(`Contract complete — ${done.title}. +₡${paid.toLocaleString()}`, 'good');
+          this.ui.toasts.push(`Contract complete — ${done.title}. +₡${paid.toLocaleString()}${done.extraNote ? ` · ${done.extraNote}` : ''}`, 'good');
           if (done.outro) this.ui.toasts.push(done.outro, '');
           this._xp(Math.max(10, Math.round(paid / 300)));
           audio.coin();
@@ -669,7 +676,7 @@ export class Game {
           const done = missions.finishMission(this.state, m);
           if (!done) continue;
           const paid = done.rewardAwarded ?? done.reward;
-          this.ui.toasts.push(`Sweep complete — ${done.title}. +₡${paid.toLocaleString()}`, 'good');
+          this.ui.toasts.push(`Sweep complete — ${done.title}. +₡${paid.toLocaleString()}${done.extraNote ? ` · ${done.extraNote}` : ''}`, 'good');
           if (done.outro) this.ui.toasts.push(done.outro, '');
           this._xp(Math.max(10, Math.round(paid / 300)));
           audio.coin();
@@ -1392,8 +1399,8 @@ export class Game {
     st.wormholes[hole.id] = true; // you went through it — it is charted now
     this._xp(6);
     audio.warp();
-    flashWarp();
     this.mode = 'warp';
+    this.universe.beginWarp();
     window.setTimeout(() => {
       const mouth = wormholes.holePos(hole, to);
       const out = Math.atan2(mouth.z, mouth.x);
@@ -1410,7 +1417,7 @@ export class Game {
       this.mode = 'flight';
       this.autosave();
       this.ui.toasts.push(`The hole spits you out at ${SYSTEMS[to].name} — the lanes never saw you coming.`, 'good');
-    }, 650);
+    }, 2050);
   }
 
   /** The Consortium licence: expensive, and it buys commercial transit. */
@@ -1505,7 +1512,7 @@ export class Game {
     const done = missions.finishMission(this.state, m);
     if (done) {
       const paid = done.rewardAwarded ?? done.reward;
-      this.ui.toasts.push(`${done.title} — complete. +₡${paid.toLocaleString()}`, 'good');
+      this.ui.toasts.push(`${done.title} — complete. +₡${paid.toLocaleString()}${done.extraNote ? ` · ${done.extraNote}` : ''}`, 'good');
       if (done.outro) this.ui.toasts.push(done.outro, '');
       this._xp(Math.max(10, Math.round(paid / 300)));
       audio.coin();
@@ -2050,9 +2057,9 @@ export class Game {
     st.stats.jumps++;
     this._xp(8);
     audio.warp();
-    flashWarp();
     this.closeComputer();
     this.mode = 'warp';
+    this.universe.beginWarp();
     window.setTimeout(() => {
       // drop out of warp on the rim facing back home, clear of every field
       const backAngle = laneAngle(toId, st.systemId);
@@ -2073,7 +2080,7 @@ export class Game {
       this.autosave();
       this.ui.toasts.push(`You drop out of warp above ${SYSTEMS[toId].name}.`, 'good');
       this.hint('arrived', 'Dock prompts appear when you slow down near a station.');
-    }, 650);
+    }, 2050);
   }
 
   pause() {

@@ -378,6 +378,7 @@ export function joinFaction(state, factionId) {
   if (!check.ok) return check;
   const old = state.allegiance;
   state.allegiance = factionId;
+  state.factionLine = { faction: factionId, stage: 0 };
   return { ok: true, old };
 }
 
@@ -385,6 +386,7 @@ export function renounceFaction(state) {
   if (!state.allegiance) return { ok: false, error: 'You carry no flag to renounce.' };
   const old = state.allegiance;
   state.allegiance = null;
+  state.factionLine = null;
   state.addRep(old, -10);
   return { ok: true, old };
 }
@@ -402,6 +404,7 @@ export function defectFaction(state, factionId) {
   }
   const old = state.allegiance;
   state.allegiance = factionId;
+  state.factionLine = { faction: factionId, stage: 0 };
   state.addRep(old, DEFECT_REP_COST);
   return { ok: true, old };
 }
@@ -458,6 +461,7 @@ export function brokerDefect(state, factionId) {
   state.addCredits(-BROKER_PAPERS_COST);
   const old = state.allegiance;
   state.allegiance = factionId;
+  state.factionLine = { faction: factionId, stage: 0 };
   if (old) state.addRep(old, Math.round(DEFECT_REP_COST * 0.6)); // quieter than a public defection
   return { ok: true, old };
 }

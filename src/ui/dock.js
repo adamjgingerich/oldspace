@@ -5,6 +5,7 @@ import { buildLog } from './log.js';
 import { ShipViewer } from './shipviewer.js';
 import { SYSTEMS } from '../data/systems.js';
 import { FACTIONS, repLabel, factionLabel, isFaction, FACTION_IDS } from '../data/factions.js';
+import { emblemSVG } from '../core/emblem.js';
 import { COMMODITY_BY_ID } from '../data/commodities.js';
 import { OUTFITS, OUTFIT_BY_ID } from '../data/outfits.js';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons.js';
@@ -204,7 +205,10 @@ export class DockUI {
     clear(this.head);
     const headChildren = [
       el('div', { class: 'stn' }, [
-        station.name,
+        el('div', { class: 'stn-title' }, [
+          isFaction(station.owner) ? el('span', { class: 'emblem', html: emblemSVG(station.owner, 18) }) : null,
+          station.name,
+        ]),
         el('small', { text: `${system.name} · ${station.type} · ${factionLabel(station.owner)}` }),
       ]),
       owner
@@ -931,10 +935,10 @@ export class DockUI {
       panel.append(
         el('div', { class: 'kv' }, [el('span', { text: 'Sworn to' }), el('b', { style: `color:${sworn.color}`, text: sworn.name })]),
         el('div', { class: 'kv' }, [el('span', { text: 'Standing' }), el('b', { text: `${state.rep[state.allegiance] ?? 0}` })]),
-        el('p', { class: 'note', text: `Standing with ${sworn.name} grows 10% faster, their stations post their own work to you, and their skill tree is open. Learned ranks stay if you ever leave.` }),
+        el('p', { class: 'note', html: `The ${sworn.name} line runs stage ${(state.factionLine?.faction === state.allegiance ? state.factionLine.stage : 0) + 1} — the next posting waits at their desks. Standing grows 10% faster, their stations post their own work to you, and their skill tree is open. Learned ranks stay if you ever leave.` }),
       );
     } else {
-      panel.append(el('p', { class: 'note', text: 'Unsworn: every desk deals with you and no flag claims you. Swearing opens a flag\'s own contracts and its skill tree — and closes its rivals\' blades to you.' }));
+      panel.append(el('p', { class: 'note', text: 'Unsworn: every desk deals with you and no flag claims you. Swearing opens a flag\'s own mission line and its skill tree — and closes its rivals\' blades to you.' }));
     }
 
     const standing = brokerStatus(state, 'standing');
@@ -950,7 +954,7 @@ export class DockUI {
         ? (ready ? 'Swear the oath' : `${rep}/${FACTION_ALLEGIANCE_REP} standing`)
         : (rivals ? `Defect — ${f.short}s will take you` : `Defect to ${f.short}s`);
       const row = el('div', { class: 'alleg-row' }, [
-        el('span', { class: 'aname', style: `color:${f.color}`, text: f.name }),
+        el('span', { class: 'aname', style: `color:${f.color}`, html: `${emblemSVG(fid, 16)} ${f.name}` }),
         el('b', { class: 'arep', text: `${rep >= 0 ? '+' : ''}${rep}${here ? ' · this desk' : ''}` }),
       ]);
       const buttons = [];
@@ -1143,9 +1147,11 @@ export class DockUI {
     for (const m of state.missions) {
       const line = m.story ? story.STORY_LINES[m.story.line] : null;
       const sideQ = m.side ? sidequests.SIDE_BY_ID[m.side.group] : null;
+      const fLine = m.line ? FACTIONS[m.line.faction] : null;
       const tag = line ? `${line.name} · CH ${m.story.chapter}`
         : sideQ ? `${sideQ.name} · ${m.side.step + 1}/${sideQ.steps.length}`
-          : (missions.MISSION_TAGS[m.type] || 'CONTRACT');
+          : fLine ? `${fLine.short.toUpperCase()} LINE`
+            : (missions.MISSION_TAGS[m.type] || 'CONTRACT');
       const ready = missions.completionsAt(state, this.ctx.systemId, station.id).some((r) => r.mission.id === m.id);
       const progress = missions.missionProgress(m);
       let status = formatDeadline(m.deadlineDay, state.day);
@@ -1176,22 +1182,30 @@ export class DockUI {
     }
     this.body.append(activeWrap);
 
-    // board — and whose work is on it, which depends on the colours you fly
-    const policy = missions.boardPolicy(state, station);
+    // board — two shelves: your flag's line, and the open contracts anyone can take
     this.body.append(el('h3', { text: `Board — day ${state.day} · your renown ${missions.tierStars(missions.playerTier(state))}` }));
-    this.body.append(el('p', { class: 'note', text: 'Bold work finds you as your renown grows: more stars, tougher marks, fatter pay. One star is honest cargo runs; eight stars is a war.' }));
-    this.body.append(el('p', { class: `note boardpolicy ${policy.scope}`, text: policy.note }));
     const offers = missions.generateBoard(state, station)
       .filter((o) => !state.missions.some((m) => m.id === o.id));
-    const boardWrap = el('div', { style: 'margin-top:8px' });
-    for (const o of offers) {
+    const lineOffers = offers.filter((o) => o.line);
+    const openOffers = offers.filter((o) => !o.line);
+
+    const bonusChip = (b) => {
+      if (!b) return '';
+      const label = b.kind === 'credits' ? `+₡${b.amount.toLocaleString()} bonus`
+        : b.kind === 'karma' ? `+${b.amount} karma`
+          : b.kind === 'skillPoint' ? `+${b.amount} skill point${b.amount > 1 ? 's' : ''}`
+            : 'bonus salvage';
+      return ` · <span class="twist">${label}</span>`;
+    };
+
+    const offerCard = (o, extraChip) => {
       const tag = missions.MISSION_TAGS[o.type] || 'CONTRACT';
       const accept = btn('Accept', () => actions.actAcceptMission(o.id), 'btn small primary');
       if (state.missions.filter((m) => !m.story).length >= missions.MAX_ACTIVE) accept.disabled = true;
-      boardWrap.append(el('div', { class: `mission ${o.type}` }, [
+      return el('div', { class: `mission ${o.type}` }, [
         el('div', {
           class: 'mtag',
-          html: `${o.factionWork ? `<span class="fwork">${(FACTIONS[o.issuer.faction]?.short || 'FLAG').toUpperCase()} DESK</span> · ` : ''}${tag} · ${missions.tierStars(o.tier)}${o.urgent ? ' · <span class="urgent">URGENT</span>' : ''}${twistChip(o.twist)} · by day ${o.deadlineDay}`,
+          html: `${extraChip || ''}${tag} · ${missions.tierStars(o.tier)}${o.urgent ? ' · <span class="urgent">URGENT</span>' : ''}${o.long ? ' · <span class="long">LONG</span>' : ''}${bonusChip(o.bonus)}${twistChip(o.twist)} · by day ${o.deadlineDay}`,
         }),
         el('h4', { text: o.title }),
         el('p', { text: o.desc }),
@@ -1202,7 +1216,24 @@ export class DockUI {
           ]),
           accept,
         ]),
-      ]));
+      ]);
+    };
+
+    const boardWrap = el('div', { style: 'margin-top:8px' });
+    if (lineOffers.length) {
+      const o = lineOffers[0];
+      const flag = FACTIONS[o.line.faction];
+      const total = (missions.FACTION_LINES[o.line.faction] || []).length;
+      const stage = o.line.stage + 1;
+      this.body.append(el('p', {
+        class: 'note boardpolicy own',
+        html: `${emblemSVG(o.line.faction, 16)} Your flag's line — ${flag?.name || o.line.faction}, stage ${stage} of ${total}. Finish it and the next posting unlocks at ${flag?.name || ''} desks.${o.line.repeat ? ' The line is run out — this posting repeats.' : ''}`,
+      }));
+      boardWrap.append(offerCard(o, `${emblemSVG(o.line.faction, 14)}<span class="fwork">${(flag?.short || 'FLAG').toUpperCase()} LINE</span> · `));
+    }
+    if (openOffers.length) {
+      this.body.append(el('p', { class: 'note', text: 'Open contracts — every desk\'s work, any captain\'s money. They never touch your flag\'s line. Long runs pay more; bonus rewards are marked on the card.' }));
+      for (const o of openOffers) boardWrap.append(offerCard(o, ''));
     }
     this.body.append(boardWrap);
 

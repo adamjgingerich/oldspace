@@ -186,8 +186,8 @@ export function shieldBubbleMaterial(color = 0x6fd8ff) {
     uniforms: {
       uColor: { value: new THREE.Color(color) },
       uAlpha: { value: 0 },
-      uCore: { value: 0.075 },
-      uRim: { value: 1.15 },
+      uCore: { value: 0.04 },
+      uRim: { value: 1.6 },
       uCrackle: { value: 0 },
       uTime: { value: 0 },
     },

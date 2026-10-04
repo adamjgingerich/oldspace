@@ -76,6 +76,7 @@ export function startingOath(state, factionId) {
   const f = FACTIONS[factionId];
   if (!f) return null;
   state.allegiance = factionId;
+  state.factionLine = { faction: factionId, stage: 0 };
   state.addRep(factionId, STARTING_SWEAR_REP);
   if (f.opposes) state.addRep(f.opposes, -15);
   for (const [id, other] of Object.entries(FACTIONS)) {

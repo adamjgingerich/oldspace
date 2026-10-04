@@ -11,6 +11,8 @@ import {
 import { buildStarfield, buildNebula, buildFarGalaxies, buildGasClouds, buildDustPatches, buildComet, buildDebrisField } from '../core/starfield.js';
 import { applyEnvironment } from '../core/materials.js';
 import { Fx } from '../core/fx.js';
+import { emblemSprite } from '../core/emblem.js';
+import { WarpFx } from '../core/warpfx.js';
 import { makeTopDownCamera } from '../core/engine.js';
 import { Combat, leadPoint } from './combat.js';
 import { AIController } from './ai.js';
@@ -193,6 +195,9 @@ export class Universe {
     this.camera = makeTopDownCamera(engine.width / engine.height);
     this.fx = new Fx(this.scene);
     this.combat = new Combat({ scene: this.scene, fx: this.fx, audio, universe: this });
+    this.warpFx = new WarpFx(this.scene);
+    this._warping = false;
+    this._warpBaseFov = this.camera.fov;
 
     this.systemId = null;
     this.system = null;
@@ -281,6 +286,9 @@ export class Universe {
     this.scene.fog = new THREE.Fog(bgColor, 3200, 7800);
     this.fx = new Fx(this.scene);
     this.combat = new Combat({ scene: this.scene, fx: this.fx, audio, universe: this });
+    this.warpFx = new WarpFx(this.scene);
+    this._warping = false;
+    this._warpBaseFov = this.camera.fov;
 
     this.scene.add(buildStarfield({ count: 2400, radius: 9500 }));
     this.scene.add(buildNebula(sys.theme.nebula[0], sys.theme.nebula[1]));
@@ -324,6 +332,13 @@ export class Universe {
         -(p.radius * 1.04 + 6),
         Math.sin(p.angle) * p.dist,
       );
+      // the governing flag's sigil, hung over the world
+      const sigil = emblemSprite(sys.gov, p.radius * 0.9);
+      if (sigil) {
+        sigil.position.set(0, p.radius * 1.5, 0);
+        sigil.renderOrder = 6;
+        group.add(sigil);
+      }
       this.scene.add(group);
       this.visuals.push(group);
       this.planets.push({ record: p, group, x: group.position.x, z: group.position.z });
@@ -1463,8 +1478,36 @@ export class Universe {
   /* Frame update                                                       */
   /* ------------------------------------------------------------------ */
 
+  /** Light the fold: streaks pour toward the ship and the helm stretches. */
+  beginWarp() {
+    const p = this.player;
+    this._warping = true;
+    this._warpBaseFov = this.camera.fov;
+    this.warpFx.begin(p ? p.x : 0, p ? p.z : 0);
+  }
+
+  /** End the fold cleanly — the next system's sky is already here. */
+  endWarp() {
+    this._warping = false;
+    this._warpK = 0;
+    this.warpFx.stop();
+    this.camera.fov = this._warpBaseFov;
+    this.camera.updateProjectionMatrix();
+  }
+
   update(dt, realDt = dt) {
     this.time += dt;
+
+    // the warp fold plays in real time, whatever the sim speed
+    if (this._warping) {
+      this.warpFx.update(realDt);
+      const k = Math.min(1, this.warpFx.t / this.warpFx.dur);
+      this._warpK = k;
+      this.camera.fov = this._warpBaseFov * (1 + 0.4 * Math.sin(Math.PI * k));
+      this.camera.updateProjectionMatrix();
+      if (!this.warpFx.active) this.endWarp();
+    }
+
     for (const v of this.visuals) v.userData.animate?.(dt, this.time);
     this.fx.update(dt);
     this._updateCourier(dt);
@@ -1805,7 +1848,9 @@ export class Universe {
     const speed = p.speed;
     this.zoomLevel = snap ? this.zoomTarget : damp(this.zoomLevel, this.zoomTarget, 5, dt);
     const base = 300 + clamp(speed * 0.55, 0, 190);
-    const height = clamp(base * this.zoomLevel, 70, 3300);
+    // the fold dives the helm down toward the ship, then lets it back up
+    const warpDip = this._warping ? 1 - 0.4 * Math.sin(Math.PI * Math.min(1, this._warpK || 0)) : 1;
+    const height = clamp(base * this.zoomLevel * warpDip, 60, 3300);
     const cam = this.camera;
     if (snap) {
       cam.position.set(tx, height, tz);

@@ -8,6 +8,7 @@ import { GAME_TITLE_HTML, GAME_SUBTITLE } from '../data/branding.js';
 import { randomQuote } from '../data/quotes.js';
 import { BACKGROUNDS, DRIVES, describePerks } from '../game/character.js';
 import { FACTIONS, FACTION_IDS, STARTING_SWEAR_REP } from '../data/factions.js';
+import { emblemSVG } from '../core/emblem.js';
 import { binds, codeLabel } from '../core/keybinds.js';
 
 export class Menus {
@@ -201,7 +202,8 @@ export class Menus {
           style: f ? `--fcol: ${f.color}` : '--fcol: #9fb0c6',
           title: tip,
         }, [
-          el('h4', {}, [
+          el('h4', { class: 'faction-title' }, [
+            el('span', { class: 'emblem', html: f ? emblemSVG(id, 22) : '<span class="emblem none"></span>' }),
             f ? f.name : 'No colours',
             el('span', { class: 'h4tag', text: f ? `+${STARTING_SWEAR_REP} standing` : 'unsworn' }),
           ]),

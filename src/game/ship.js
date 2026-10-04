@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { buildShip, factionColor } from '../core/meshes.js';
 import { glowSprite } from '../core/fx.js';
+import { emblemSprite } from '../core/emblem.js';
 import { shieldBubbleGeometry, shieldBubbleMaterial } from '../core/materials.js';
 import { clamp, wrapAngle } from '../core/util.js';
 import { SHIP_BY_ID } from '../data/ships.js';
@@ -147,6 +148,16 @@ export class Ship {
     group.add(this.hostileGlow);
     this._hostileFx = 0;
     this._hostilePhase = Math.random() * Math.PI * 2;
+
+    // faction emblem — the flag's sigil hung over the dorsal hull
+    const emblemSize = Math.max(5, def.len * 0.3);
+    this.emblem = emblemSprite(this.faction, emblemSize);
+    if (this.emblem) {
+      this.emblem.position.set(0, Math.max(5, def.len * 0.26), 0);
+      this.emblem.renderOrder = 6;
+      this.emblem.material.opacity = 0.92;
+      group.add(this.emblem);
+    }
 
     this.x = x;
     this.z = z;
@@ -462,7 +473,7 @@ export class Ship {
     else this._bubbleColor.copy(BUBBLE_AMBER).lerp(BUBBLE_RED, (urgency - 0.5) * 2);
     u.uColor.value.copy(this._bubbleColor);
 
-    let alpha = (0.1 + ratio * 0.045) * (1 + flash * 1.6 + death * 0.25);
+    let alpha = (0.06 + ratio * 0.024) * (1 + flash * 1.6 + death * 0.25);
     if (popping) alpha *= Math.pow(popFrac, 0.75);
     u.uAlpha.value = alpha;
 

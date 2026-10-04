@@ -10,6 +10,7 @@ import { withRim } from './materials.js';
 import { glowSprite } from './fx.js';
 import { rngOf } from './rng.js';
 import { factionHex } from '../data/factions.js';
+import { emblemSprite } from './emblem.js';
 import { WEAPON_BY_ID } from '../data/weapons.js';
 import { OUTFIT_BY_ID } from '../data/outfits.js';
 
@@ -3489,6 +3490,15 @@ export function buildStation(station) {
       addBeacon(105, 16);
       break;
     }
+  }
+
+  // the flag's sigil, hung over the station like a banner — reads at a
+  // glance whose berth you are flying into
+  const sigil = emblemSprite(station.owner, 52);
+  if (sigil) {
+    sigil.position.set(0, 40, 0);
+    sigil.renderOrder = 6;
+    group.add(sigil);
   }
 
   group.userData.animate = (dt, t) => {

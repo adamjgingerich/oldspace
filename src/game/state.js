@@ -134,6 +134,9 @@ export class GameState {
     this.background = opts.background || null;
     this.drive = opts.drive || null;
     this.allegiance = opts.allegiance || null; // faction id or null
+    this.factionLine = opts.factionLine && typeof opts.factionLine === 'object'
+      ? { faction: opts.factionLine.faction, stage: opts.factionLine.stage || 0 }
+      : null; // { faction, stage } — progress down the flag's mission line
     this.broker = {}; // day stamps for the broker desk's introductions and amnesties
     this.karma = opts.karma ?? 0; // -100 (black) .. +100 (beacon)
     this.karmaLog = Array.isArray(opts.karmaLog) ? opts.karmaLog.map((e) => ({ ...e })) : [];
@@ -292,6 +295,7 @@ export class GameState {
       background: this.background,
       drive: this.drive,
       allegiance: this.allegiance,
+      factionLine: this.factionLine ? { ...this.factionLine } : null,
       broker: { ...(this.broker || {}) },
       karma: this.karma,
       karmaLog: this.karmaLog.map((e) => ({ ...e })),
@@ -371,6 +375,9 @@ export class GameState {
     st.background = obj.background || null;
     st.drive = obj.drive || null;
     st.allegiance = obj.allegiance || null;
+    st.factionLine = obj.factionLine && typeof obj.factionLine === 'object'
+      ? { faction: obj.factionLine.faction, stage: obj.factionLine.stage || 0 }
+      : null;
     st.broker = obj.broker && typeof obj.broker === 'object' ? { ...obj.broker } : {};
     st.karma = obj.karma ?? 0;
     st.karmaLog = Array.isArray(obj.karmaLog) ? obj.karmaLog.map((e) => ({ ...e })) : [];
