@@ -47,7 +47,9 @@ const MODE_INFO = {
 
 const PICKUP_KINDS = ['burst', 'rapid', 'shield'];
 const PICKUP_NAMES = { burst: 'DRIVE BURST', rapid: 'RAPID FIRE', shield: 'SHIELD' };
+// the world wants numeric colors, the HUD pop-out wants CSS strings
 const PICKUP_COLORS = { burst: 0xffb45c, rapid: 0x8fd0ff, shield: 0xc792ff };
+const PICKUP_CSS = { burst: '#ffb45c', rapid: '#8fd0ff', shield: '#c792ff' };
 
 const roundAng = (a) => {
   let b = a;
@@ -94,7 +96,6 @@ export class VectorChallenge {
     this.mounds = [];         // elevation bumps
     this.ramps = [];          // launch ramps
     this.t = 0;
-    this.frames = 0;
     this._last = performance.now();
     this._keys = new Set();
     this._done = false;
@@ -467,15 +468,13 @@ export class VectorChallenge {
     audio.coin();
     if (pad.kind === 'burst') {
       p.boost = 3;
-      if (p.isPlayer) this._pop('DRIVE BURST', '#ffb45c');
     } else if (pad.kind === 'rapid') {
       p.rapid = 5;
-      if (p.isPlayer) this._pop('RAPID FIRE', '#8fd0ff');
     } else {
       p.shieldT = 4;
       p.invuln = Math.max(p.invuln, 4);
-      if (p.isPlayer) this._pop('SHIELD', '#c792ff');
     }
+    if (p.isPlayer) this._pop(PICKUP_NAMES[pad.kind], PICKUP_CSS[pad.kind]);
   }
 
   _updatePickups(dt) {
@@ -567,7 +566,6 @@ export class VectorChallenge {
     for (const sm of this.shotPool) sm.visible = false;
     this.shots.length = 0;
     this._place = 1;
-    this._elimCount = 0;
 
     this._buildTerrain();
     this._buildPickups();
@@ -714,7 +712,6 @@ export class VectorChallenge {
   _tick = (now) => {
     if (this._done) return;
     this._raf = requestAnimationFrame(this._tick);
-    this.frames += 1;
     const dt = Math.min(0.05, (now - this._last) / 1000);
     this._last = now;
     this.t += dt;
@@ -986,7 +983,6 @@ export class VectorChallenge {
           return;
         }
       }
-      this._elimCount += 1;
       if (victim.isPlayer) {
         this._place = 1 + this.pilots.filter((q) => !q.isPlayer && !q.alive).length;
         this.match.over = true;
