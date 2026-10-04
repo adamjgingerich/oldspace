@@ -82,7 +82,9 @@ export function dispatchExpedition(state, shipUid, fromSysId, type, destSysId) {
   if (block) return { ok: false, error: block };
   const entry = state.fleet.find((m) => m.uid === shipUid);
   const t = EXPEDITION_TYPES[type];
-  const days = t.days[0] + Math.floor(Math.random() * (t.days[1] - t.days[0] + 1));
+  // the lane decides, the way every other roll in the lanes does — seeded, so
+  // a save loaded twice plays out the same days
+  const days = t.days[0] + rngOf(state.worldSeed, 'expedition-days', shipUid, state.day).int(0, t.days[1] - t.days[0]);
   entry.away = {
     fromSysId, destSysId, type,
     returnDay: state.day + days,

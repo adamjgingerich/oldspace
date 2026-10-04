@@ -20,10 +20,8 @@ export function marketPrice(state, systemId, commodityId, day = state.day) {
   if (commodityId === 'electronics') mult *= 1.14 - sys.tech * 0.02;
   if (commodityId === 'medicine') mult *= 1.12 - sys.tech * 0.016;
   if (commodityId === 'luxuries') mult *= 1.06 - sys.tech * 0.008;
-  if (c.illegal) {
-    // Ember Ash: only traded where the law looks away.
-    mult *= 1.0;
-  }
+  // illegal goods carry their risk in the buy/sell spread, not in the
+  // commodity's own price — the port charges the danger at the desk
   const jitter = rngOf(state.worldSeed, 'price', systemId, commodityId, Math.floor(day / 3))
     .float(0.93, 1.07);
   return clamp(c.base * mult * jitter, 4, 99999);

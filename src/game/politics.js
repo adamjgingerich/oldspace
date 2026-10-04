@@ -20,7 +20,6 @@ export function factionOf(state, sysId) {
   return (state.influence?.[sysId]) || SYSTEMS[sysId]?.gov || 'free';
 }
 
-/** A faction's current wealth (0 if the save predates the sim). */
 /** The systems a faction presently holds. */
 export function systemsOf(state, factionId) {
   const out = [];
@@ -93,7 +92,7 @@ export function tickPolitics(state) {
       if (SYSTEMS[nb]?.freefire) return false;
       const home = FACTIONS[factionOf(state, nb)]?.home || [];
       return !home.includes(nb); // never take a rival's heart
-    });
+    }).filter((nb) => !expanded.some((e) => e.system === nb)); // one claim per system, even mid-tick
     if (!candidates.length) continue;
     if (!rng.chance(0.4)) continue; // mostly they stay put
     const target = rng.pick(candidates);

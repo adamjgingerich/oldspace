@@ -15,7 +15,7 @@ export function wrapAngle(a) {
 /** Shortest signed difference from a to b. */
 export const angleDiff = (a, b) => wrapAngle(b - a);
 
-/** Move angle a toward b by at most step. */
+/** Straight-line distance between two 2D points. */
 export function dist2(ax, az, bx, bz) {
   return Math.hypot(ax - bx, az - bz);
 }

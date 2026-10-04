@@ -329,7 +329,7 @@ export function buildLog(state, { style = '', missionLog = true, actions = null 
   wrap.append(stnSec);
 
   const shipSec = section('Codex · Ships', 'Hulls seen in the lanes. Licensed hulls appear in shipyards once their path is walked.');
-  const unlocked = new Set(s.unlocked || []);
+  const unlocked = new Set(state.story?.unlocked || []);
   const seenCount = SHIPS.filter((d) => unlocked.has(d.id) || state.sighted?.[d.id] || state.shipId === d.id).length;
   shipSec.append(el('p', { class: 'note', text: `Hulls sighted ${seenCount}/${SHIPS.length} — patrol the lanes, visit shipyard slips, and take prizes to fill the ledger.` }));
   for (const def of SHIPS) shipSec.append(shipCard(def, state, unlocked));

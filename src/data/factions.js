@@ -52,11 +52,8 @@ export const FACTIONS = {
 export const FACTION_IDS = Object.keys(FACTIONS);
 
 /**
- * The owner id used by places that answer to nobody: free-fire systems and the
- * handful of habs out there that fly no colours at all. It is deliberately not
- * a faction — no standing, no desk, no law, no ledger.
+ * Standing you begin with when you swear to a flag at character creation.
  */
-/** Standing you begin with when you swear to a flag at character creation. */
 export const STARTING_SWEAR_REP = 45;
 
 export function isFaction(id) {

@@ -514,26 +514,6 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 .note { font-family: var(--sans); font-size: 12px; line-height: 1.65; color: var(--dim); }
 .note b { color: var(--bone); }
 
-.close-x {
-  position: absolute;
-  top: 10px; right: 12px;
-  width: 28px; height: 28px;
-  display: grid; place-items: center;
-  background: var(--grain) 0 0 / 90px 90px repeat, var(--metal);
-  border: none;
-  border-radius: 0;
-  color: var(--dim);
-  font-family: var(--mono);
-  font-size: 14px;
-  cursor: pointer;
-  z-index: 2;
-  box-shadow: 0 0 0 2px #061620, inset 2px 2px 0 rgba(190, 247, 255, 0.2), inset -2px -2px 0 rgba(0, 10, 18, 0.85);
-}
-.close-x:hover {
-  color: var(--danger);
-  box-shadow: 0 0 0 2px rgba(255, 95, 134, 0.6), inset 2px 2px 0 rgba(255, 200, 220, 0.25), inset -2px -2px 0 rgba(20, 0, 8, 0.8);
-}
-
 /* --- save slots ---------------------------------------------------- */
 
 .slots { display: flex; flex-direction: column; gap: 8px; }
@@ -985,7 +965,7 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 
 .dev-btn:hover { background: rgba(26, 60, 78, 0.95); color: #eafcff; }
 
-.dev-warp select, .dev-section select {
+.dev-section select {
   flex: 1;
   background: #0a1620;
   color: #cfe9f2;
@@ -1563,21 +1543,6 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   padding: 0 4px 1px;
 }
 
-/* storyline rows in the contracts board */
-.story-row {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  padding: 8px 12px;
-  margin-bottom: 8px;
-  background: var(--grain) 0 0 / 140px 140px repeat, var(--plate);
-  box-shadow: 0 0 0 2px #061620, inset 4px 0 0 var(--mcol, var(--amber-deep)), inset 2px 2px 0 rgba(190, 247, 255, 0.06), inset -2px -2px 0 rgba(0, 10, 18, 0.7);
-}
-.story-row h4 { margin: 0; font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mcol, var(--amber)); }
-.story-row .srank { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--dim); }
-.story-row p { margin: 0; flex-basis: 100%; }
-.story-row.closed { opacity: 0.45; }
 .mfoot { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-family: var(--mono); font-size: 10px; color: var(--dim); }
 
 .services-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
@@ -1594,35 +1559,6 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 /* ------------------------------------------------------------------
    star chart
    ------------------------------------------------------------------ */
-
-.chartui {
-  position: absolute;
-  inset: 0;
-  z-index: 70;
-  display: grid;
-  place-items: center;
-  background:
-    var(--grime) 0 0 / 26px 26px repeat,
-    linear-gradient(180deg, rgba(4, 10, 16, 0.88), rgba(3, 6, 10, 0.95));
-}
-
-.chart-shell {
-  width: min(1120px, 96vw);
-  height: min(84vh, 860px);
-  display: flex;
-  flex-direction: column;
-  background: var(--grain) 0 0 / 140px 140px repeat, var(--shell);
-  border: none;
-  border-radius: 0;
-  box-shadow:
-    0 0 0 2px #0a4456,
-    0 0 0 4px #061018,
-    0 30px 90px rgba(0, 0, 0, 0.8),
-    0 0 60px rgba(86, 230, 255, 0.1),
-    inset 2px 2px 0 rgba(190, 247, 255, 0.1),
-    inset -2px -2px 0 rgba(0, 10, 18, 0.8);
-  overflow: hidden;
-}
 
 .chart-head {
   display: flex;
