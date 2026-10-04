@@ -35,7 +35,6 @@ import { rngOf } from '../core/rng.js';
 import { clamp } from '../core/util.js';
 import { el, btn, clear } from '../ui/dom.js';
 
-const SCALE = 460;            // the orb every count on the field is tuned against
 // The circuit's orbs, widest first. Bracket intensity picks one: the tighter
 // the orb, the more of the field is in someone's way. They are big worlds on
 // purpose — a wide orb and a high chase rig are what let a pilot see a rival
@@ -46,6 +45,28 @@ const ORBS = [
   { name: 'MARBLE', r: 1450, note: 'no long shots left on this one' },
   { name: 'PEBBLE', r: 1200, note: 'tight — the horizon is always in the way' },
 ];
+// The course is a patch of the orb, not the whole of it. Every barrier, mound,
+// ramp, pad and crystal sits inside this patch, and the counts do not move from
+// orb to orb — so the same course is packed into less ground on a tighter orb,
+// which is what a pebble is. The rest of the world is deliberately open: the
+// furniture you cannot see is furniture you cannot use, and a course scattered
+// over a whole planet is just empty ground with the odd pyramid in it.
+const ZONE_FRAC = 0.72;
+const ZONE_MIN = 700;
+const ZONE_MAX = 1500;
+export const ZONE_COUNTS = { pyramids: 24, bars: 12, mounds: 8, ramps: 4, pads: 10, crystals: 20 };
+// Past this much of the course radius the field takes the helm. It only ever
+// turns a stray hull back toward the middle of the course — it never stops one,
+// and there is no wall to be pinned on, so nobody can get stuck on it. Without
+// it a long chase wanders the whole orb and ends up over ground with nothing on
+// it, which is the same empty world by another road.
+const ZONE_RECALL = 1.35;
+const RECALL_TURN = 2.6; // rad/s of correction at the edge of the projection
+const RECALL_GAIN = 1.6; // and how much harder it pulls further out than that
+// Two pieces of course keep at least a hull's width of daylight between them: a
+// corridor a pilot can fly down rather than a crack to be wedged into. 44 is a
+// hull (28 across) plus the daylight the collision leaves behind a contact.
+const COURSE_CLEAR = 44;
 // How far behind and above the hull the rig rides, and how far ahead it aims.
 // Height and the aim point are what buy the long view — the height sets how far
 // away the horizon is, and looking further ahead puts more of it on screen.
@@ -53,6 +74,15 @@ const CAM_BACK = 135;
 const CAM_UP = 165;
 const CAM_LOOK = 120;
 const CAM_AIM_H = 16;   // how high off the surface the rig aims
+// The turbo reserve. Every hull carries one and it is the pilot's to spend: hold
+// SHIFT and the drive pushes past its governor for as long as the tank lasts,
+// then it comes back. A chase is then something a pilot can win or lose rather
+// than a race between two identical ships, and a corner can be taken faster than
+// the hull would otherwise stand. The figures are the lanes' own engine burst,
+// so the same hand works the same way in both seats.
+const TURBO = { duration: 3.4, recharge: 10.5, rearm: 0.35 };
+const TURBO_SPEED = 330;   // what the governor allows while it burns
+const TURBO_ACCEL = 340;   // and the shove of thrust that gets the hull there
 // The sim normalises every hull to the same length so a freighter reads like a
 // freighter; this is that length, sized so a rival is a shape rather than a dot
 // at the ranges this field is fought over.
@@ -92,6 +122,17 @@ const AI_WEAPONS = [
 ];
 const HULL = 100;      // what everyone flies in with
 const SIM_DMG = 0.85;  // the charts are balanced for shield-and-hull fights
+// Damage per second is the one chart figure the sim cannot take literally. The
+// charts price a torpedo's reach and a disruptor's shut-down into their damage,
+// so straight off the page a snare fit does five points a second where a gauss
+// does thirty-four — a duel you cannot win with the guns you actually own. The
+// sim pulls every gun toward the middle of that spread instead: the ordering
+// survives, so do the reach and the cadence and the feel, and no fit is a
+// pea-shooter. Heavy ordnance is also capped per hit, so no two bolts in one
+// volley can take a pilot from untouched to out.
+const SIM_DPS_REF = 24;    // the middle of the charts' damage-per-second spread
+const SIM_DPS_CURVE = 0.3; // how hard a chart dps is pulled toward that middle
+const SIM_HIT_CAP = HULL * 0.45;
 
 // a shot looks like what it is
 const SHOT_COLOR = {
@@ -106,16 +147,25 @@ const BEAM_SPEED = 1150;
  * real thing; the only translation is that a wireframe hull has 100 points of
  * structure and a real one has shields.
  */
-function simWeapon(def) {
+/**
+ * A weapon as the sim flies it. Same damage, same cadence, same reach as the
+ * real thing; the only translation is that a wireframe hull has 100 points of
+ * structure and a real one has shields, and that the charts' damage-per-second
+ * spread is pulled in toward the middle of itself (see SIM_DPS_REF).
+ */
+export function simWeapon(def) {
   const beam = def.kind === 'beam';
   const speed = def.speed || BEAM_SPEED;
+  const cd = Math.max(0.08, def.cooldown || 0.3);
+  const chart = (def.dmg || 6) / cd;
+  const dps = SIM_DMG * SIM_DPS_REF * Math.pow(chart / SIM_DPS_REF, SIM_DPS_CURVE);
   return {
     id: def.id,
     name: def.name,
     kind: def.kind,
-    dmg: (def.dmg || 6) * SIM_DMG,
+    dmg: Math.min(dps * cd, SIM_HIT_CAP),
     speed,
-    cd: Math.max(0.08, def.cooldown || 0.3),
+    cd,
     range: def.range || 700,
     life: (def.range || 700) / speed,
     spread: beam ? 0 : (def.spread || 0),
@@ -215,9 +265,9 @@ export class VectorChallenge {
     this.tier = challengeTier(state, intensity);
     this.orb = orbForTier(this.tier);
     this.orbR = this.orb.r;
-    // Counts follow the orb, but not as fast as its area grows: a wide orb is
-    // meant to feel open, and open is what makes a fight readable at range.
-    this.density = Math.pow(this.orbR / SCALE, 0.7);
+    // Where the course lies on this orb, and how much of the world it covers.
+    // startMatch picks the spot; nothing is built before it does.
+    this.zone = null;
     // Firing and circling ranges are tuned on an 820 orb; on a bigger world they
     // have to reach further, or the sim fights in the same little patch of it.
     this.reach = this.orbR / 820;
@@ -265,6 +315,7 @@ export class VectorChallenge {
         el('span', { class: 'vh-score' }),
         el('span', { class: 'vh-hull' }),
         el('span', { class: 'vh-clock' }),
+        (this._hudTurbo = el('span', { class: 'vh-turbo' })),
         (this.pop = el('span', { class: 'vh-pop' })),
       ])),
       (this.lobby = el('div', { class: 'vec-lobby hidden' })),
@@ -313,8 +364,8 @@ export class VectorChallenge {
         btn('Harvest — ninety seconds on the crystal field', () => this.startMatch('harvest'), 'btn primary'),
       ]),
       el('p', { class: 'vec-keys' }, [
-        'W/S thrust · A/D yaw · SPACE fire · ESC step out. ',
-        'The field is an orb — fly far enough and you come back to where you started, so there is no edge to fall off and nowhere to run. ',
+        'W/S thrust · A/D yaw · SPACE fire · SHIFT burns the turbo reserve · ESC step out. ',
+        'The rig lays its course on one patch of the orb, so the ground you can see is the ground you are flying over; leave it and the field turns you back. ',
         'It carries hills, walls and launch ramps; cross a ramp fast and the field throws you over the walls. ',
         'Item pads hand out drive bursts, rapid fire and shields. ',
         'You fly the fit in your bay, mount for mount, and the bracket fits its own pilots to match.',
@@ -450,6 +501,9 @@ export class VectorChallenge {
   _s2 = new THREE.Vector3();
   _s3 = new THREE.Vector3();
   _s4 = new THREE.Vector3();
+  // kept clear of every other scratch: a swept shot reads these across a walk
+  _s5 = new THREE.Vector3();
+  _s6 = new THREE.Vector3();
   _w1 = new THREE.Vector3();
   _w2 = new THREE.Vector3();
   _w3 = new THREE.Vector3();
@@ -472,6 +526,21 @@ export class VectorChallenge {
   /** How far apart two directions are, along the surface. */
   _arc(a, b) {
     return this.orbR * Math.acos(clamp(a.dot(b), -1, 1));
+  }
+
+  /**
+   * Did the arc from `from` to `to` pass within `r` of `point`? A bolt covers
+   * more ground in one frame than a hull is wide — and more again when the two
+   * are closing on each other — so asking only where the shot ended up would
+   * let a good shot fly straight through its target.
+   */
+  _sweptHit(from, to, point, r) {
+    const steps = Math.max(1, Math.ceil(this._arc(from, to) / 8));
+    for (let i = 1; i <= steps; i++) {
+      this._s6.copy(from).lerp(to, i / steps).normalize();
+      if (this._arc(this._s6, point) < r) return true;
+    }
+    return false;
   }
 
   /**
@@ -633,17 +702,29 @@ export class VectorChallenge {
     this.ramps = [];
     const add = (obj) => { this.scene.add(obj); this.terrain.push(obj); };
 
-    // Counts follow the orb: a wide one carries more of everything, a pebble
-    // keeps only what it needs — which is what makes it a pebble.
-    const n = (base, min) => Math.max(min, Math.round(base * this.density));
-    // Nothing lands on top of anything else; this field is meant to be flown.
-    const taken = [];
-    const spot = (minArc) => {
+    // The whole course goes on the circuit patch. Keeping equal-sized things off
+    // each other is what spreads them across it: `gap` is the mean spacing that
+    // many pieces would have, and `k` trims it back far enough that spot() can
+    // usually find room for the last of them. On a tight orb the last pieces in
+    // have less room, so the spacing relaxes — but the footprint check never
+    // does: two barriers in the same place is a hole in the course rather than a
+    // crowded one, and less than COURSE_CLEAR between them is a crack a hull can
+    // be wedged into.
+    const taken = []; // { u, r } of everything laid down so far
+    const gap = (count, k) => (k * this.zone.r) / Math.sqrt(count);
+    const spot = (minArc, foot) => {
       const u = new THREE.Vector3();
-      for (let i = 0; i < 240; i++) {
-        this._scatter(u);
-        if (taken.every((q) => this._arc(u, q) > minArc)) { taken.push(u.clone()); return u; }
+      for (let relax = 0; relax <= 1.0001; relax += 0.2) {
+        const want = minArc * (1 - relax);
+        for (let i = 0; i < 150; i++) {
+          this._scatterNear(this.zone.u, this.zone.r, u);
+          if (taken.every((q) => this._arc(u, q.u) > Math.max(want, q.r + foot + COURSE_CLEAR))) {
+            taken.push({ u: u.clone(), r: foot });
+            return u;
+          }
+        }
       }
+      taken.push({ u: u.clone(), r: foot });
       return u;
     };
 
@@ -652,8 +733,8 @@ export class VectorChallenge {
     const pyEdges = new THREE.EdgesGeometry(pyGeo, 30);
     const pyFill = new THREE.MeshBasicMaterial({ color: 0x0a1420, transparent: true, opacity: 0.6, depthWrite: false });
     const pyWire = new THREE.LineBasicMaterial({ color: 0xff5f8f, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending });
-    for (let i = 0, cnt = n(9, 5); i < cnt; i++) {
-      const u = spot(150);
+    for (let i = 0, cnt = ZONE_COUNTS.pyramids; i < cnt; i++) {
+      const u = spot(gap(cnt, 0.26), 20);
       const [t1, t2] = this._frameAt(u, this.rng.float(0, 1) * Math.PI);
       const g = new THREE.Group();
       const m = new THREE.Mesh(pyGeo, pyFill);
@@ -670,8 +751,8 @@ export class VectorChallenge {
     const barEdges = new THREE.EdgesGeometry(barGeo);
     const barFill = new THREE.MeshBasicMaterial({ color: 0x0d1622, transparent: true, opacity: 0.7, depthWrite: false });
     const barWire = new THREE.LineBasicMaterial({ color: 0xffb45c, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
-    for (let i = 0, cnt = n(4, 3); i < cnt; i++) {
-      const u = spot(190);
+    for (let i = 0, cnt = ZONE_COUNTS.bars; i < cnt; i++) {
+      const u = spot(gap(cnt, 0.32), 44);
       const [t1, t2] = this._frameAt(u, this.rng.float(0, 1) * Math.PI);
       const m = new THREE.Mesh(barGeo, barFill);
       m.add(new THREE.LineSegments(barEdges, barWire));
@@ -686,8 +767,8 @@ export class VectorChallenge {
     const moundEdges = new THREE.EdgesGeometry(moundGeo, 40);
     const moundFill = new THREE.MeshBasicMaterial({ color: 0x08131c, transparent: true, opacity: 0.65, depthWrite: false });
     const moundWire = new THREE.LineBasicMaterial({ color: 0x2c6f8f, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending });
-    for (let i = 0, cnt = n(3, 2); i < cnt; i++) {
-      const u = spot(170);
+    for (let i = 0, cnt = ZONE_COUNTS.mounds; i < cnt; i++) {
+      const u = spot(gap(cnt, 0.36), 72);
       const [t1, t2] = this._frameAt(u, this.rng.float(0, 1) * Math.PI);
       const m = new THREE.Mesh(moundGeo, moundFill);
       m.add(new THREE.LineSegments(moundEdges, moundWire));
@@ -702,8 +783,8 @@ export class VectorChallenge {
     const rampEdges = new THREE.EdgesGeometry(rampGeo);
     const rampFill = new THREE.MeshBasicMaterial({ color: 0x12201a, transparent: true, opacity: 0.75, depthWrite: false });
     const rampWire = new THREE.LineBasicMaterial({ color: 0x7dffa8, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending });
-    for (let i = 0; i < 2; i++) {
-      const u = spot(260);
+    for (let i = 0, cnt = ZONE_COUNTS.ramps; i < cnt; i++) {
+      const u = spot(gap(cnt, 0.32), 44);
       const [t1, t2] = this._frameAt(u, this.rng.float(0, 1) * Math.PI);
       const m = new THREE.Mesh(rampGeo, rampFill);
       m.add(new THREE.LineSegments(rampEdges, rampWire));
@@ -731,14 +812,30 @@ export class VectorChallenge {
   }
 
   /**
+   * A tangent direction that depends only on where a hull is, and not on which
+   * face it happens to be touching. Two faces pushing against each other have
+   * opposed normals, so anything derived from a face — its left, its right, the
+   * way its frame is turned — is opposed as well, and a hull caught between them
+   * would be handed one direction by each and cancel its own escape. This is the
+   * reference that lets both of them agree on the way out.
+   */
+  _escapeDir(u, out) {
+    if (Math.abs(u.y) > 0.9) out.set(1, 0, 0);
+    else out.set(0, 1, 0);
+    return out.addScaledVector(u, -out.dot(u)).normalize();
+  }
+
+  /**
    * Solid geometry, resolved as a bounce with slide.
    *
    * The hull is lifted clear of the face, then only the part of its motion
    * heading into the wall is turned back out of it — whatever it had along the
    * face is kept, so a pilot grazing a barrier slides down it and carries on
-   * instead of grinding to a halt. Two things matter for never getting stuck:
+   * instead of grinding to a halt. Three things matter for never getting stuck:
    * a ship whose centre has ended up *inside* a slab is still pushed out (via
-   * whichever face is nearest), and speed is never simply zeroed on contact.
+   * whichever face is nearest), speed is never simply zeroed on contact, and a
+   * hull caught between two faces is sent the way out that both of them agree
+   * on rather than the way each of them would send it alone.
    *
    * The maths is the flat field's, run in each barrier's own tangent frame:
    * a slab is still a rectangle with a length and a depth, it just has both of
@@ -754,6 +851,22 @@ export class VectorChallenge {
     const vel = this._s1.copy(p.fwd).multiplyScalar(p.speed);
     const l = this._p2;
     let bounced = false;
+
+    // A hull caught between two faces needs a different answer from one leaning
+    // on a single face, so the contact count is taken before any of them is
+    // resolved (resolving the first changes the answer for the second).
+    let contacts = 0;
+    for (const w of this.walls) {
+      this._localTo(w, p.u, l);
+      const hit = w.hw
+        ? Math.abs(l.x) < w.hw + R && Math.abs(l.y) < w.hd + R
+        : l.length() < (w.r || 20) + R;
+      if (hit) contacts++;
+    }
+    const pinned = contacts > 1;
+    // the direction a pinned hull is sent along, fixed by where it is, so every
+    // face around it agrees on it
+    if (pinned) this._escapeDir(p.u, this._s6);
 
     // walk the hull clear along a world tangent, and its heading with it, so
     // the pair never drift apart on the curved surface
@@ -779,10 +892,21 @@ export class VectorChallenge {
       const vt = vx * tx + vz * tz;
       const mag = Math.hypot(vx, vz);
       if (into < 0) {
-        // An inward motion with nothing across the face has no side to slide
-        // to, so the caller's hint picks one.
-        const side = Math.abs(vt) > mag * 0.15 ? Math.sign(vt) : (hint || 1);
-        if (this.t - (p.wallT ?? -99) < FRESH) {
+        // An inward motion with nothing across the face has no side of its own
+        // to slide to, so one has to be picked: the caller's hint for a single
+        // face, or — when the hull is pinned between faces — the one direction
+        // every face agrees on. A face's own left would be no use there, because
+        // two opposed normals have opposed lefts, so the faces would hand the
+        // hull one direction each and it would cancel its own escape.
+        const side = Math.abs(vt) > mag * 0.15
+          ? Math.sign(vt)
+          : (pinned ? Math.sign(tx * this._s6.dot(t1) + tz * this._s6.dot(t2)) || 1 : (hint || 1));
+        if (pinned) {
+          // wedged: turn the whole of the hull's momentum along the face it can
+          // actually leave by, at the speed it arrived with
+          vx = tx * side * mag;
+          vz = tz * side * mag;
+        } else if (this.t - (p.wallT ?? -99) < FRESH) {
           // still leaning on a surface: turn the whole of the hull's momentum
           // along the face. Holding the nose into a wall slides the ship down
           // it at the speed it arrived with, instead of bouncing it back and
@@ -859,9 +983,18 @@ export class VectorChallenge {
     const padEdges = new THREE.EdgesGeometry(padGeo);
     const padFill = new THREE.MeshBasicMaterial({ color: 0x171305, transparent: true, opacity: 0.8, depthWrite: false });
     const padWire = new THREE.LineBasicMaterial({ color: PAD_COLOR, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending });
-    for (let i = 0, pads = Math.max(3, Math.round(4 * this.density)); i < pads; i++) {
+    // Pads are laid on the course as well, and kept clear of the barriers so a
+    // pilot can always reach one without having to thread a wall
+    const taken = [];
+    for (let i = 0, pads = ZONE_COUNTS.pads; i < pads; i++) {
       const u = new THREE.Vector3();
-      this._scatter(u);
+      for (let tries = 0; tries < 60; tries++) {
+        this._scatterNear(this.zone.u, this.zone.r, u);
+        if (!this._clearOfWalls(u, 34)) continue;
+        if (taken.some((q) => this._arc(u, q) < (0.22 * this.zone.r) / Math.sqrt(pads))) continue;
+        break;
+      }
+      taken.push(u.clone());
       const [t1, t2] = this._frameAt(u, this.rng.float(0, 1) * Math.PI);
       const g = new THREE.Group();
       const m = new THREE.Mesh(padGeo, padFill);
@@ -876,7 +1009,7 @@ export class VectorChallenge {
 
   /** Stand a pad back on the surface at a fresh spot. */
   _movePad(pad) {
-    this._scatter(pad.u);
+    this._scatterNear(this.zone.u, this.zone.r, pad.u);
     const [t1, t2] = this._frameAt(pad.u, this.rng.float(0, 1) * Math.PI);
     pad.t1 = t1;
     pad.t2 = t2;
@@ -990,14 +1123,13 @@ export class VectorChallenge {
 
     const mounts = this._mountsFor(isPlayer, def);
     const u = new THREE.Vector3();
-    // Rivals open the match within reach of the commander rather than anywhere
-    // on the orb: on a world this size, a rival on the far side is a rival you
-    // spend a minute flying to.
-    const anchor = i > 0 && this.pilots[0] ? this.pilots[0].u : null;
-    const spread = this.orbR * 0.45;
+    // Everyone opens on the circuit: the commander in the middle of the course,
+    // the rivals a short flight from them. On a world this size, a rival on the
+    // far side is a rival you spend a minute flying to.
+    const anchor = i > 0 && this.pilots[0] ? this.pilots[0].u : this.zone.u;
+    const spread = i > 0 ? Math.min(this.orbR * 0.45, this.zone.r * 0.8) : this.zone.r * 0.12;
     for (let tries = 0; tries < 60; tries++) {
-      if (anchor) this._scatterNear(anchor, spread, u);
-      else this._scatter(u);
+      this._scatterNear(anchor, spread, u);
       if (!this._clearOfWalls(u, collideR + 6)) continue;
       if (this.pilots.some((q) => this._arc(q.u, u) < 380)) continue;
       break;
@@ -1021,8 +1153,10 @@ export class VectorChallenge {
       fireCd: this.rng.float(0, 1),
       strafeDir: this.rng.float(0, 1) < 0.5 ? 1 : -1,
       wallT: -99, // when this hull last touched a barrier
+      recall: 0,  // set once the field has taken the helm off the course
       wobble: this.rng.float(0, 1) * 10,
       boost: 0, rapid: 0, shieldT: 0,
+      turbo: 0, turboCharge: 1,
     };
   }
 
@@ -1030,6 +1164,11 @@ export class VectorChallenge {
     this._lastMode = mode;
     this._teardownMatch();
     this.match = { mode, time: mode === 'harvest' ? HARVEST_TIME : 0, over: false };
+    // Where the course lies on this orb, and how much of the world it takes up.
+    // It is picked before anything else is built, because everything is built on
+    // it, and the pilots start on it.
+    this.zone = { u: new THREE.Vector3(), r: clamp(this.orbR * ZONE_FRAC, ZONE_MIN, ZONE_MAX) };
+    this._scatter(this.zone.u);
     // terrain first — the pilots need the barriers to spawn clear of
     this._buildTerrain();
     this.pilots = [this._makePilot(0, true)];
@@ -1040,20 +1179,24 @@ export class VectorChallenge {
 
     this._buildPickups();
 
-    // the crystal field for the harvest. On a world this size the field is a
-    // patch of it rather than the whole surface — eight crystals scattered over
-    // a planet is not a race, it is a search — and it is centred on where the
-    // pilots start, so the race is on from the first second.
-    this.field = { u: this.pilots[0].u.clone(), r: this.orbR * 0.42 };
+    // the crystal field for the harvest. It is the circuit itself: the crystals
+    // are the reason to fly the course, and a crystal inside a pyramid is a
+    // crystal nobody can take.
+    this.field = { u: this.zone.u.clone(), r: this.zone.r };
     this.crystals = [];
     const cryGeo = new THREE.OctahedronGeometry(5);
     const cryWire = new THREE.EdgesGeometry(cryGeo);
     const cryMat = new THREE.LineBasicMaterial({
       color: CRYSTAL_COLOR, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    for (let i = 0, seeds = Math.max(8, Math.round(8 * this.density)); i < seeds; i++) {
+    for (let i = 0, seeds = ZONE_COUNTS.crystals; i < seeds; i++) {
+      const u = new THREE.Vector3();
+      for (let tries = 0; tries < 60; tries++) {
+        this._scatterNear(this.field.u, this.field.r, u);
+        if (this._clearOfWalls(u, 12)) break;
+      }
       const c = {
-        u: this._scatterNear(this.field.u, this.field.r, new THREE.Vector3()),
+        u,
         phase: this.rng.float(0, 1) * 10,
         alive: true,
       };
@@ -1221,8 +1364,9 @@ export class VectorChallenge {
       if (p.isPlayer) this._playerStep(p, dt);
       else this._aiStep(p, dt);
 
-      const maxSpd = p.boost > 0 ? 330 : 250;
+      const maxSpd = p.boost > 0 || p.turbo ? TURBO_SPEED : 250;
       p.speed = clamp(p.speed, 0, maxSpd);
+      this._recall(p, dt);
       // along the surface — out here there is no edge to run off and nothing
       // to wrap around, only the far side of the same small world
       this._advance(p.u, p.fwd, p.speed * dt);
@@ -1276,6 +1420,20 @@ export class VectorChallenge {
   /* Helm & AI                                                          */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * Spend or refill the turbo reserve. Called with what the pilot is asking for.
+   * It is held for as long as the tank lasts, refused until the tank has mostly
+   * come back — so it cannot be stuttered on and off — and topped up the rest of
+   * the time. Nothing is left in a state to keep track of beyond how much is in
+   * the tank.
+   */
+  _spendTurbo(p, want, dt) {
+    if (want && p.turboCharge >= TURBO.rearm) p.turbo = 1;
+    if (p.turbo && (!want || p.turboCharge <= 0)) p.turbo = 0;
+    if (p.turbo) p.turboCharge = Math.max(0, p.turboCharge - dt / TURBO.duration);
+    else p.turboCharge = Math.min(1, p.turboCharge + dt / TURBO.recharge);
+  }
+
   _playerStep(p, dt) {
     // The helm's own mapping is written for the top-down lane view. This rig
     // looks over the hull's shoulder instead, so starboard — forward crossed
@@ -1285,11 +1443,33 @@ export class VectorChallenge {
     if (this._keys.has('KeyA') || this._keys.has('ArrowLeft')) turn += 1; // to port
     if (this._keys.has('KeyD') || this._keys.has('ArrowRight')) turn -= 1; // to starboard
     this._turn(p.fwd, p.u, turn * 2.7 * dt);
-    const accel = p.boost > 0 ? 400 : 240;
+    this._spendTurbo(p, this._keys.has('ShiftLeft') || this._keys.has('ShiftRight'), dt);
+    const accel = p.boost > 0 ? 400 : p.turbo ? TURBO_ACCEL : 240;
     if (this._keys.has('KeyW') || this._keys.has('ArrowUp')) p.speed += accel * dt;
     if (this._keys.has('KeyS') || this._keys.has('ArrowDown')) p.speed -= 200 * dt;
     p.speed *= Math.max(0, 1 - 0.6 * dt);
     if (this._keys.has('Space')) this._fire(p);
+  }
+
+  /**
+   * The projection has an edge, and past it the rig has the helm. A hull that
+   * leaves the course is turned back toward the middle of it at whatever rate it
+   * takes to beat the helm, at full speed and with nothing to run into, so a
+   * match that runs long brings itself home instead of finishing over empty
+   * ground. Nothing is ever stopped, so nothing can be pinned.
+   */
+  _recall(p, dt) {
+    const d = this._arc(this.zone.u, p.u);
+    const edge = this.zone.r * ZONE_RECALL;
+    if (d < edge) {
+      // hysteresis, so a hull riding the edge does not shout about it
+      if (d < edge * 0.85) p.recall = 0;
+      return;
+    }
+    const rate = RECALL_TURN + RECALL_GAIN * ((d - edge) / this.zone.r);
+    this._turn(p.fwd, p.u, clamp(this._bearing(p.u, p.fwd, this.zone.u), -rate * dt, rate * dt));
+    if (p.isPlayer && !p.recall) this._pop('OFF THE COURSE — THE RIG HAS THE HELM', '#ffb45c');
+    p.recall = 1;
   }
 
   _aiStep(p, dt) {
@@ -1299,6 +1479,7 @@ export class VectorChallenge {
     let targetAngle = 0;
     let wantFire = false;
     let wantSpeed = 150;
+    let wantTurbo = false;
 
     if (m.mode === 'duel') {
       // The purse goes to the last pilot flying, so the commander is the one
@@ -1335,6 +1516,9 @@ export class VectorChallenge {
           // an orb this wide, a rival ambling along at cruising speed just
           // watches the fight leave without it.
           wantSpeed = 250;
+          // and it spends its own reserve doing it, or a commander with a turbo
+          // simply leaves it standing
+          wantTurbo = d > 420 * this.reach && Math.abs(aim) < 0.5;
         }
         // the field is bigger, so the gun's reach is measured in field-widths
         if (d < 320 * this.reach && Math.abs(aim) < this._aimTol(d) && p.fireCd <= 0) wantFire = true;
@@ -1349,6 +1533,7 @@ export class VectorChallenge {
         if (d < bestD) { bestD = d; best = c; }
       }
       if (best) targetAngle = this._bearing(p.u, p.fwd, best.u);
+      wantTurbo = bestD > 500 * this.reach;
       const player = this.pilots[0];
       if (player.alive) {
         const d = this._arc(p.u, player.u);
@@ -1360,6 +1545,7 @@ export class VectorChallenge {
     targetAngle = this._avoidObstacles(p, targetAngle);
 
     this._turn(p.fwd, p.u, clamp(roundAng(targetAngle), -2.3 * dt, 2.3 * dt));
+    this._spendTurbo(p, wantTurbo, dt);
     p.speed += clamp(wantSpeed - p.speed, -160 * dt, 160 * dt);
     if (wantFire) {
       this._fire(p);
@@ -1443,7 +1629,11 @@ export class VectorChallenge {
     this._seatDir(mesh, u, dir);
 
     this.shots.push({
-      u, dir, height,
+      // a shot's course is its own: the scratch vectors above are reused by
+      // every gun in the field, and by the position maths in _stepShots
+      u: u.clone(),
+      dir: dir.clone(),
+      height,
       speed: w.speed,
       dmg: w.dmg,
       kind: w.kind,
@@ -1469,6 +1659,7 @@ export class VectorChallenge {
           this._turn(s.dir, s.u, clamp(want, -s.turn * dt, s.turn * dt));
         }
       }
+      const prev = this._s5.copy(s.u); // where it was, for the sweep below
       this._advance(s.u, s.dir, s.speed * dt);
       const h = this.groundAt(s.u) + s.height;
       this._pointAt(s.u, h, this._w1);
@@ -1493,7 +1684,7 @@ export class VectorChallenge {
       if (!dead) {
         for (const q of this.pilots) {
           if (q === s.owner || !q.alive || q.invuln > 0 || q.respawn > 0) continue;
-          if (this._arc(s.u, q.u) < 12) {
+          if (this._sweptHit(prev, s.u, q.u, 12)) {
             this._hit(q, s.owner, s.dmg, s.kind);
             dead = true;
             break;
@@ -1566,8 +1757,9 @@ export class VectorChallenge {
 
   _respawn(p) {
     const u = this._w1;
+    // back onto the course, not onto the empty side of the world
     for (let tries = 0; tries < 60; tries++) {
-      this._scatter(u);
+      this._scatterNear(this.zone.u, this.zone.r, u);
       const crowded = this.pilots.some((q) => q.alive && q !== p && this._arc(q.u, u) < 130);
       if (!crowded && this._clearOfWalls(u, (p.collideR || 14) + 6)) break;
     }
@@ -1656,6 +1848,17 @@ export class VectorChallenge {
     } else {
       this._hudHull.textContent = p.respawn > 0 ? 'IN THE PIT' : hull;
       this._hudClock.textContent = `TIME ${Math.ceil(m.time)}`;
+    }
+    // what is left in the turbo reserve, so a pilot knows what there is to spend
+    if (p.turbo) {
+      this._hudTurbo.textContent = 'TURBO BURNING';
+      this._hudTurbo.style.color = '#ffd166';
+    } else if (p.turboCharge < 0.999) {
+      this._hudTurbo.textContent = `TURBO ${Math.round(p.turboCharge * 100)}%`;
+      this._hudTurbo.style.color = '#8fd0ff';
+    } else {
+      this._hudTurbo.textContent = 'TURBO READY · SHIFT';
+      this._hudTurbo.style.color = '';
     }
   }
 

@@ -1095,7 +1095,7 @@ export class DockUI {
         ]),
         el('div', { class: 'svc' }, [
           el('h4', { text: 'The orb' }),
-          el('p', { text: `${orb.name} — ${orb.note}. Fine work earns a tighter rock: bracket ${tier} of 8, and the rig fits its own pilots to match yours.` }),
+          el('p', { text: `${orb.name} — ${orb.note}. Fine work earns a tighter rock: bracket ${tier} of 8, the same course packed into less ground, and pilots fitted to match yours.` }),
         ]),
         el('div', { class: 'svc' }, [
           el('h4', { text: 'Circuit record' }),
@@ -1103,7 +1103,7 @@ export class DockUI {
         ]),
       ]),
       el('h3', { text: 'Enter the field' }),
-      el('p', { class: 'note', text: 'A duel settles the old question — last pilot flying. The harvest is ninety seconds over the crystal field, most crystals when the clock runs out. W and S thrust, A and D yaw, SPACE fires. The field is a whole orb: there is no edge to fall off and nowhere to run, because flying far enough brings you back to where you started. It runs modern — hills, walls and launch ramps, and cross a ramp fast and it throws you clean over the walls — with item pads for drive bursts, rapid fire and shields. Your guns are the ones in your bay, mount for mount.' }),
+      el('p', { class: 'note', text: 'A duel settles the old question — last pilot flying. The harvest is ninety seconds over the crystal field, most crystals when the clock runs out. W and S thrust, A and D yaw, SPACE fires, SHIFT burns the turbo reserve. The rig lays its course on one patch of the orb and the whole match is flown over it: hills, wall slabs and launch ramps — cross a ramp fast and it throws you clean over the walls — with item pads for drive bursts, rapid fire and shields. There is no edge to fall off, and the ground closes behind you, so there is nowhere to run. Your guns are the ones in your bay, mount for mount.' }),
       el('div', { style: 'display:flex;gap:10px;flex-wrap:wrap' }, [
         btn('Duel — last pilot flying', () => actions.startVectorChallenge('duel'), 'btn primary'),
         btn('Harvest — the crystal field', () => actions.startVectorChallenge('harvest'), 'btn primary'),

@@ -23,4 +23,4 @@ export const GAME_PAGE_TITLE = `${GAME_TITLE} — ${GAME_SAGA}: ${GAME_CHAPTER}`
  * screenshots can then tell in one glance whose build is older, and a bug
  * report can name the version it came from.
  */
-export const GAME_VERSION = '0.61';
+export const GAME_VERSION = '0.63';

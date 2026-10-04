@@ -1,16 +1,18 @@
-// Geometry audit for the Vector Challenge's orb field.
+// Geometry and gun audit for the Vector Challenge.
 //
 //   node tools/audit-vector.mjs
 //
 // The sim keeps every hull, shot, crystal and barrier as a direction from the
 // orb's centre with a heading along the surface, so a mistake in that maths
 // shows up as a ship sliding sideways, a barrier that is solid an inch from
-// where it is drawn, or a hull parked inside a wall. None of that needs a
+// where it is drawn, a hull parked inside a wall, or a bolt that freezes in
+// mid-air because it and the next gun share a vector. None of that needs a
 // browser to check, and ground truth comes from three.js itself: barriers are
 // measured against a real Object3D seated the way the sim seats the mesh, so a
 // collision frame that has drifted from what is drawn cannot pass.
 import * as THREE from 'three';
-import { VectorChallenge } from '../src/game/vector.js';
+import { VectorChallenge, simWeapon, ZONE_COUNTS } from '../src/game/vector.js';
+import { WEAPONS, WEAPON_BY_ID } from '../src/data/weapons.js';
 
 // The tightest orb on the circuit. Chord-versus-arc error grows as the world
 // gets smaller, so this is the worst case the sim can actually be asked to fly.
@@ -37,13 +39,57 @@ function makeOrb(orbR = R, seed = 1) {
   v.ramps = [];
   v.pickups = [];
   v.crystals = [];
-  for (const k of ['_s1', '_s2', '_s3', '_s4', '_w1', '_w2', '_w3', '_w4', '_w5']) v[k] = V3();
+  for (const k of ['_s1', '_s2', '_s3', '_s4', '_s5', '_s6', '_w1', '_w2', '_w3', '_w4', '_w5']) v[k] = V3();
   v._p2 = new THREE.Vector2();
   v._q1 = new THREE.Quaternion();
   v._mat = new THREE.Matrix4();
   v._col = new THREE.Color();
   v._col2 = new THREE.Color();
   return v;
+}
+
+/** The pieces _loose and _stepShots need: a shot pool and something to burst with. */
+function addShots(v, count = 8) {
+  v.shotGeos = {
+    laser: new THREE.BoxGeometry(1.6, 1.6, 5),
+    kinetic: new THREE.BoxGeometry(2.2, 2.2, 4),
+    beam: new THREE.BoxGeometry(1.1, 1.1, 16),
+    missile: new THREE.OctahedronGeometry(2.4),
+    disruptor: new THREE.TetrahedronGeometry(2.6),
+  };
+  v.shotPool = [];
+  for (let i = 0; i < count; i++) {
+    const mesh = new THREE.Mesh(v.shotGeos.laser, new THREE.MeshBasicMaterial());
+    mesh.visible = false;
+    v.shotPool.push(mesh);
+  }
+  v.shots = [];
+  v.burstPool = [{ spr: new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial()), t: 0, max: 0.45 }];
+  v.match = { mode: 'duel', time: 0, over: false };
+  return v;
+}
+
+/** A pilot with guns on it, standing still, pointed at `heading`. */
+function makeShooter(v, weaponId, mounts = 2, at = null) {
+  const p = {
+    isPlayer: true, color: 0x6effa8, y: 0, speed: 0, rapid: 0,
+    alive: true, invuln: 0, respawn: 0, hull: 100, elims: 0,
+    u: at ? at.clone() : v._scatter(V3()),
+    mounts: Array.from({ length: mounts }, () => simWeapon(WEAPON_BY_ID[weaponId])),
+    mountCd: Array.from({ length: mounts }, () => 0),
+  };
+  p.fwd = v._randomHeading(p.u, V3());
+  return p;
+}
+
+/** A rival parked a given distance dead ahead of the shooter. */
+function makeTarget(v, shooter, dist) {
+  const t = {
+    isPlayer: false, alive: true, invuln: 0, respawn: 0, hull: 1e6,
+    speed: 0, y: 0, color: 0xff6b7a, u: v._ahead(shooter.u, shooter.fwd, dist, V3()),
+  };
+  t.fwd = shooter.fwd.clone();
+  return t;
 }
 
 /** Barrier records laid out the way _buildTerrain lays them out. */
@@ -248,6 +294,173 @@ const f = (n, d = 4) => Number(n).toFixed(d);
   if (foot >= 1 || lip < 24) fail(`a ramp reads ${f(foot, 1)} at its foot and ${f(lip, 1)} at its lip`);
   if (v.launchAt(at(39, 0), 250) !== 215) fail('a fast hull is not thrown by a ramp');
   if (v.launchAt(at(39, 0), 100) !== 0) fail('a slow hull is thrown by a ramp');
+}
+
+/* ---- the chart's guns, as the sim flies them ---- */
+{
+  let low = Infinity;
+  let high = 0;
+  let heavy = 0;
+  for (const w of WEAPONS) {
+    const s = simWeapon(w);
+    if (!(s.dmg > 0) || !(s.cd > 0) || !(s.speed > 0) || !(s.life > 0)) fail(`${w.id} is not a gun the sim can fly`);
+    const dps = s.dmg / s.cd;
+    low = Math.min(low, dps);
+    high = Math.max(high, dps);
+    if (s.dmg > 45 + 1e-9) heavy++;
+  }
+  // the pull toward the middle of the charts is the whole point: taking their
+  // damage-per-second literally makes a disruptor fit a duel nobody can win
+  if (low < 12) fail(`the weakest gun in the sim does ${f(low, 1)} dps — a pea-shooter`);
+  if (high > 30) fail(`the strongest gun in the sim does ${f(high, 1)} dps — a duel that ends itself`);
+  if (heavy) fail(`${heavy} weapons can take more than half a hull in one hit`);
+}
+
+/* ---- shots ---- */
+{
+  const g = addShots(makeOrb());
+  const dt = 1 / 60;
+
+  // two mounts fired in the same frame are two shots, each with its own course.
+  // Sharing a vector between them freezes bolts in mid-air, which is exactly
+  // what the sim used to do.
+  const far = makeShooter(g, 'gauss', 2);
+  g.pilots = [far, makeTarget(g, far, 1800)];
+  if (!g._fire(far)) fail('a hull with two guns off cooldown fired nothing');
+  if (g.shots.length !== 2) fail(`two mounts loosed ${g.shots.length} shots`);
+  if (g.shots[0].u === g.shots[1].u || g.shots[0].dir === g.shots[1].dir) {
+    fail('two shots share one position or one heading');
+  }
+  const from = g.shots.map((s) => s.u.clone());
+  const speed = g.shots[0].speed;
+  for (let i = 0; i < 30; i++) g._stepShots(dt);
+  for (let i = 0; i < g.shots.length; i++) {
+    const flown = g._arc(from[i], g.shots[i].u);
+    if (Math.abs(flown - speed * 0.5) > 0.05 * speed * 0.5) {
+      fail(`a bolt flew ${f(flown, 1)} units in half a second, not ${f(speed * 0.5, 1)}`);
+    }
+  }
+  if (g.shots.length === 2 && g._arc(g.shots[0].u, g.shots[1].u) < 0.5) fail('two bolts in flight are stacked on each other');
+
+  // a target on the line takes hits, at ranges and frame lengths that used to
+  // swallow them whole
+  const damage = (dist, step, weapon = 'gauss', mounts = 2) => {
+    const v2 = addShots(makeOrb());
+    const p = makeShooter(v2, weapon, mounts);
+    const t = makeTarget(v2, p, dist);
+    v2.pilots = [p, t];
+    const before = t.hull;
+    for (let i = 0; i < Math.ceil(3 / step); i++) {
+      for (let k = 0; k < p.mountCd.length; k++) p.mountCd[k] = Math.max(0, p.mountCd[k] - step);
+      v2._fire(p);
+      v2._stepShots(step);
+    }
+    return before - t.hull;
+  };
+  for (const d of [120, 400, 900, 1100]) {
+    if (damage(d, dt) <= 0) fail(`nothing lands on a target ${d} units dead ahead`);
+  }
+  // one frame of 0.05s carries a gauss slug further than a hull is wide, so a
+  // single-point test would fly straight through the target
+  if (damage(700, 0.05) <= 0) fail('a bolt skips past a target when the frame is long');
+  // and the guns the commander actually flies with have to land too
+  for (const w of ['snare', 'hush', 'pulse', 'flechette', 'torpedo']) {
+    if (damage(400, dt, w) <= 0) fail(`${w} cannot hit a target 400 units dead ahead`);
+  }
+}
+
+/* ---- wedged between barriers ---- */
+{
+  // Two faces pushing against each other have opposed normals, so anything
+  // derived from a face — its left, the way its frame is turned — is opposed as
+  // well. A hull caught between them used to be handed one direction by each and
+  // cancel its own escape, which is how a pilot ends up pinned at a standstill.
+  // Sim time advances here, as it does in the game: with it frozen the hull never
+  // leaves the first moment of contact, which is not a state the field can be in.
+  const pinned = (gap, count) => {
+    const w = makeOrb();
+    const origin = w._scatter(V3());
+    let stalled = 0;
+    let penetrating = 0;
+    for (let trial = 0; trial < 120; trial++) {
+      const heading = w._randomHeading(origin, V3());
+      const spots = [origin.clone()];
+      if (count > 1) spots.push(w._ahead(origin, heading, gap, V3()));
+      if (count > 2) spots.push(w._ahead(origin, heading, -gap, V3()));
+      w.walls = spots.map((u) => {
+        const [t1, t2] = w._frameAt(u);
+        return { u, t1: t1.clone(), t2: t2.clone(), r: 20, h: 30 };
+      });
+      const p = {
+        u: origin.clone(), fwd: w._randomHeading(origin, V3()), speed: 250,
+        collideR: 14, strafeDir: trial % 2 ? -1 : 1, wallT: -99, y: 0,
+      };
+      for (let i = 0; i < 420; i++) {
+        w.t = i / 60;
+        w._advance(p.u, p.fwd, p.speed / 60);
+        w._collideWalls(p);
+      }
+      // where it finished only matters if it is still touching something
+      const clear = Math.min(...w.walls.map((q) => w._arc(p.u, q.u))) - 34;
+      if (clear < -0.05) penetrating++;
+      if (p.speed < 20 && clear < 0) stalled++;
+    }
+    return { stalled, penetrating };
+  };
+  for (const count of [2, 3]) {
+    for (const gap of [60, 68, 80, 100]) {
+      const { stalled, penetrating } = pinned(gap, count);
+      if (stalled) fail(`${stalled}/120 hulls stall wedged between ${count} barriers ${gap} apart`);
+      if (penetrating) fail(`${penetrating}/120 hulls end up inside one of ${count} barriers ${gap} apart`);
+    }
+  }
+}
+
+/* ---- the course, as _buildTerrain actually lays it out ---- */
+{
+  // the tightest and the widest orb: the course has the least room on one and
+  // has to still read as a course on the other
+  for (const orbR of [1200, 2100]) {
+    const c = makeOrb(orbR, 7);
+    c.scene = { add() {} };
+    c.terrain = [];
+    c.orbR = orbR;
+    c.zone = { u: c._scatter(V3()), r: Math.min(1500, Math.max(700, orbR * 0.72)) };
+    c._buildTerrain();
+
+    const solids = [
+      ...c.walls.map((w) => ({ u: w.u, r: w.hw ? 44 : 20 })),
+      ...c.mounds.map((m) => ({ u: m.u, r: 72 })),
+      ...c.ramps.map((r2) => ({ u: r2.u, r: 44 })),
+    ];
+    const want = ZONE_COUNTS.pyramids + ZONE_COUNTS.bars + ZONE_COUNTS.mounds + ZONE_COUNTS.ramps;
+    if (c.walls.length + c.mounds.length + c.ramps.length !== want) {
+      fail(`the ${orbR} orb carries ${c.walls.length + c.mounds.length + c.ramps.length} pieces of course, not ${want}`);
+    }
+    let outside = 0;
+    for (const s of solids) if (c._arc(c.zone.u, s.u) > c.zone.r + 1e-6) outside++;
+    if (outside) fail(`${outside} pieces of the ${orbR} course are off the patch`);
+
+    // Nothing may be laid on top of anything else, and every pair has to leave a
+    // hull's width of daylight between them: a gap a hull cannot fit down is a
+    // gap a hull can be wedged in.
+    let touching = 0;
+    let narrow = 0;
+    let crowded = 0;
+    for (let i = 0; i < solids.length; i++) {
+      for (let j = i + 1; j < solids.length; j++) {
+        const d = c._arc(solids[i].u, solids[j].u);
+        const room = solids[i].r + solids[j].r;
+        if (d < room) touching++;
+        else if (d < room + 34) narrow++;
+        else if (d < room * 1.6) crowded++;
+      }
+    }
+    if (touching) fail(`${touching} pairs of course pieces overlap on the ${orbR} orb`);
+    if (narrow) fail(`${narrow} pairs of course pieces on the ${orbR} orb leave no room for a hull between them`);
+    // a wide orb wants open ground between pieces; a pebble is meant to be tight
+    if (orbR === 2100 && crowded > 4) fail(`the wide orb is ${crowded} pieces too crowded`);
+  }
 }
 
 console.log(bad === 0 ? 'vector orb: all checks passed' : `vector orb: ${bad} problem(s)`);
