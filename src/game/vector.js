@@ -399,39 +399,122 @@ export class VectorChallenge {
     }
   }
 
-  /** Solid-wall resolve: push out and slide along the face. */
-  _collideWalls(p) {
+  /** True when a hull of radius `r` centred here touches no wall at all. */
+  _clearOfWalls(x, z, r) {
     for (const w of this.walls) {
       if (w.hw) {
-        // rotated bar: transform the pilot into the bar's frame
+        const c = Math.cos(w.rot);
+        const s = Math.sin(w.rot);
+        const dx = x - w.x;
+        const dz = z - w.z;
+        // the slab's own frame: the inverse of the `rotation.y` it is drawn with
+        const ox = Math.max(Math.abs(dx * c - dz * s) - w.hw, 0);
+        const oz = Math.max(Math.abs(dx * s + dz * c) - w.hd, 0);
+        if (ox * ox + oz * oz < r * r) return false;
+      } else if (Math.hypot(x - w.x, z - w.z) < (w.r || 20) + r) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Solid geometry, resolved as a bounce with slide.
+   *
+   * The hull is lifted clear of the face, then only the part of its motion
+   * heading into the wall is turned back out of it — whatever it had along the
+   * face is kept, so a pilot grazing a barrier slides down it and carries on
+   * instead of grinding to a halt. Two things matter for never getting stuck:
+   * a ship whose centre has ended up *inside* a slab is still pushed out (via
+   * whichever face is nearest), and speed is never simply zeroed on contact.
+   */
+  _collideWalls(p) {
+    const R = p.collideR || 14;
+    const SKIN = 3;    // daylight left behind, so contact cannot repeat every frame
+    const REST = 0.35; // how hard the hull comes back off a face
+    const SCRUB = 0.9; // scrape tax, charged once per impact
+    const FRESH = 0.25; // a hit within this long of the last one is a lean, not a bang
+
+    let vx = Math.sin(p.heading) * p.speed;
+    let vz = Math.cos(p.heading) * p.speed;
+    let bounced = false;
+
+    const push = (nx, nz, depth, hint) => {
+      p.x += nx * (depth + SKIN);
+      p.z += nz * (depth + SKIN);
+      const into = vx * nx + vz * nz;
+      if (into >= 0) return; // already moving clear of the face
+      const tx = -nz;
+      const tz = nx;
+      const vt = vx * tx + vz * tz;
+      const mag = Math.hypot(vx, vz);
+      // An inward motion with nothing across the face has no side to slide to,
+      // so the caller's hint picks one.
+      const side = Math.abs(vt) > mag * 0.15 ? Math.sign(vt) : (hint || 1);
+      if (this.t - (p.wallT ?? -99) < FRESH) {
+        // still leaning on a surface: turn the whole of the hull's momentum
+        // along the face. Holding the nose into a wall slides the ship down it
+        // at the speed it arrived with, instead of bouncing it back and forth
+        // until its speed has bled away.
+        vx = tx * side * mag;
+        vz = tz * side * mag;
+      } else {
+        // a fresh impact: kick off the face, keeping whatever ran along it
+        vx = (tx * vt - nx * into * REST) * SCRUB;
+        vz = (tz * vt - nz * into * REST) * SCRUB;
+      }
+      p.wallT = this.t;
+      bounced = true;
+    };
+
+    // two passes, so a hull wedged between two faces is freed by the second
+    for (let pass = 0; pass < 2; pass++) {
+      for (const w of this.walls) {
+        if (w.hw) {
+          const cw = Math.cos(w.rot);
+          const sw = Math.sin(w.rot);
+          const dx = p.x - w.x;
+          const dz = p.z - w.z;
+          // into the slab's own frame — the inverse of the `rotation.y` the
+          // mesh is drawn with, so the solid is exactly where it looks
+          const lx = dx * cw - dz * sw;
+          const lz = dx * sw + dz * cw;
+          const ex = w.hw + R;
+          const ez = w.hd + R;
+          if (Math.abs(lx) < ex && Math.abs(lz) < ez) {
+            // inside the inflated slab: leave by the nearest face
+            const penX = ex - Math.abs(lx);
+            const penZ = ez - Math.abs(lz);
+            let nlx = 0;
+            let nlz = 0;
+            let depth;
+            if (penX < penZ) { nlx = lx < 0 ? -1 : 1; depth = penX; } else { nlz = lz < 0 ? -1 : 1; depth = penZ; }
+            // along the length of the slab, out the nearer end — the short way
+            // off a barrier, rather than scraping its whole 80 units
+            const hint = penX < penZ ? (p.strafeDir || 1) : (lx > 0 ? -1 : 1);
+            push(nlx * cw + nlz * sw, -nlx * sw + nlz * cw, depth, hint);
+          }
+          continue;
+        }
+        // pyramids and anything else round
         const dx = p.x - w.x;
         const dz = p.z - w.z;
-        const c = Math.cos(-w.rot);
-        const s = Math.sin(-w.rot);
-        const lx = dx * c - dz * s;
-        const lz = dx * s + dz * c;
-        const px = clamp(lx, -w.hw, w.hw);
-        const pz = clamp(lz, -w.hd, w.hd);
-        const ox = lx - px;
-        const oz = lz - pz;
-        const d2 = ox * ox + oz * oz;
-        if (d2 < 12 * 12) {
-          const rot = new THREE.Matrix4().makeRotationY(w.rot);
-          const v = new THREE.Vector3(ox, 0, oz).applyMatrix4(rot);
-          p.x += v.x;
-          p.z += v.z;
-          p.speed *= 0.55;
+        const rr = (w.r || 20) + R;
+        const d = Math.hypot(dx, dz);
+        if (d < rr) {
+          // dead centre has no direction of its own, so pick one
+          const nx = d > 0.0001 ? dx / d : 1;
+          const nz = d > 0.0001 ? dz / d : 0;
+          push(nx, nz, rr - d, p.strafeDir || 1);
         }
-        continue;
       }
-      const dx = p.x - w.x;
-      const dz = p.z - w.z;
-      const d = Math.hypot(dx, dz);
-      const r = (w.r || 20) + 10;
-      if (d < r && d > 0.0001) {
-        p.x = w.x + (dx / d) * r;
-        p.z = w.z + (dz / d) * r;
-        p.speed *= 0.55;
+    }
+
+    if (bounced) {
+      const mag = Math.hypot(vx, vz);
+      if (mag > 0.001) {
+        p.heading = Math.atan2(vx, vz);
+        p.speed = clamp(mag, 0, 250);
       }
     }
   }
@@ -530,18 +613,26 @@ export class VectorChallenge {
     vectorize(group, color);
     const s = clamp(26 / Math.max(14, def.len), 0.3, 1.5);
     group.scale.setScalar(s);
+    // how much room the hull needs beside a wall, so it is pushed clear of the
+    // face rather than parked inside it
+    const collideR = Math.max(14, (def.radius ?? def.len * 0.5) * s);
     this.scene.add(group);
 
     const shieldGlow = glowSprite(0x9fd8ff, 30);
     shieldGlow.visible = false;
     group.add(shieldGlow);
 
-    const x = this.rng.float(0, 1) * ARENA * 1.4 - ARENA * 0.7;
-    const z = this.rng.float(0, 1) * ARENA * 1.4 - ARENA * 0.7;
+    let x = 0;
+    let z = 0;
+    for (let tries = 0; tries < 60; tries++) {
+      x = this.rng.float(0, 1) * ARENA * 1.4 - ARENA * 0.7;
+      z = this.rng.float(0, 1) * ARENA * 1.4 - ARENA * 0.7;
+      if (this._clearOfWalls(x, z, collideR + 6)) break;
+    }
     const heading = this.rng.float(0, 1) * Math.PI * 2;
     return {
       name: isPlayer ? this.commander : this.rng.pick(CALLSIGNS),
-      isPlayer, color, def, group, api, shieldGlow,
+      isPlayer, color, def, group, api, shieldGlow, collideR,
       x, z, y: 0, vy: 0,
       heading, speed: 0,
       alive: true,
@@ -552,6 +643,7 @@ export class VectorChallenge {
       elims: 0,
       fireCd: this.rng.float(0, 1),
       strafeDir: this.rng.float(0, 1) < 0.5 ? 1 : -1,
+      wallT: -99, // when this hull last touched a barrier
       wobble: this.rng.float(0, 1) * 10,
       boost: 0, rapid: 0, shieldT: 0,
     };
@@ -561,13 +653,14 @@ export class VectorChallenge {
     this._lastMode = mode;
     this._teardownMatch();
     this.match = { mode, time: mode === 'harvest' ? HARVEST_TIME : 0, over: false };
+    // terrain first — the pilots need the barriers to spawn clear of
+    this._buildTerrain();
     this.pilots = [this._makePilot(0, true)];
     for (let i = 1; i <= 2; i++) this.pilots.push(this._makePilot(i, false));
     for (const sm of this.shotPool) sm.visible = false;
     this.shots.length = 0;
     this._place = 1;
 
-    this._buildTerrain();
     this._buildPickups();
 
     // the crystal field for the harvest
@@ -1007,7 +1100,7 @@ export class VectorChallenge {
       x = this.rng.float(0, 1) * ARENA * 1.4 - ARENA * 0.7;
       z = this.rng.float(0, 1) * ARENA * 1.4 - ARENA * 0.7;
       const crowded = this.pilots.some((q) => q.alive && q !== p && Math.hypot(q.x - x, q.z - z) < 130);
-      if (!crowded) break;
+      if (!crowded && this._clearOfWalls(x, z, (p.collideR || 14) + 6)) break;
     }
     p.x = x;
     p.z = z;
