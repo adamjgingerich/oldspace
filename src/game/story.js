@@ -8,6 +8,7 @@
 
 import { SYSTEMS } from '../data/systems.js';
 import { levelFromXp } from './skills.js';
+import { rngOf } from '../core/rng.js';
 
 export const STORY_LINES = {
   vig: {
@@ -248,9 +249,11 @@ export function applyStoryRewards(state, meta) {
 }
 
 /**
- * A way out: one quiet errand per flag. Carrying the papers to a flag's home
- * is signing on with them — no standing, no broker, just the run. Completing
- * one switches your colours and starts that flag's line from the top.
+ * The papers themselves: one quiet errand per flag. Carrying them to a flag's
+ * home is signing on with them — no standing, no broker, just the run.
+ * Completing one switches your colours and starts that flag's line from the
+ * top. Which of these a desk will actually hand you, and when, is decided by
+ * defectionOffers below — they are not all on offer at once.
  */
 export const SWITCH_QUESTS = {
   free: {
@@ -275,26 +278,45 @@ export const SWITCH_QUESTS = {
   },
 };
 
-/** Defection errands open to a sworn pilot: one per flag they do not fly. */
+/**
+ * A way out, and a rare one. A sworn pilot does not shop for colours. Only
+ * once they have flown their flag long enough to be worth poaching does a desk
+ * now and then put a single quiet errand in front of them — for one flag, and
+ * only in some windows of days. The rest of the time the flag's own work is
+ * the only thing on the board, which is as it should be: changing sides is not
+ * a thing a captain does often.
+ */
+const DEFECTION_MIN_STAGE = 3;     // postings served before anyone bothers to poach you
+const DEFECTION_WINDOW_DAYS = 12;  // the offer is decided per window, not per visit
+const DEFECTION_CHANCE = 0.15;     // ...and most windows pass with nothing at all
+
+/** Defection errand open to a sworn pilot, when one is open at all. */
 export function defectionOffers(state, station) {
   if (!state.allegiance) return [];
-  const out = [];
-  for (const [fid, q] of Object.entries(SWITCH_QUESTS)) {
-    if (fid === state.allegiance) continue;
-    out.push({
-      id: `defect-${fid}`,
-      type: 'courier',
-      tier: 3,
-      defect: { faction: fid },
-      title: q.name,
-      desc: q.desc,
-      issuer: { stationId: station.id, systemId: state.systemId, faction: station.owner },
-      dest: { systemId: q.dest },
-      cargo: { id: 'electronics', qty: 1 },
-      reward: q.reward,
-      rep: { faction: fid, amount: 8 },
-      deadlineDay: state.day + 10,
-    });
-  }
-  return out;
+  // your own desk does not hand you the papers to leave it
+  if (station.owner === state.allegiance) return [];
+  const stage = state.factionLine?.faction === state.allegiance ? (state.factionLine.stage || 0) : 0;
+  if (stage < DEFECTION_MIN_STAGE) return [];
+  const window = Math.floor(state.day / DEFECTION_WINDOW_DAYS);
+  const rng = rngOf(state.worldSeed, 'defect', station.id, window);
+  if (!rng.chance(DEFECTION_CHANCE)) return [];
+  // one errand, never a menu: the flag is settled by the same roll
+  const candidates = Object.keys(SWITCH_QUESTS).filter((fid) => fid !== state.allegiance);
+  if (!candidates.length) return [];
+  const fid = rng.pick(candidates);
+  const q = SWITCH_QUESTS[fid];
+  return [{
+    id: `defect-${fid}-w${window}`,
+    type: 'courier',
+    tier: 3,
+    defect: { faction: fid },
+    title: q.name,
+    desc: q.desc,
+    issuer: { stationId: station.id, systemId: state.systemId, faction: station.owner },
+    dest: { systemId: q.dest },
+    cargo: { id: 'electronics', qty: 1 },
+    reward: q.reward,
+    rep: { faction: fid, amount: 8 },
+    deadlineDay: state.day + 10,
+  }];
 }

@@ -1137,32 +1137,6 @@ export class DockUI {
       for (const o of joins) this.body.append(joinCard(o));
     }
 
-    // ---- a change of colours: errands that switch your flag ----
-    if (sworn) {
-      const defections = story.defectionOffers(state, station).filter((o) => !state.missions.some((m) => m.id === o.id));
-      if (defections.length) {
-        this.body.append(el('h3', { text: 'A change of colours' }));
-        this.body.append(el('p', { class: 'note', text: 'Carry the papers to another flag and you sign on with them — the old flag writes it down, the new line starts fresh.' }));
-        for (const o of defections) {
-          const f = FACTIONS[o.defect.faction];
-          const accept = btn('Sign on', () => actions.actAcceptMission(o), 'btn small primary');
-          if (state.missions.filter((m) => !m.story).length >= missions.MAX_ACTIVE) accept.disabled = true;
-          this.body.append(el('div', { class: `mission ${o.type}`, style: `--mcol: ${f?.color || '#9fb0c6'}` }, [
-            el('div', { class: 'mtag', html: `${emblemSVG(o.defect.faction, 14)} ${f?.name.toUpperCase() || o.defect.faction} · DEFECTION` }),
-            el('h4', { text: o.title }),
-            el('p', { text: o.desc }),
-            el('div', { class: 'mfoot' }, [
-              el('span', { class: 'mwhere' }, [
-                el('span', { class: 'mdest', text: `▸ ${SYSTEMS[o.dest.systemId].name}` }),
-                el('span', { text: `₡${o.reward.toLocaleString()}` }),
-              ]),
-              accept,
-            ]),
-          ]));
-        }
-      }
-    }
-
     // ---- side work: notices pinned by whoever needs something ----
     const notices = sidequests.sideOffers(state, station).filter((o) => !state.missions.some((m) => m.id === o.id));
     if (notices.length) {
@@ -1294,8 +1268,55 @@ export class DockUI {
     }
     this.body.append(boardWrap);
 
+    // ---- a change of colours: last, folded, and rare ----
+    this._renderDefections();
+
     const rng = rngOf(state.worldSeed, 'rumor', station.id, state.day);
     this.body.append(el('p', { class: 'note', style: 'margin-top:16px;font-style:italic', text: `“${rng.pick(RUMORS)}” — someone at the bar` }));
+  }
+
+  /**
+   * A change of colours — the quiet way out of a flag. Kept last on the board
+   * and folded away by default: it is a rare errand, not a standing menu, and
+   * a captain should not be tripping over the offer every time they dock.
+   */
+  _renderDefections() {
+    const { state, station, actions } = this.ctx;
+    if (!state.allegiance) return;
+    const defections = story.defectionOffers(state, station)
+      .filter((o) => !state.missions.some((m) => m.id === o.id));
+    if (!defections.length) return;
+
+    const open = !!this._defectOpen;
+    const toggle = el('button', { class: `defect-toggle ${open ? 'on' : ''}`, type: 'button' }, [
+      el('span', { class: 'dtri', text: open ? '▾' : '▸' }),
+      el('span', { text: `A change of colours (${defections.length})` }),
+    ]);
+    toggle.addEventListener('click', () => {
+      this._defectOpen = !this._defectOpen;
+      this.render();
+    });
+    this.body.append(el('div', { class: 'defect-fold' }, [toggle]));
+    if (!open) return;
+
+    this.body.append(el('p', { class: 'note', text: 'A desk has put one quiet errand in front of you. Carry the papers to another flag and you sign on with them — the old flag writes it down, the new line starts fresh. This is not a thing a captain does often.' }));
+    for (const o of defections) {
+      const f = FACTIONS[o.defect.faction];
+      const accept = btn('Sign on', () => actions.actAcceptMission(o), 'btn small primary');
+      if (state.missions.filter((m) => !m.story).length >= missions.MAX_ACTIVE) accept.disabled = true;
+      this.body.append(el('div', { class: `mission ${o.type}`, style: `--mcol: ${f?.color || '#9fb0c6'}` }, [
+        el('div', { class: 'mtag', html: `${emblemSVG(o.defect.faction, 14)} ${f?.name.toUpperCase() || o.defect.faction} · DEFECTION` }),
+        el('h4', { text: o.title }),
+        el('p', { text: o.desc }),
+        el('div', { class: 'mfoot' }, [
+          el('span', { class: 'mwhere' }, [
+            el('span', { class: 'mdest', text: `▸ ${SYSTEMS[o.dest.systemId].name}` }),
+            el('span', { text: `₡${o.reward.toLocaleString()}` }),
+          ]),
+          accept,
+        ]),
+      ]));
+    }
   }
 
   /* ------------------------------------------------------------------ */
