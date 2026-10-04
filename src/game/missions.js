@@ -227,21 +227,28 @@ function weightedDest(rng, cands, tier) {
   return cands[cands.length - 1];
 }
 
+// The lane graph never changes at runtime, so hop scans are memoized forever.
+const REACH_CACHE = new Map();
 function reachableFrom(sysId, maxHops = 2) {
-  const out = [];
-  const seen = new Set([sysId]);
-  let frontier = [sysId];
-  for (let hop = 1; hop <= maxHops; hop++) {
-    const next = [];
-    for (const s of frontier) {
-      for (const l of SYSTEMS[s].links) {
-        if (seen.has(l)) continue;
-        seen.add(l);
-        out.push({ id: l, hops: hop });
-        next.push(l);
+  const key = `${sysId}:${maxHops}`;
+  let out = REACH_CACHE.get(key);
+  if (!out) {
+    out = [];
+    const seen = new Set([sysId]);
+    let frontier = [sysId];
+    for (let hop = 1; hop <= maxHops; hop++) {
+      const next = [];
+      for (const s of frontier) {
+        for (const l of SYSTEMS[s].links) {
+          if (seen.has(l)) continue;
+          seen.add(l);
+          out.push({ id: l, hops: hop });
+          next.push(l);
+        }
       }
+      frontier = next;
     }
-    frontier = next;
+    REACH_CACHE.set(key, out);
   }
   return out;
 }
@@ -309,11 +316,16 @@ function fillText(s, vars) {
 /** Legal commodities, for salvage bonuses on open contracts. */
 const LEGAL_COMMODITIES = Object.values(COMMODITY_BY_ID).filter((c) => !c.illegal);
 
+/** Static index: faction id -> its written storyline, built once. */
+const STORY_LINE_BY_FACTION = new Map(
+  Object.values(STORY_LINES).map((l) => [l.faction, l]),
+);
+
 /** Story chapters run first in a flag's chain, then its templated work. */
 function storyStages(faction) {
-  const line = Object.values(STORY_LINES).find((l) => l.faction === faction);
+  const line = STORY_LINE_BY_FACTION.get(faction);
   if (!line) return [];
-  return line.chapters.map((ch) => ({ kind: 'story', line: line.id, chapter: ch.n, lvl: ch.lvl || 1 }));
+  return line.chapters.map((ch) => ({ kind: 'story', line: line.id, chapter: ch.n }));
 }
 
 function factionStages(faction) {
@@ -321,8 +333,14 @@ function factionStages(faction) {
 }
 
 /** The flag's one quest chain: written story, written work, then procedural. */
+const CHAIN_CACHE = new Map();
 export function factionChain(faction) {
-  return [...storyStages(faction), ...factionStages(faction)];
+  let chain = CHAIN_CACHE.get(faction);
+  if (!chain) {
+    chain = [...storyStages(faction), ...factionStages(faction)];
+    CHAIN_CACHE.set(faction, chain);
+  }
+  return chain;
 }
 
 /** Work each flag keeps generating once its written line is run out. */

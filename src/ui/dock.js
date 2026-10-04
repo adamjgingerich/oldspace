@@ -1081,7 +1081,7 @@ export class DockUI {
 
     const joinCard = (o) => {
       const line = story.STORY_LINES[o.story.line];
-      const accept = btn('Sign on', () => actions.actAcceptMission(o.id), 'btn small primary');
+      const accept = btn('Sign on', () => actions.actAcceptMission(o), 'btn small primary');
       return el('div', { class: `mission ${o.type}`, style: `--mcol: ${line.color}` }, [
         el('div', { class: 'mtag', html: `${line.name.toUpperCase()} · CHAPTER 1` }),
         el('h4', { text: o.title }),
@@ -1111,7 +1111,7 @@ export class DockUI {
         this.body.append(el('p', { class: 'note', text: 'Carry the papers to another flag and you sign on with them — the old flag writes it down, the new line starts fresh.' }));
         for (const o of defections) {
           const f = FACTIONS[o.defect.faction];
-          const accept = btn('Sign on', () => actions.actAcceptMission(o.id), 'btn small primary');
+          const accept = btn('Sign on', () => actions.actAcceptMission(o), 'btn small primary');
           if (state.missions.filter((m) => !m.story).length >= missions.MAX_ACTIVE) accept.disabled = true;
           this.body.append(el('div', { class: `mission ${o.type}`, style: `--mcol: ${f?.color || '#9fb0c6'}` }, [
             el('div', { class: 'mtag', html: `${emblemSVG(o.defect.faction, 14)} ${f?.name.toUpperCase() || o.defect.faction} · DEFECTION` }),
@@ -1137,7 +1137,7 @@ export class DockUI {
       const heldNow = state.missions.filter((m) => !m.story).length;
       for (const o of notices) {
         const quest = sidequests.SIDE_BY_ID[o.side.group];
-        const accept = btn(`Take it on (${o.side.step + 1}/${quest.steps.length})`, () => actions.actAcceptMission(o.id), 'btn small primary');
+        const accept = btn(`Take it on (${o.side.step + 1}/${quest.steps.length})`, () => actions.actAcceptMission(o), 'btn small primary');
         if (heldNow >= missions.MAX_ACTIVE) accept.disabled = true;
         this.body.append(el('div', { class: `mission ${o.type}`, style: `--mcol: ${quest.color}` }, [
           el('div', { class: 'mtag', html: `${quest.name.toUpperCase()} · STEP ${o.side.step + 1} OF ${quest.steps.length}` }),
@@ -1218,7 +1218,7 @@ export class DockUI {
 
     const offerCard = (o, extraChip) => {
       const tag = missions.MISSION_TAGS[o.type] || 'CONTRACT';
-      const accept = btn('Accept', () => actions.actAcceptMission(o.id), 'btn small primary');
+      const accept = btn('Accept', () => actions.actAcceptMission(o), 'btn small primary');
       if (state.missions.filter((m) => !m.story).length >= missions.MAX_ACTIVE) accept.disabled = true;
       return el('div', { class: `mission ${o.type}` }, [
         el('div', {

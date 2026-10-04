@@ -1468,11 +1468,15 @@ export class Game {
     this.hint('lumencourier', 'The courier will close and hand over one lumen — enough to run a lane.');
   }
 
-  actAcceptMission(offerId) {
+  actAcceptMission(offerOrId) {
     const station = this.station;
-    const offer = missions.generateBoard(this.state, station).find((o) => o.id === offerId)
-      || story.joinOffers(this.state, station).find((o) => o.id === offerId)
-      || sidequests.sideOffers(this.state, station).find((o) => o.id === offerId);
+    // the dock hands the offer object straight over — only keyboard/legacy
+    // callers pay for a fresh board build to look one up by id
+    const offer = typeof offerOrId === 'object' && offerOrId
+      ? offerOrId
+      : missions.generateBoard(this.state, station).find((o) => o.id === offerOrId)
+        || story.joinOffers(this.state, station).find((o) => o.id === offerOrId)
+        || sidequests.sideOffers(this.state, station).find((o) => o.id === offerOrId);
     if (!offer) return;
     const res = missions.acceptMission(this.state, offer);
     if (!res.ok) {
