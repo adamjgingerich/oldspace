@@ -2322,7 +2322,7 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   pointer-events: none;
 }
 .vec-hud.hidden, .vec-lobby.hidden, .vec-over.hidden,
-.vec-board.hidden, .vec-markers.hidden, .vec-marker.hidden { display: none; }
+.vec-board.hidden, .vec-markers.hidden, .vec-marker.hidden, .vec-gauges.hidden { display: none; }
 .vec-lobby, .vec-over {
   position: absolute;
   inset: 0;
@@ -2393,6 +2393,41 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   text-shadow: 0 0 12px rgba(255, 241, 168, 0.8);
 }
 .vh-pop.on { opacity: 1; transform: translateY(0); }
+
+/* The gauges: power lever, turbo tank and what the hull is doing */
+.vec-gauges {
+  position: absolute;
+  left: 18px;
+  bottom: 26px;
+  z-index: 1;
+  width: 220px;
+  display: grid;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: #9fd8c0;
+  pointer-events: none;
+}
+.vg-row {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.vg-row.hidden { display: none; }
+.vg-label { color: #4e8f78; }
+.vg-row i {
+  display: block;
+  height: 9px;
+  width: 0;
+  background: #6effa8;
+  box-shadow: 0 0 10px rgba(110, 255, 168, 0.55);
+  transition: width 0.08s linear;
+}
+.vg-row.turbo i { background: #8fd0ff; box-shadow: 0 0 10px rgba(143, 208, 255, 0.55); }
+.vg-row i:empty { box-shadow: none; }
+.vg-note { color: #6fa892; letter-spacing: 0.12em; }
 
 /* The rival board: who else is flying, their hull and how far off they are.
    An orb is wide enough to lose a fight in by looking the wrong way. */

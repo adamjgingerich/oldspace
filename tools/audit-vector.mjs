@@ -14,7 +14,8 @@ import * as THREE from 'three';
 import { VectorChallenge, simWeapon, ZONE_COUNTS, courseRadius, CHUTE_SPEC } from '../src/game/vector.js';
 import { WEAPONS, WEAPON_BY_ID } from '../src/data/weapons.js';
 
-const CHUTE_PAD_KINDS_OK = ['burst', 'rapid', 'ward'];
+const CHUTE_PAD_KINDS_OK = ['burst', 'rapid', 'ward', 'star'];
+const CHUTE_TOP_SPEED_SPEC = 250;
 
 // The tightest orb on the circuit, and the widest. Chord-versus-arc error grows
 // as the world gets smaller, so the first is the worst case the sim can be asked
@@ -162,7 +163,11 @@ function makeRacer(c, i, isPlayer = false) {
     wallT: -99, flashUntil: -1, wobble: i * 1.7,
     turbo: 0, turboCharge: 1, daze: 0, spoilGuard: 0, finishAt: null,
     gates: 0, lane: 0, forkId: 0, place: 1, showPlace: null,
-    boost: 0, rapid: 0, warnFork: 0, warnRift: 0, warnPinch: 0,
+    boost: 0, rapid: 0, warnFork: 0, warnRift: 0, warnPinch: 0, stars: 0,
+    // the same grid the rig lays out: the pole sitter is quickest, the back of
+    // the grid is not, and the commander's lever sits part open on the line
+    skill: isPlayer ? 1 : Math.max(0.9, CHUTE_SPEC.rivalTop - i * CHUTE_SPEC.rivalFall),
+    throttle: isPlayer ? CHUTE_SPEC.gridLever : 1,
   };
 }
 
@@ -708,12 +713,18 @@ function makeRacer(c, i, isPlayer = false) {
   if (!c.chute.ramps.some((r) => r.lane)) fail('the chute has no lane rifts to commit to');
   for (const tier of [1, 8]) {
     const t = makeChute(tier, 5);
+    // What a hull crossing the lip at exactly the ramp's minimum speed clears.
+    // The gap has to be comfortably inside that, or a rival that just made the
+    // jump still falls in — which is the worst kind of unfair.
+    const minClear = CHUTE_SPEC.rampMin * flight;
     for (const r of t.chute.ramps) {
       const gap = t.chute.gaps.find((g) => g.from === r.to && g.lane === r.lane);
       if (!gap) { fail(`the ramp at ${r.from} has no gap after it in its own lane`); continue; }
       const len = gap.to - gap.from;
-      if (len > 250 * flight) fail(`the gap at ${gap.from} on bracket ${tier} needs more than full drive to clear`);
-      if (len < 120 * flight) fail(`the gap at ${gap.from} on bracket ${tier} is no obstacle at all`);
+      if (len > minClear * 0.85) {
+        fail(`the gap at ${gap.from} on bracket ${tier} is ${len} long, and a hull at ${CHUTE_SPEC.rampMin} only clears ${Math.round(minClear)}`);
+      }
+      if (len < 60) fail(`the gap at ${gap.from} on bracket ${tier} is too short to read as a hole`);
       // a rift in a lane is only a choice if the divider is there to commit to
       if (r.lane) {
         const fork = t.chute.forks.find((f) => r.from >= f.from && r.to <= f.to);
@@ -771,6 +782,10 @@ function makeRacer(c, i, isPlayer = false) {
     if (overlaps) fail(`${overlaps} pieces of the chute are laid on top of each other`);
     // plates sit on the road and stay inside it
     if (!t.chute.pads.length) fail('the chute has no burst plates');
+    if (!t.chute.stars.length) fail('the chute has no stars');
+    if (t.chute.ramps.filter((r) => r.lane).length > CHUTE_SPEC.riftMax) {
+      fail(`the chute carries ${t.chute.ramps.filter((r) => r.lane).length} lane rifts, more than the ${CHUTE_SPEC.riftMax} it rations itself`);
+    }
     let offRoad = 0;
     for (const pad of t.chute.pads) {
       const lim = t._chuteHalf(pad.s) - CHUTE_SPEC.hullSide;
@@ -778,7 +793,7 @@ function makeRacer(c, i, isPlayer = false) {
       if (pad.s < 400 || pad.s > t.chute.length - 200) offRoad++;
       if (!CHUTE_PAD_KINDS_OK.includes(pad.kind)) offRoad++;
     }
-    if (offRoad) fail(`${offRoad} burst plates are off the road or of no known kind`);
+    if (offRoad) fail(`${offRoad} pickups are off the road or of no known kind`);
   }
 
   // a hit in the chute takes a rival's drive, not its hull
@@ -804,8 +819,9 @@ function makeRacer(c, i, isPlayer = false) {
   // standing start to the line — nobody stuck, nobody outside the walls
   {
     const r = makeChute(1, 7);
-    r.pilots = [0, 1, 2, 3].map((i) => makeRacer(r, i, i === 0));
-    r._keys.add('KeyW'); // the commander holds the drive down and lives with it
+    r.pilots = Array.from({ length: CHUTE_SPEC.rivals + 1 }, (_, i) => makeRacer(r, i, i === 0));
+    if (r.pilots.length < 5) fail(`only ${r.pilots.length} pilots are on the grid`);
+    r._keys.add('KeyW'); // the commander holds the lever down and lives with it
     const dt = 1 / 60;
     let offTrack = 0;
     let nan = 0;
@@ -832,6 +848,97 @@ function makeRacer(c, i, isPlayer = false) {
     if (r.match.playerHome !== true) fail('the commander never reached the line');
   }
 
+  // the tank has to be worth something: same hull, same lever, tank lit or not
+  {
+    const c = makeChute(1, 13);
+    const drive = (lit) => {
+      const p = makeRacer(c, 0, true);
+      p.throttle = 1;
+      let peak = 0;
+      for (let i = 0; i < 240; i++) {
+        c._keys.clear();
+        c._keys.add('KeyW');
+        if (lit) c._keys.add('ShiftLeft');
+        c._chutePlayer(p, 1 / 60);
+        peak = Math.max(peak, p.speed);
+      }
+      return { p, peak };
+    };
+    const plain = drive(false);
+    const turbo = drive(true);
+    if (turbo.peak < plain.peak * 1.15) {
+      fail(`the turbo tank buys ${(turbo.peak / plain.peak).toFixed(2)}x speed — the bar is a display`);
+    }
+    if (turbo.p.turboCharge >= plain.p.turboCharge) fail('the turbo tank never empties while it is burning');
+  }
+
+  // and it is a race, not a formality and not a rout: a commander who only
+  // holds the lever down comes out about even with the field over a run of
+  // brackets, and one who works the tank as well comes out ahead of that
+  {
+    const fly = (tier, keys) => {
+      const r = makeChute(tier, 7);
+      r.pilots = Array.from({ length: CHUTE_SPEC.rivals + 1 }, (_, i) => makeRacer(r, i, i === 0));
+      for (const k of keys) r._keys.add(k);
+      let steps = 0;
+      while (steps < 60 * 400 && r.pilots.some((p) => p.finishAt == null)) {
+        steps += 1;
+        r.match.time += 1 / 60;
+        r.t += 1 / 60;
+        r._chuteStep(1 / 60);
+      }
+      if (r.pilots[0].finishAt == null) return null;
+      const best = Math.min(...r.pilots.slice(1).map((p) => p.finishAt ?? Infinity));
+      return best - r.pilots[0].finishAt;
+    };
+    let plain = 0;
+    let turbo = 0;
+    let tiers = 0;
+    for (const tier of [1, 2, 4, 6, 8]) {
+      const a = fly(tier, ['KeyW']);
+      const b = fly(tier, ['KeyW', 'ShiftLeft']);
+      if (a == null || b == null) { fail(`a commander holding the lever down cannot finish bracket ${tier}`); break; }
+      plain += a;
+      turbo += b;
+      tiers += 1;
+    }
+    if (tiers === 5) {
+      plain /= tiers;
+      turbo /= tiers;
+      if (Math.abs(plain) > 6) {
+        fail(`a commander who only holds the lever ${plain > 0 ? 'wins' : 'loses'} by ${Math.abs(plain).toFixed(1)}s a race on average — the field is not flying`);
+      }
+      if (turbo < plain + 0.4) {
+        fail(`working the tank is worth ${(turbo - plain).toFixed(2)}s a race — the bar does not pay`);
+      }
+    }
+  }
+
+  // and the rig does not fly the race for the pilot: a commander who touches
+  // nothing at all is behind the field, and is still flying at the speed the
+  // lever was left at
+  {
+    const r = makeChute(2, 7);
+    r.pilots = Array.from({ length: CHUTE_SPEC.rivals + 1 }, (_, i) => makeRacer(r, i, i === 0));
+    const lever = CHUTE_SPEC.gridLever * CHUTE_SPEC.topSpeed;
+    let opened = 0;
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < 60 * 45; i++) {
+      r.match.time += 1 / 60;
+      r.t += 1 / 60;
+      r._chuteStep(1 / 60);
+      if (r.pilots[0].throttle > CHUTE_SPEC.gridLever + 1e-6) opened += 1;
+      // the last ten seconds, by which time any fall on the way round has long
+      // since been driven off
+      if (i >= 60 * 35) { sum += r.pilots[0].speed; n += 1; }
+    }
+    const avg = sum / n;
+    if (opened) fail(`the rig worked the lever itself on ${opened} frames`);
+    if (r._chutePlace(r.pilots[0]) !== r.pilots.length) fail('the chute flies itself: a commander who touches nothing is not last');
+    if (avg > lever + 12) fail(`a commander who touches nothing averages ${Math.round(avg)} u/s on a lever set to ${Math.round(lever)}`);
+  }
+
   // the guns work in the chute too: a bolt up the lane reaches the hull ahead
   {
     const g = makeChute(2, 11);
@@ -846,6 +953,59 @@ function makeRacer(c, i, isPlayer = false) {
     for (let i = 0; i < 180 && g.shots.length; i++) g._chuteStepShots(1 / 60);
     if (prey.daze <= 0) fail('a bolt fired up the chute never reached the hull ahead of it');
     if (prey.hull !== prey.hullMax) fail('a bolt in the chute took hull rather than drive');
+  }
+
+  // ---- the power lever, the turbo tank and the stars that fill it ----
+  {
+    const g = makeChute(2, 23);
+    const p = makeRacer(g, 0, true);
+    g.pilots = [p];
+    p.s = 1000;
+    p.lat = 0;
+    p.speed = 0;
+    p.throttle = 0;
+
+    // wide open: the hull runs up to the ceiling
+    g._keys.add('KeyW');
+    for (let i = 0; i < 60 * 6; i++) g._chuteStep(1 / 60);
+    if (p.throttle < 0.99) fail('the power lever does not wind all the way on');
+    if (p.speed < CHUTE_TOP_SPEED_SPEC * 0.98) fail(`the hull only reached ${Math.round(p.speed)} with the lever wide open`);
+    // feathered: it holds a lower speed instead of coasting up to the ceiling
+    g._keys.clear();
+    g._keys.add('KeyS');
+    for (let i = 0; i < 11; i++) g._chuteStep(1 / 60); // about half a stroke
+    g._keys.clear();
+    const held = p.throttle;
+    for (let i = 0; i < 90; i++) g._chuteStep(1 / 60);
+    if (held < 0.3 || held > 0.7) fail(`half a lever stroke set the hull to ${Math.round(held * 100)}%`);
+    if (Math.abs(p.speed - held * CHUTE_TOP_SPEED_SPEC) > 30) {
+      fail(`the hull settled at ${Math.round(p.speed)} with the lever at ${Math.round(held * 100)}%`);
+    }
+    // shut right down: it comes to a stop
+    g._keys.add('KeyS');
+    for (let i = 0; i < 120; i++) g._chuteStep(1 / 60);
+    if (p.speed > 12) fail(`a closed lever left the hull doing ${Math.round(p.speed)}`);
+    g._keys.clear();
+
+    // a star puts turbo back in the tank
+    const star = g.chute.pads.find((q) => q.kind === 'star');
+    if (!star) fail('the chute carries no stars');
+    else {
+      if (star.s < 200 || star.s > g.chute.length - 200) fail('a star is stranded at the very end of the track');
+      if (Math.abs(star.lat) > g._chuteHalf(star.s) - CHUTE_SPEC.hullSide) fail('a star is off the road');
+      p.turboCharge = 0;
+      p.s = star.s;
+      p.lat = star.lat;
+      g._chutePadsStep(1 / 60);
+      if (p.turboCharge < CHUTE_SPEC.starTop - 1e-6) {
+        fail(`a star put only ${p.turboCharge.toFixed(2)} back in the tank`);
+      }
+      if (!p.stars) fail('a star was not counted');
+    }
+    // and an empty tank refills on its own, faster than the stars respawn
+    p.turboCharge = 0;
+    for (let i = 0; i < 60 * 10; i++) g._chuteStep(1 / 60);
+    if (p.turboCharge < 1) fail('an empty turbo tank never refills while flying');
   }
 
   // the divider of a split is not something a hull can fly through

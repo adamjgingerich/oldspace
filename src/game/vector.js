@@ -89,6 +89,16 @@ const CHUTE = {
   halfH: 40,       // and how tall
   hullSide: 15,    // half a hull, for working out where the wall is
   turn: 92,        // units a second a pilot can slide across the chute
+  // The power lever. A pilot winds the drive on and off with W and S, and the
+  // drive chases the setting — so speed is something to fly rather than
+  // something that happens, and a corner can be taken at the speed it wants.
+  leverUp: 1.8,    // how fast the lever winds on…
+  leverDown: 2.8,  // …and off
+  accel: 340,      // how hard the drive pulls toward the setting…
+  decel: 460,      // …and how hard it comes off it (braking is always stronger)
+  rivalTop: 1,     // the field can match the commander's ceiling…
+  rivalFall: 0.010, // …and each grid slot back is that much slower
+  gridLever: 0.35, // where the commander's lever sits on the line
   ringEvery: 70,   // a wireframe rib every this many units
   chevEvery: 210,  // and a chevron painted on the road every this many
   gateEvery: 1300, // a gate to pass every this many units
@@ -98,49 +108,53 @@ const CHUTE = {
   // features are laid down in sequence, with clear track between them, so no
   // two of them can ever land on each other
   featureFirst: 1100,
-  featureGap: 280,
+  featureGap: 330, // clear road between features — room to set up and settle
   tailClear: 900,
   rampLen: 240,    // how long a launch ramp is
   rampRise: 26,    // and how high it lifts a hull
   rampMin: 150,    // the speed a hull needs before the ramp will throw it
-  gapBase: 132,    // the gap after a ramp…
-  gapPerTier: 9,   // …and how much wider it gets per bracket
+  gapBase: 106,    // the gap after a ramp…
+  gapPerTier: 3,   // …and how much wider it gets per bracket, kept well inside
+                   // what a hull at rampMin can actually clear
   forkLen: 780,    // how long a split runs
   forkMouth: 150,  // how long the island's nose takes to open
   islandHalf: 16,  // half-width of the divider island
   islandH: 56,     // and how tall it stands out of the road
   pinchLen: 620,   // a squeeze down to…
-  pinchScale: 0.68, // …this much of the road
+  pinchScale: 0.72, // …this much of the road
   pinchEase: 120,  // eased in and out so the walls never step
+  riftMax: 2,      // at most this many lane rifts in a race
   padCount: 3,     // burst plates in a run
   padSpacing: 95,  // and how far apart they sit
   padR: 26,        // how close a hull must pass to take one
   padRespawn: 14,  // seconds before a taken plate comes back
   padHover: 12,    // how high a plate rides off the road
+  stars: 9,        // stars along the track, the turbo tank's refill
+  starTop: 0.34,   // how much of the tank one star puts back
   air: 215,        // the launch a ramp gives — the orb's ramps use the same
   gravity: 430,    // and the same pull back down
-  rivals: 3,       // four fly: the commander and three
+  rivals: 5,       // six fly: the commander and five
   daze: 1.5,       // seconds of drive a hit costs
   dazeCut: 0.4,    // and how much of the top speed goes with it
-  spoilGuard: 2.6, // and how long a hull is left alone after being spoiled
+  spoilGuard: 3.4, // and how long a hull is left alone after being spoiled
   hitSpan: 26,     // how close a bolt has to pass to a hull to count
+  rivalGunRange: 520, // how far up the road a rival bothers to shoot
+  rivalTrigger: 1.6,  // and how long it waits between goes
   gridGap: 42,     // how far apart the grid starts, hull to hull
   camBack: 98,
   camUp: 22,
   camLook: 150,
   callTime: 300,   // the rig calls the race after this long
 };
-const CHUTE_COLORS = [0xff6b7a, 0xffb45c, 0x8fd0ff, 0xc792ff];
+const CHUTE_COLORS = [0xff6b7a, 0xffb45c, 0x8fd0ff, 0xc792ff, 0x7dffa8, 0xffe66b];
 // What a burst plate hands out: drive, rapid fire, or a field ward that keeps
 // the other lanes' guns off a hull for a while.
-const CHUTE_PAD_KINDS = ['burst', 'rapid', 'ward'];
-const CHUTE_PAD_NAMES = { burst: 'DRIVE BURST', rapid: 'RAPID FIRE', ward: 'FIELD WARD' };
-const CHUTE_PAD_COLORS = { burst: 0xffb45c, rapid: 0x8fd0ff, ward: 0xc792ff };
-const CHUTE_PAD_CSS = { burst: '#ffb45c', rapid: '#8fd0ff', ward: '#c792ff' };
+const CHUTE_PAD_KINDS = ['burst', 'rapid', 'ward', 'star'];
+const CHUTE_PAD_NAMES = { burst: 'DRIVE BURST', rapid: 'RAPID FIRE', ward: 'FIELD WARD', star: 'STAR — TURBO' };
+const CHUTE_PAD_COLORS = { burst: 0xffb45c, rapid: 0x8fd0ff, ward: 0xc792ff, star: 0xffe66b };
+const CHUTE_PAD_CSS = { burst: '#ffb45c', rapid: '#8fd0ff', ward: '#c792ff', star: '#ffe66b' };
 /** The centre of one lane of a split, in the track's lateral coordinates. */
 const laneCentre = (fork, side) => side * (CHUTE.islandHalf + (fork.halfW - CHUTE.islandHalf) * 0.5);
-/** The chute's figures, for the audit to measure a track against. */
-export const CHUTE_SPEC = CHUTE;
 // Past this much of the course radius the field takes the helm. It only ever
 // turns a stray hull back toward the middle of the course — it never stops one,
 // and there is no wall to be pinned on, so nobody can get stuck on it. Without
@@ -169,9 +183,13 @@ const CAM_REF_ORB = 2100; // the orb these figures were drawn for
 // than a race between two identical ships, and a corner can be taken faster than
 // the hull would otherwise stand. The figures are the lanes' own engine burst,
 // so the same hand works the same way in both seats.
-const TURBO = { duration: 3.4, recharge: 10.5, rearm: 0.35 };
+const TURBO = { duration: 3.4, recharge: 8, rearm: 0.35 };
 const TURBO_SPEED = 330;   // what the governor allows while it burns
 const TURBO_ACCEL = 340;   // and the shove of thrust that gets the hull there
+/** The chute's own ceiling, with the lever wide open and nothing burning. */
+const CHUTE_TOP_SPEED = 250;
+/** The chute's figures, for the audit to measure a track against. */
+export const CHUTE_SPEC = { ...CHUTE, topSpeed: CHUTE_TOP_SPEED, turboSpeed: TURBO_SPEED };
 // The sim normalises every hull to the same length so a freighter reads like a
 // freighter; this is that length, sized so a rival is a shape rather than a dot
 // at the ranges this field is fought over.
@@ -194,7 +212,7 @@ const MODE_INFO = {
   },
   chute: {
     name: 'Chute Run',
-    line: 'Four pilots down the spiral. Gates to pass, ramps to jump, splits to pick — and a gun to spoil someone else\'s line.',
+    line: 'Six pilots down the spiral. Gates to pass, splits to pick, stars for the turbo tank — and a gun to spoil someone else\'s line.',
   },
 };
 
@@ -437,6 +455,17 @@ export class VectorChallenge {
       ])),
       (this._board = el('div', { class: 'vec-board hidden' })),
       (this._markers = el('div', { class: 'vec-markers hidden' })),
+      (this.gauges = el('div', { class: 'vec-gauges hidden' }, [
+        (this._leverRow = el('div', { class: 'vg-row' }, [
+          el('span', { class: 'vg-label', text: 'POWER' }),
+          (this._leverFill = el('i')),
+        ])),
+        el('div', { class: 'vg-row turbo' }, [
+          el('span', { class: 'vg-label', text: 'TURBO' }),
+          (this._turboFill = el('i')),
+        ]),
+        (this._gaugeNote = el('div', { class: 'vg-note' })),
+      ])),
       (this.lobby = el('div', { class: 'vec-lobby hidden' })),
       (this.over = el('div', { class: 'vec-over hidden' })),
     ]);
@@ -486,14 +515,14 @@ export class VectorChallenge {
       el('div', { class: 'vec-mode-btns' }, [
         btn('Duel — three pilots, last one flying', () => this.startMatch('duel'), 'btn primary'),
         btn('Harvest — two minutes on the crystal field', () => this.startMatch('harvest'), 'btn primary'),
-        btn('Chute Run — four pilots down the spiral', () => this.startMatch('chute'), 'btn primary'),
+        btn(`Chute Run — six pilots down the spiral`, () => this.startMatch('chute'), 'btn primary'),
       ]),
       el('p', { class: 'vec-keys' }, [
-        'W/S thrust · A/D yaw · SPACE fire · SHIFT burns the turbo reserve · ESC step out. ',
+        'W/S work the power lever · A/D yaw · SPACE fire · SHIFT burns the turbo reserve · ESC step out. ',
         'The rig lays its course on one patch of the orb, so the ground you can see is the ground you are flying over; leave it and the field turns you back. ',
         'It carries hills, walls and launch ramps; cross a ramp fast and the field throws you over the walls. ',
         'Item pads hand out drive bursts, rapid fire and shields. ',
-        'In the chute there is no ground at all: it is a winding tube of wire through open space that breathes and lifts as it goes, with gates to pass, ramps to jump, squeezes where the road pulls in and splits where it opens out around a divider — two ways through, and no way back across once the nose has passed. One lane of a split carries the prize: a rift to jump, or a run of burst plates that hand out drive, rapid fire or a field ward. And a hit up the chute costs a rival its thrust rather than its hull. ',
+        'In the chute there is no ground at all: six pilots race a winding tube of wire that breathes and lifts as it goes, with gates to pass, ramps to jump, squeezes where the road pulls in and splits where it opens out around a divider — two ways through, and no way back across once the nose has passed. W and S work the power lever: hold a speed through a squeeze, feather it over a ramp, open it right up on the straights. SHIFT burns the turbo tank, the bar at the bottom of the screen shows what is in it, and stars strung along the road top it back up — the field flies the same hulls you do, so the tank and the stars are the whole margin. And a hit up the chute costs a rival its thrust rather than its hull. ',
         'You fly the fit in your bay, mount for mount, and the bracket fits its own pilots to match.',
       ]),
       btn('Step out', () => this.quit(), 'btn ghost'),
@@ -501,6 +530,7 @@ export class VectorChallenge {
     this.hud.classList.add('hidden');
     this._board.classList.add('hidden');
     this._markers.classList.add('hidden');
+    this.gauges.classList.add('hidden');
     this.lobby.classList.remove('hidden');
     this.over.classList.add('hidden');
   }
@@ -516,7 +546,7 @@ export class VectorChallenge {
         el('div', { class: 'vec-stat' }, [
           el('span', { class: 'vs-label', text: result.mode === 'chute' ? 'Time' : 'Score' }),
           el('span', { class: 'vs-value', text: result.mode === 'chute' ? `${(result.timeSec || 0).toFixed(1)}s` : String(result.score) }),
-          el('span', { class: 'vs-note', text: result.mode === 'chute' ? `${this.chute ? this.chute.gates.length : 0} gates, four flying` : `circuit best: ${Math.max(r.best || 0, result.score)}` }),
+          el('span', { class: 'vs-note', text: result.mode === 'chute' ? `${this.chute ? this.chute.gates.length : 0} gates · ${this.pilots.length} flying` : `circuit best: ${Math.max(r.best || 0, result.score)}` }),
         ]),
         el('div', { class: 'vec-stat' }, [
           el('span', { class: 'vs-label', text: 'Payout' }),
@@ -532,6 +562,7 @@ export class VectorChallenge {
     this.hud.classList.add('hidden');
     this._board.classList.add('hidden');
     this._markers.classList.add('hidden');
+    this.gauges.classList.add('hidden');
     this.lobby.classList.add('hidden');
     this.over.classList.remove('hidden');
   }
@@ -1452,6 +1483,7 @@ export class VectorChallenge {
     this._rivalRows = [];
     this._board.classList.add('hidden');
     this._markers.classList.add('hidden');
+    this.gauges.classList.add('hidden');
   }
 
   /* ------------------------------------------------------------------ */
@@ -2053,12 +2085,10 @@ export class VectorChallenge {
     const m = this.match;
     const p = this.pilots[0];
     if (this.chute) {
-      const gate = this.chute.gates.filter((g) => g <= p.s).length;
-      const home = this.chute.gates.length;
       this._hudScore.textContent = `POS ${this._chutePlace(p)}/${this.pilots.length}`;
       this._hudHull.textContent = p.daze > 0
-        ? `SPOILED · GATE ${gate}/${home}`
-        : `GATE ${gate}/${home}`;
+        ? `SPOILED · GATE ${p.gates}/${this.chute.gates.length}`
+        : `GATE ${p.gates}/${this.chute.gates.length}`;
       this._hudClock.textContent = `TIME ${m.time.toFixed(1)}s`;
     } else {
       // a duel has no score to count — what a pilot won on is the eliminations
@@ -2073,6 +2103,20 @@ export class VectorChallenge {
         this._hudClock.textContent = `TIME ${Math.ceil(m.time)}`;
       }
     }
+    // the gauges: how much drive the lever is asking for, how much turbo is in
+    // the tank, and what the hull is actually doing
+    this._leverRow.classList.toggle('hidden', !this.chute);
+    const lever = this.chute ? (p.throttle ?? 1) : clamp(p.speed / CHUTE_TOP_SPEED, 0, 1);
+    this._leverFill.style.width = `${Math.round(lever * 100)}%`;
+    this._turboFill.style.width = `${Math.round(clamp(p.turboCharge, 0, 1) * 100)}%`;
+    this._turboFill.style.background = p.turboCharge < 0.999
+      ? (p.turboCharge > CHUTE.starTop ? '#8fd0ff' : '#ff9a6b')
+      : '#6effa8';
+    this._gaugeNote.textContent = [
+      `${Math.round(p.speed)} u/s`,
+      p.boost > 0 ? 'BURST' : p.turbo ? 'TURBO' : '',
+      this.chute && p.stars ? `${p.stars} ★` : '',
+    ].filter(Boolean).join(' · ');
     // what is left in the turbo reserve, and whether a burst plate is burning
     if (p.boost > 0) {
       this._hudTurbo.textContent = 'DRIVE BURST';
@@ -2126,6 +2170,7 @@ export class VectorChallenge {
     }
     this._board.classList.remove('hidden');
     this._markers.classList.remove('hidden');
+    this.gauges.classList.remove('hidden');
   }
 
   /** Put a rival's chip on the glass, or pin it to the edge when it is off it. */
@@ -2307,9 +2352,32 @@ export class VectorChallenge {
   }
 
   /** How fast a racer's drive will take it right now. */
-  _chuteCap(p) {
-    const top = p.turbo || p.boost > 0 ? TURBO_SPEED : 250;
-    return p.daze > 0 ? top * CHUTE.dazeCut : top;
+  _chuteCap(p, rival = false) {
+    const top = p.turbo || p.boost > 0 ? TURBO_SPEED : CHUTE_TOP_SPEED;
+    // Every pilot runs the same hull: what separates the field from the
+    // commander is how hard each one dares to fly it, not a rule about who is
+    // allowed to be quick.
+    const ceiling = rival ? top * CHUTE.rivalTop * (p.skill ?? 1) : top;
+    return p.daze > 0 ? ceiling * CHUTE.dazeCut : ceiling;
+  }
+
+  /**
+   * What the lever is asking for. The turbo reserve, a burst plate and the
+   * drive itself all raise the speed the lever can wind to — so the tank is
+   * worth something real while it lasts rather than being a display that
+   * empties.
+   */
+  _chuteWant(p) {
+    const top = p.turbo || p.boost > 0 ? TURBO_SPEED : CHUTE_TOP_SPEED;
+    return p.throttle * top;
+  }
+
+  /** Point the drive at a speed: pull toward it, come off it harder. */
+  _chuteDrive(p, want, dt, rival = false) {
+    const cap = this._chuteCap(p, rival);
+    const target = clamp(want, 0, cap);
+    const rate = target > p.speed ? CHUTE.accel : CHUTE.decel;
+    p.speed += clamp(target - p.speed, -rate * dt, rate * dt);
   }
 
   /**
@@ -2336,7 +2404,7 @@ export class VectorChallenge {
       liftA: rand.float(CHUTE.liftA[0], CHUTE.liftA[1]),
       liftLen: rand.float(CHUTE.liftLen[0], CHUTE.liftLen[1]),
       liftPhase: rand.float(0, Math.PI * 2),
-      gates: [], ramps: [], gaps: [], forks: [], pinches: [], pads: [],
+      gates: [], ramps: [], gaps: [], forks: [], pinches: [], pads: [], stars: [],
     };
 
     // ---- the course, laid out in sequence so nothing lands on anything ----
@@ -2349,6 +2417,7 @@ export class VectorChallenge {
     };
     let s = CHUTE.featureFirst;
     let prevKind = null;
+    let rifts = 0;
     while (s < length - CHUTE.tailClear) {
       let kind = nextKind();
       if (kind === prevKind && kind !== 'ramp') kind = 'ramp';
@@ -2364,11 +2433,13 @@ export class VectorChallenge {
         // A split: the road opens out and an island grows down the middle of
         // it, so there are two ways through and no way back across once the
         // nose has passed. One lane carries the reward — a rift to jump, or a
-        // run of burst plates — and the other is plain track.
+        // run of burst plates — and the other is plain track. Rifts are rationed
+        // on purpose: they are the hardest thing on the road, and a race that is
+        // all jumps is a race nobody enjoys losing.
         const from = s;
         const to = s + CHUTE.forkLen;
         const lane = rand.float(0, 1) < 0.5 ? -1 : 1;
-        const flavour = rand.float(0, 1) < 0.6 ? 'rift' : 'plates';
+        const flavour = rifts < CHUTE.riftMax && rand.float(0, 1) < 0.5 ? 'rift' : 'plates';
         const fork = {
           from, to, lane, flavour,
           wide: from - CHUTE.forkMouth,
@@ -2376,6 +2447,7 @@ export class VectorChallenge {
         };
         plan.forks.push(fork);
         if (flavour === 'rift') {
+          rifts += 1;
           const lip = from + Math.round(CHUTE.forkLen * 0.42);
           plan.ramps.push({ from: lip - CHUTE.rampLen, to: lip, lane });
           plan.gaps.push({ from: lip, to: lip + gapLen, lane });
@@ -2395,9 +2467,26 @@ export class VectorChallenge {
         plan.pads.push({
           s: Math.round(s - CHUTE.featureGap * 0.5),
           lat: rand.float(-0.4, 0.4) * CHUTE.halfW,
-          kind: rand.pick(CHUTE_PAD_KINDS),
+          kind: rand.pick(['burst', 'rapid', 'ward']),
         });
       }
+    }
+
+    // ---- stars: the turbo tank's refill, strung the length of the road ----
+    {
+      const first = CHUTE.featureFirst + 200;
+      const last = length - 260;
+      const step = (last - first) / CHUTE.stars;
+      for (let i = 0; i < CHUTE.stars; i++) {
+        const at = Math.round(first + i * step);
+        // a star sits in the middle of the road — unless a split has opened
+        // there, in which case it sits in the plain lane, so the lane with the
+        // prize on it is still the one with the prize on it
+        const fork = plan.forks.find((f) => at > f.from + 200 && at < f.to - 200);
+        plan.stars.push({ s: at, lat: fork ? laneCentre(fork, -fork.lane) : 0, kind: 'star' });
+      }
+      // and they are pickups like any other, so the road only has one list
+      plan.pads.push(...plan.stars);
     }
 
     // ---- gates, kept clear of anything that changes the shape of the road ----
@@ -2433,7 +2522,8 @@ export class VectorChallenge {
     const p = this._chutePlan();
     const jumps = p.ramps.filter((r) => !r.lane).length;
     const rifts = p.ramps.filter((r) => r.lane).length;
-    return `${p.gates.length} gates · ${jumps} jumps · ${p.forks.length} splits · ${rifts} lane rifts · ${p.pinches.length} squeezes · ${p.pads.length} plates`;
+    const field = CHUTE.rivals + 1;
+    return `${field} flying · ${p.gates.length} gates · ${jumps} jumps · ${p.forks.length} splits · ${rifts} lane rifts · ${p.pinches.length} squeezes · ${p.stars.length} stars · ${p.pads.length - p.stars.length} plates`;
   }
 
   /**
@@ -2595,16 +2685,35 @@ export class VectorChallenge {
     this._buildChutePads();
   }
 
-  /** The burst plates themselves: wire diamonds floating over the road. */
+  /** The pickups themselves: wire diamonds, and stars for the turbo tank. */
   _buildChutePads() {
     const geo = new THREE.OctahedronGeometry(9);
     const edges = new THREE.EdgesGeometry(geo);
+    // a five-pointed star, extruded thin, for the turbo tank's refill
+    const starGeo = (() => {
+      const shape = new THREE.Shape();
+      const spikes = 5;
+      const outer = 11;
+      const inner = 4.6;
+      for (let i = 0; i < spikes * 2; i++) {
+        const r = i % 2 ? inner : outer;
+        const a = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2;
+        const x = Math.cos(a) * r;
+        const y = Math.sin(a) * r;
+        if (i === 0) shape.moveTo(x, y);
+        else shape.lineTo(x, y);
+      }
+      shape.closePath();
+      return new THREE.ExtrudeGeometry(shape, { depth: 2.4, bevelEnabled: false });
+    })();
+    const starEdges = new THREE.EdgesGeometry(starGeo);
     for (const pad of this.chute.pads) {
+      const star = pad.kind === 'star';
       const g = new THREE.Group();
-      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-        color: 0x171305, transparent: true, opacity: 0.8, depthWrite: false,
+      const m = new THREE.Mesh(star ? starGeo : geo, new THREE.MeshBasicMaterial({
+        color: star ? 0x2a2408 : 0x171305, transparent: true, opacity: 0.8, depthWrite: false,
       }));
-      m.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+      m.add(new THREE.LineSegments(star ? starEdges : edges, new THREE.LineBasicMaterial({
         color: CHUTE_PAD_COLORS[pad.kind] || PAD_COLOR,
         transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false,
       })));
@@ -2649,17 +2758,28 @@ export class VectorChallenge {
       mounts,
       mountCd: mounts.map(() => this.rng.float(0, 0.5)),
       // the grid: the commander on the line with the others strung out behind
-      s: -CHUTE.gridGap * i,
+      // the grid: the commander on the line, the rest strung out behind in a
+      // long field so nobody is shooting anybody off the bumper at the start
+      s: -Math.round(CHUTE.gridGap * i * 1.7),
       lat: (i % 2 ? 1 : -1) * 15,
       air: 0, vy: 0, speed: 0,
       alive: true, hull: HULL, hullMax: HULL,
-      score: 0, elims: 0, fireCd: this.rng.float(0, 1),
+      score: 0, elims: 0,
+      // and nobody shoots for the first couple of seconds: a six-pilot grid
+      // that opens fire on the line is a firing squad, not a race
+      fireCd: 1.8 + i * 0.5,
       wallT: -99, flashUntil: -1, wobble: this.rng.float(0, 1) * 10,
       turbo: 0, turboCharge: 1, daze: 0, spoilGuard: 0, finishAt: null,
       // the race: gates passed, the lane a pilot has committed to in a split,
-      // and the place they last heard about
+      // the power it is holding, and the place they last heard about
       gates: 0, lane: 0, forkId: 0, place: 1, showPlace: null,
-      boost: 0, rapid: 0, warnFork: 0, warnRift: 0,
+      boost: 0, rapid: 0, warnFork: 0, warnRift: 0, warnPinch: 0, stars: 0,
+      // the grid slot sets how hard a rival dares to fly: the pole sitter is
+      // as quick as the commander, the back of the grid is not
+      skill: isPlayer ? 1 : Math.max(0.9, CHUTE.rivalTop - i * CHUTE.rivalFall),
+      // and the lever sits part open on the line: a race is something a pilot
+      // opens up, not something the rig does on its own
+      throttle: isPlayer ? CHUTE.gridLever : 1,
     };
     this._seatChute(group, p.s, p.lat, p.air, 0);
     return p;
@@ -2736,12 +2856,15 @@ export class VectorChallenge {
     if (this._keys.has('KeyA') || this._keys.has('ArrowLeft')) steer -= 1; // to port
     if (this._keys.has('KeyD') || this._keys.has('ArrowRight')) steer += 1; // to starboard
     p.lat += steer * CHUTE.turn * dt;
+    // The power lever. W winds it on and S winds it off, and the drive chases
+    // the setting — so a pilot can hold a speed through a squeeze, feather it
+    // over a ramp, or open it right up on the straights.
+    const up = this._keys.has('KeyW') || this._keys.has('ArrowUp');
+    const down = this._keys.has('KeyS') || this._keys.has('ArrowDown');
+    if (up) p.throttle = Math.min(1, p.throttle + CHUTE.leverUp * dt);
+    if (down) p.throttle = Math.max(0, p.throttle - CHUTE.leverDown * dt);
     this._spendTurbo(p, this._keys.has('ShiftLeft') || this._keys.has('ShiftRight'), dt);
-    const accel = p.boost > 0 ? 400 : p.turbo ? TURBO_ACCEL : 240;
-    if (this._keys.has('KeyW') || this._keys.has('ArrowUp')) p.speed += accel * dt;
-    if (this._keys.has('KeyS') || this._keys.has('ArrowDown')) p.speed -= 200 * dt;
-    p.speed *= Math.max(0, 1 - 0.35 * dt);
-    p.speed = clamp(p.speed, 0, this._chuteCap(p));
+    this._chuteDrive(p, this._chuteWant(p), dt);
     if (this._keys.has('Space')) this._fire(p);
   }
 
@@ -2749,8 +2872,8 @@ export class VectorChallenge {
   _chutePickLane(p, fork) {
     if (fork.flavour === 'plates') return fork.lane; // the plates are the prize
     // a rift is a jump, and most pilots would rather not: the field takes it
-    // about a quarter of the time, which is enough to keep a commander guessing
-    if (this.rng.float(0, 1) < 0.25) return fork.lane;
+    // about one time in six, which is enough to keep a commander guessing
+    if (this.rng.float(0, 1) < 0.16) return fork.lane;
     return -fork.lane;
   }
 
@@ -2787,21 +2910,26 @@ export class VectorChallenge {
     }
     if (plate) want = plate.lat;
 
+    // The lever drives the AI too: wide open on the straights, feathered
+    // through a squeeze, and lit for a ramp it is fast enough to clear.
     p.lat += clamp(want - p.lat, -CHUTE.turn * 0.85 * dt, CHUTE.turn * 0.85 * dt);
-    const cap = this._chuteCap(p);
-    this._spendTurbo(p, !p.daze && p.speed > 190, dt);
-    p.speed += clamp(cap - p.speed, -140 * dt, 210 * dt);
+    const squeezed = this.chute.pinches.some((n) => p.s > n.from - 120 && p.s < n.to + 120);
+    const dazed = p.daze > 0;
+    p.throttle = dazed ? 0.55 : squeezed ? 0.72 : 1;
+    this._spendTurbo(p, !dazed && !squeezed && p.speed > 190, dt);
+    this._chuteDrive(p, this._chuteWant(p), dt, true);
 
     let ahead = null;
     for (const q of this.pilots) {
       if (q === p || q.finishAt != null || q.spoilGuard > 0) continue;
       const lead = q.s - p.s;
-      if (lead > 0 && lead < 700 && Math.abs(q.lat - p.lat) < CHUTE.hitSpan) {
+      // a firing solution, not a tap on the bumper
+      if (lead > 220 && lead < CHUTE.rivalGunRange && Math.abs(q.lat - p.lat) < CHUTE.hitSpan) {
         if (!ahead || lead < ahead.s - p.s) ahead = q;
       }
     }
     if (ahead && p.fireCd <= 0) {
-      if (this._fire(p)) p.fireCd = (p.rapid > 0 ? 0.4 : 1.1) + this.rng.float(0, 0.7);
+      if (this._fire(p)) p.fireCd = CHUTE.rivalTrigger + this.rng.float(0, 0.9);
     }
   }
 
@@ -2827,13 +2955,21 @@ export class VectorChallenge {
     return true;
   }
 
-  /** A burst plate, taken: drive, rapid fire or a ward against being spoiled. */
+  /** A pickup, taken: a plate's gift, or a star for the turbo tank. */
   _chuteTake(p, pad) {
     pad.alive = false;
     pad.group.visible = false;
     pad.respawn = CHUTE.padRespawn;
     this._burstAt(this._chuteWorld(p, this._c6, 4), CHUTE_PAD_COLORS[pad.kind] || PAD_COLOR, 0.7);
     audio.coin();
+    if (pad.kind === 'star') {
+      // a star tops the tank up, so the reserve is something a pilot can earn
+      // back on the road instead of only waiting for it
+      p.turboCharge = Math.min(1, p.turboCharge + CHUTE.starTop);
+      p.stars = (p.stars || 0) + 1;
+      if (p.isPlayer) this._pop(`STAR — TURBO ${Math.round(p.turboCharge * 100)}%`, CHUTE_PAD_CSS.star);
+      return;
+    }
     if (pad.kind === 'burst') p.boost = 3.2;
     else if (pad.kind === 'rapid') p.rapid = 6;
     else p.spoilGuard = Math.max(p.spoilGuard, 4);
@@ -3055,7 +3191,7 @@ export class VectorChallenge {
       note: '',
       timeSec: m.mode === 'chute' ? m.time : null,
     };
-    const ordinal = ['', 'first', 'second', 'third', 'fourth', 'fifth'][place] || `${place}th`;
+    const ordinal = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][place] || `${place}th`;
     result.note = m.forfeit
       ? 'You stepped out before the field was settled. The circuit pays nothing for a walk.'
       : m.mode === 'duel'
@@ -3079,7 +3215,7 @@ export class VectorChallenge {
     if (forfeit) return { payout: 0, xp: 0 };
     if (mode === 'chute') {
       // a race pays for the place, and the bracket raises the stake
-      const credits = (place === 1 ? 1500 : 420) + (this.tier - 1) * 120;
+      const credits = place === 1 ? 1500 + (this.tier - 1) * 130 : Math.max(160, 520 - (place - 2) * 90);
       const xpr = (place === 1 ? 120 : 45) + this.tier * 6;
       return { payout: Math.min(4000, Math.round(credits)), xp: Math.min(250, Math.round(xpr)) };
     }

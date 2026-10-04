@@ -1103,11 +1103,11 @@ export class DockUI {
         ]),
       ]),
       el('h3', { text: 'Enter the field' }),
-      el('p', { class: 'note', text: 'A duel settles the old question — last pilot flying. The harvest is two minutes over the crystal field, most crystals when the clock runs out. The chute run is a race: four pilots down a winding tube of wire that breathes and lifts as it goes, with gates to pass, ramps to jump, squeezes where the road pulls in and splits where it opens out around a divider — two ways through, and a prize in one of them — where a bolt costs a rival its thrust instead of its hull. W and S thrust, A and D steer, SPACE fires, SHIFT burns the turbo reserve. On the orb the rig lays its course on one patch of it: hills, wall slabs and launch ramps — cross a ramp fast and it throws you clean over the walls — with item pads for drive bursts, rapid fire and shields. There is no edge to fall off, and the ground closes behind you, so there is nowhere to run. Your guns are the ones in your bay, mount for mount.' }),
-      el('div', { style: 'display:flex;gap:10px;flex-wrap:wrap' }, [
+      el('p', { class: 'note', text: 'A duel settles the old question — last pilot flying. The harvest is two minutes over the crystal field, most crystals when the clock runs out. The chute run is a race: six pilots down a winding tube of wire that breathes and lifts as it goes, with gates to pass, ramps to jump, squeezes where the road pulls in and splits where it opens out around a divider — two ways through, and a prize in one of them. W and S work the power lever, so a pilot can hold a speed as well as build one; SHIFT burns the turbo tank, the bar at the bottom of the screen shows what is in it, and the stars strung along the road top it back up. A bolt up the chute costs a rival its thrust rather than its hull. On the orb the rig lays its course on one patch of it: hills, wall slabs and launch ramps — cross a ramp fast and it throws you clean over the walls — with item pads for drive bursts, rapid fire and shields. There is no edge to fall off, and the ground closes behind you, so there is nowhere to run. Your guns are the ones in your bay, mount for mount.' }),
+      el('div', { class: 'vec-mode-btns' }, [
         btn('Duel — last pilot flying', () => actions.startVectorChallenge('duel'), 'btn primary'),
         btn('Harvest — the crystal field', () => actions.startVectorChallenge('harvest'), 'btn primary'),
-        btn('Chute run — the spiral race', () => actions.startVectorChallenge('chute'), 'btn primary'),
+        btn('Chute run — the spiral race (six flying)', () => actions.startVectorChallenge('chute'), 'btn primary'),
       ]),
     ]));
   }

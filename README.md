@@ -57,7 +57,7 @@ Node 18+ recommended. Everything runs client-side; there is no server component.
 | Ship's computer | `M` or `J` — star map, missions, inventory, logs |
 | Warp a lane | pick a neighbouring system on the star map, then warp from the bay |
 | Skill tree | `K` |
-| Vector Challenge (at a port or station) | `R` — then `W`/`S` thrust, `A`/`D` yaw, `Space` fire, `Shift` burns the turbo reserve, `Esc` steps out |
+| Vector Challenge (at a port or station) | `R` — then `W`/`S` work the power lever, `A`/`D` steer, `Space` fire, `Shift` burns the turbo tank, `Esc` steps out |
 | Pause / save / load | `Esc` |
 
 **Flight is inertial.** Turning the bow does not turn your momentum. The
@@ -93,7 +93,7 @@ when you want to cross a system in a hurry. Your choice is remembered.
   at 70%.
 - **The Vector Challenge** — every port with a bar keeps a holo-sim rig older
   than half the hulls outside. Press `R` to fly a *duel* (three pilots, last one
-  flying), a *harvest* (two minutes on the crystal field) or a *chute run* (four
+  flying), a *harvest* (two minutes on the crystal field) or a *chute run* (six
   pilots down a winding tube of wire through open space that breathes and lifts
   as it goes: gates to pass, ramps to jump, squeezes where the road pulls in and
   splits where it opens out around a divider — two ways through and a prize in
@@ -101,6 +101,11 @@ when you want to cross a system in a hurry. Your choice is remembered.
   wire-and-phosphor orb, in your own hull with the guns you actually carry. The
   rig lays a course of walls, hills and launch ramps on one patch of the world,
   marks its edges on the ground, and shows you where the other pilots are.
+  In the chute `W`/`S` work a power lever rather than a throttle switch, so a
+  pilot can hold a speed as well as build one; `Shift` burns the turbo tank and
+  the bar under the track shows what is left in it, and the stars strung along
+  the road are what fills it back up. The rest of the field flies the same
+  hulls, so the tank and the stars are where a race is won.
   Winners take the purse; the desk pays consolation.
 - **The law** — four factions (Free Ports, Helion Combine, The Vigil, Reaver
   Clans) remember what you do. Wrong a faction past −60 and their ports
