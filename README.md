@@ -94,8 +94,10 @@ when you want to cross a system in a hurry. Your choice is remembered.
 - **The Vector Challenge** — every port with a bar keeps a holo-sim rig older
   than half the hulls outside. Press `R` to fly a *duel* (three pilots, last one
   flying), a *harvest* (two minutes on the crystal field) or a *chute run* (four
-  pilots down a spiralling tube of wire through open space: gates to pass, ramps
-  to jump, and a gun that costs a rival its thrust rather than its hull), on a
+  pilots down a winding tube of wire through open space that breathes and lifts
+  as it goes: gates to pass, ramps to jump, squeezes where the road pulls in and
+  splits where it opens out around a divider — two ways through and a prize in
+  one of them — where a gun costs a rival its thrust rather than its hull), on a
   wire-and-phosphor orb, in your own hull with the guns you actually carry. The
   rig lays a course of walls, hills and launch ramps on one patch of the world,
   marks its edges on the ground, and shows you where the other pilots are.

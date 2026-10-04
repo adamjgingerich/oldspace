@@ -14,6 +14,8 @@ import * as THREE from 'three';
 import { VectorChallenge, simWeapon, ZONE_COUNTS, courseRadius, CHUTE_SPEC } from '../src/game/vector.js';
 import { WEAPONS, WEAPON_BY_ID } from '../src/data/weapons.js';
 
+const CHUTE_PAD_KINDS_OK = ['burst', 'rapid', 'ward'];
+
 // The tightest orb on the circuit, and the widest. Chord-versus-arc error grows
 // as the world gets smaller, so the first is the worst case the sim can be asked
 // to fly; the second is where a course has the most room to be lost in.
@@ -43,6 +45,7 @@ function makeOrb(orbR = R, seed = 1) {
   v.crystals = [];
   v._flyers = [];
   v._mv = V3();
+  v.state = { worldSeed: seed };
   for (const k of ['_c1', '_c2', '_c3', '_c4', '_c5', '_c6']) v[k] = V3();
   v._cFrame = { t: V3(), side: V3(), up: V3() };
   v._cUp = new THREE.Vector3(0, 1, 0);
@@ -158,6 +161,8 @@ function makeRacer(c, i, isPlayer = false) {
     score: 0, elims: 0, fireCd: 0,
     wallT: -99, flashUntil: -1, wobble: i * 1.7,
     turbo: 0, turboCharge: 1, daze: 0, spoilGuard: 0, finishAt: null,
+    gates: 0, lane: 0, forkId: 0, place: 1, showPlace: null,
+    boost: 0, rapid: 0, warnFork: 0, warnRift: 0, warnPinch: 0,
   };
 }
 
@@ -644,19 +649,41 @@ function makeRacer(c, i, isPlayer = false) {
 {
   const c = makeChute(1, 3);
 
-  // the spiral has to be a spiral: a course that comes back near itself is a
-  // course a racer can cut across
+  // the path has to be a path: a course that comes back near itself is a course
+  // a racer can cut across. The road is at its widest through a split, so that
+  // is what two passes of the track have to clear.
+  const widest = Math.max(CHUTE_SPEC.halfW * 2, CHUTE_SPEC.halfW + CHUTE_SPEC.islandHalf * 2 + 10);
   const pts = [];
   for (let s = 0; s <= c.chute.length; s += 40) pts.push({ s, p: c._chutePoint(s, V3()) });
   let close = 0;
   for (let i = 0; i < pts.length; i++) {
     for (let j = i + 1; j < pts.length; j++) {
-      if (Math.abs(pts[i].s - pts[j].s) < CHUTE_SPEC.halfW * 6) continue;
-      if (pts[i].p.distanceTo(pts[j].p) < CHUTE_SPEC.halfW * 2 + 20) close++;
+      if (Math.abs(pts[i].s - pts[j].s) < 700) continue;
+      if (pts[i].p.distanceTo(pts[j].p) < widest * 2 + 20) close++;
     }
   }
   if (close) fail(`${close} pairs of the chute come close enough to cut across`);
   if (pts[pts.length - 1].p.y <= pts[0].p.y) fail('the chute does not climb');
+
+  // and it has to be strange: the tuned harmonics must actually bend the road
+  {
+    const far = [];
+    for (let s = 0; s <= c.chute.length; s += 200) far.push(c._chutePoint(s, V3()));
+    let swung = 0;
+    for (let i = 1; i < far.length; i++) swung = Math.max(swung, far[i].y - far[i - 1].y - 200 * CHUTE_SPEC.rise);
+    const lifts = [];
+    for (let s = 0; s <= c.chute.length; s += 50) lifts.push(c._chutePoint(s, V3()).y - s * CHUTE_SPEC.rise);
+    const span = Math.max(...lifts) - Math.min(...lifts);
+    if (span < 40) fail(`the chute barely moves off its spiral: only ${Math.round(span)} units of lift`);
+    const radii = [];
+    for (let s = 0; s <= c.chute.length; s += 50) {
+      const p = c._chutePoint(s, V3());
+      radii.push(Math.hypot(p.x, p.z));
+    }
+    const breath = Math.max(...radii) - Math.min(...radii);
+    if (breath < 60) fail(`the chute's radius barely breathes: ${Math.round(breath)} units across the whole track`);
+    if (swung < 0) fail('the chute climbs against itself');
+  }
 
   // gates in order, and the line is the last of them
   for (let i = 1; i < c.chute.gates.length; i++) {
@@ -665,21 +692,93 @@ function makeRacer(c, i, isPlayer = false) {
   }
   if (c.chute.gates[c.chute.gates.length - 1] !== c.chute.length) fail('the last gate is not the line');
   if (c.chute.gates[0] > 1200) fail('the first gate is further than a run-up');
+  // a gate inside a split or a squeeze would be an ambiguous line to cross —
+  // and a gate is also the reset point after a fall, so it may not sit inside
+  // anything that has to be jumped or steered
+  for (const g of c.chute.gates) {
+    for (const f of [...c.chute.forks, ...c.chute.pinches, ...c.chute.ramps, ...c.chute.gaps]) {
+      if (g > f.from && g < f.to) fail(`a gate at ${g} sits inside a feature that changes the road`);
+    }
+  }
 
-  // every ramp has a gap after it, and the gaps are a test rather than a wall:
-  // a hull at full drive clears one, and a hull crawling into it does not
+  // every ramp has a gap after it in the same lane, and the gaps are a test
+  // rather than a wall: full drive clears one, and a crawl into it does not
   const flight = (CHUTE_SPEC.air + Math.sqrt(CHUTE_SPEC.air ** 2 + 2 * CHUTE_SPEC.gravity * CHUTE_SPEC.rampRise)) / CHUTE_SPEC.gravity;
   if (!c.chute.ramps.length) fail('the chute has no ramps to jump');
+  if (!c.chute.ramps.some((r) => r.lane)) fail('the chute has no lane rifts to commit to');
   for (const tier of [1, 8]) {
     const t = makeChute(tier, 5);
     for (const r of t.chute.ramps) {
-      const gap = t.chute.gaps.find((g) => g.from === r.to);
-      if (!gap) { fail(`the ramp at ${r.from} has no gap after it`); continue; }
+      const gap = t.chute.gaps.find((g) => g.from === r.to && g.lane === r.lane);
+      if (!gap) { fail(`the ramp at ${r.from} has no gap after it in its own lane`); continue; }
       const len = gap.to - gap.from;
       if (len > 250 * flight) fail(`the gap at ${gap.from} on bracket ${tier} needs more than full drive to clear`);
       if (len < 120 * flight) fail(`the gap at ${gap.from} on bracket ${tier} is no obstacle at all`);
+      // a rift in a lane is only a choice if the divider is there to commit to
+      if (r.lane) {
+        const fork = t.chute.forks.find((f) => r.from >= f.from && r.to <= f.to);
+        if (!fork) fail(`the lane rift at ${r.from} is not inside a split`);
+        else if (t._chuteIsland(r.to) <= 0) fail(`the lane rift at ${r.from} has no island beside it`);
+      }
     }
     if (t.chute.gaps.some((g, i) => i && g.from !== t.chute.ramps[i].to)) fail('the chute gaps and ramps disagree');
+  }
+
+  // ---- the shape of the road: splits, squeezes and the plates on it ----
+  {
+    const t = makeChute(3, 13);
+    if (!t.chute.forks.length) fail('the chute never splits');
+    if (!t.chute.pinches.length) fail('the chute never squeezes');
+    for (const f of t.chute.forks) {
+      if (f.wide >= f.from) fail('a split opens out after its island starts');
+      if (t._chuteHalf(f.wide - 10) !== CHUTE_SPEC.halfW) fail('the road is already open before a split');
+      if (t._chuteHalf(f.from + CHUTE_SPEC.forkMouth) < CHUTE_SPEC.halfW) fail('a split does not open the road out');
+      if (t._chuteIsland(f.from - 20) !== 0) fail('an island starts before its split does');
+      if (t._chuteIsland(f.from + CHUTE_SPEC.forkMouth) <= 0) fail('an island never opens');
+      // each lane of a split has to be wide enough to race in
+      for (const side of [-1, 1]) {
+        const lane = t._chuteLane(f.from + CHUTE_SPEC.forkMouth, side);
+        const room = (t._chuteHalf(f.from + CHUTE_SPEC.forkMouth) - t._chuteIsland(f.from + CHUTE_SPEC.forkMouth)) / 2;
+        if (lane.half * 2 < CHUTE_SPEC.hullSide * 2 + 20) fail('a lane of a split is too narrow to fly');
+        if (Math.abs(lane.centre) < CHUTE_SPEC.islandHalf + CHUTE_SPEC.hullSide) fail('a lane centre sits inside the divider');
+        if (room <= 0) fail('a split has no room either side of its island');
+      }
+    }
+    for (const n of t.chute.pinches) {
+      const mid = (n.from + n.to) / 2;
+      if (t._chuteHalf(mid) >= CHUTE_SPEC.halfW) fail('a squeeze does not actually pull the road in');
+      if (t._chuteHalf(mid) - CHUTE_SPEC.hullSide < CHUTE_SPEC.hullSide) fail('a squeeze is too tight to fly through');
+      if (Math.abs(t._chuteHalf(n.from - 10) - CHUTE_SPEC.halfW) > 1e-6) fail('the road is already pinched before a squeeze');
+    }
+    // nothing may overlap anything else — features are laid in sequence
+    const spans = [
+      ...t.chute.ramps.map((r) => ({ a: r.from, b: r.to, k: 'ramp', lane: r.lane })),
+      ...t.chute.gaps.map((g) => ({ a: g.from, b: g.to, k: 'rift', lane: g.lane })),
+      ...t.chute.pinches.map((n) => ({ a: n.from, b: n.to, k: 'squeeze', lane: 0 })),
+    ];
+    let overlaps = 0;
+    for (let i = 0; i < spans.length; i++) {
+      for (let j = i + 1; j < spans.length; j++) {
+        const x = spans[i];
+        const y = spans[j];
+        if (x.b <= y.a || y.b <= x.a) continue;
+        // a lane rift lives inside its own split, so a ramp beside it is fine
+        if (x.lane && y.lane && x.lane !== y.lane && x.k === 'rift' && y.k === 'ramp') continue;
+        if (y.lane && x.lane && x.lane !== y.lane && y.k === 'rift' && x.k === 'ramp') continue;
+        overlaps++;
+      }
+    }
+    if (overlaps) fail(`${overlaps} pieces of the chute are laid on top of each other`);
+    // plates sit on the road and stay inside it
+    if (!t.chute.pads.length) fail('the chute has no burst plates');
+    let offRoad = 0;
+    for (const pad of t.chute.pads) {
+      const lim = t._chuteHalf(pad.s) - CHUTE_SPEC.hullSide;
+      if (Math.abs(pad.lat) > lim) offRoad++;
+      if (pad.s < 400 || pad.s > t.chute.length - 200) offRoad++;
+      if (!CHUTE_PAD_KINDS_OK.includes(pad.kind)) offRoad++;
+    }
+    if (offRoad) fail(`${offRoad} burst plates are off the road or of no known kind`);
   }
 
   // a hit in the chute takes a rival's drive, not its hull
@@ -710,8 +809,8 @@ function makeRacer(c, i, isPlayer = false) {
     const dt = 1 / 60;
     let offTrack = 0;
     let nan = 0;
+    let inIsland = 0;
     let steps = 0;
-    const wall = CHUTE_SPEC.halfW - CHUTE_SPEC.hullSide;
     while (steps < 60 * 200 && r.pilots.some((p) => p.finishAt == null)) {
       steps += 1;
       r.match.time += dt;
@@ -719,13 +818,16 @@ function makeRacer(c, i, isPlayer = false) {
       r._chuteStep(dt);
       for (const p of r.pilots) {
         if (!Number.isFinite(p.s) || !Number.isFinite(p.lat) || !Number.isFinite(p.air)) nan++;
-        if (Math.abs(p.lat) > wall + 0.5) offTrack++;
+        if (Math.abs(p.lat) > r._chuteHalf(p.s) - CHUTE_SPEC.hullSide + 0.5) offTrack++;
+        const isle = r._chuteIsland(p.s);
+        if (isle > 0 && Math.abs(p.lat) < isle + CHUTE_SPEC.hullSide - 1) inIsland++;
         if (p.air < -1) nan++;
       }
     }
     const home = r.pilots.filter((p) => p.finishAt != null).length;
     if (nan) fail(`the chute produced ${nan} frames of nonsense — a NaN lane, or a hull under the deck`);
     if (offTrack) fail(`${offTrack} frames put a racer outside the chute walls`);
+    if (inIsland) fail(`${inIsland} frames put a racer inside the divider of a split`);
     if (home !== r.pilots.length) fail(`${home} of ${r.pilots.length} racers finished inside 200 seconds`);
     if (r.match.playerHome !== true) fail('the commander never reached the line');
   }
@@ -744,6 +846,42 @@ function makeRacer(c, i, isPlayer = false) {
     for (let i = 0; i < 180 && g.shots.length; i++) g._chuteStepShots(1 / 60);
     if (prey.daze <= 0) fail('a bolt fired up the chute never reached the hull ahead of it');
     if (prey.hull !== prey.hullMax) fail('a bolt in the chute took hull rather than drive');
+  }
+
+  // the divider of a split is not something a hull can fly through
+  {
+    const g = makeChute(2, 17);
+    const fork = g.chute.forks[0];
+    const p = makeRacer(g, 0, true);
+    p.s = fork.from + CHUTE_SPEC.forkMouth + 40;
+    p.lat = -(CHUTE_SPEC.islandHalf + CHUTE_SPEC.hullSide);
+    p.speed = 250;
+    g.pilots = [p];
+    g._keys.clear();
+    // steer hard across the divider, frame after frame, and it holds
+    g._keys.add('KeyD');
+    for (let i = 0; i < 120; i++) { g.match.time += 1 / 60; g._chuteStep(1 / 60); }
+    if (p.lat > -CHUTE_SPEC.islandHalf) fail('a hull drove through the divider of a split');
+    g._keys.clear();
+  }
+
+  // a burst plate hands out its effect, goes away, and comes back
+  {
+    const g = makeChute(2, 19);
+    const pad = g.chute.pads[0];
+    const p = makeRacer(g, 0, true);
+    p.s = pad.s - CHUTE_SPEC.padR * 0.5;
+    p.lat = pad.lat;
+    g.pilots = [p];
+    g._chutePadsStep(1 / 60);
+    const took = pad.kind === 'burst' ? p.boost > 0 : pad.kind === 'rapid' ? p.rapid > 0 : p.spoilGuard > 0;
+    if (!took) fail(`a ${pad.kind} plate had no effect on the hull that took it`);
+    if (pad.alive) fail('a plate stays on the road after it is taken');
+    // and the hull drives on, so the plate is not simply taken again
+    p.s = pad.s + 4000;
+    p.lat = 0;
+    for (let i = 0; i < 60 * (CHUTE_SPEC.padRespawn + 1); i++) { g.t += 1 / 60; g._chutePadsStep(1 / 60); }
+    if (!pad.alive) fail('a taken plate never comes back');
   }
 }
 

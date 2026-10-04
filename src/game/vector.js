@@ -7,7 +7,8 @@
 // Two cards on the machine:
 //   Duel     — three pilots, last one flying takes the purse.
 //   Harvest  — two minutes on the crystal field, most crystals wins.
-//   Chute Run — four pilots down a spiralling tube of wire: gates, ramps, gaps
+//   Chute Run — four pilots down a spiralling tube of wire: gates, ramps,
+//               squeezes and splits with two ways through, plus burst plates
 //               and a gun that costs a rival its thrust rather than its hull.
 //
 // The field is a planet. Not a plate with a horizon painted on it — a whole
@@ -78,22 +79,44 @@ const CHUTE = {
   openR: 1500,     // and at the last — the chute unwinds as it climbs
   turns: 1.6,      // how many times it winds around its own axis
   rise: 0.14,      // how far it climbs per unit of track
-  halfW: 46,       // how wide the chute is either side of the centre line
-  halfH: 30,       // and how tall
+  // the space the track is wound through is not a tidy machine. It breathes,
+  // wanders and lifts, seeded per race, so no two chutes are the same shape and
+  // a pilot cannot fly one from memory.
+  wobbleR: [120, 260], wobbleLen: [1500, 2300],   // the spiral's radius breathes…
+  driftA: [0.22, 0.46], driftLen: [2200, 3400],   // …the winding rate swings…
+  liftA: [70, 170], liftLen: [1500, 2400],        // …and the climb rolls over hills
+  halfW: 60,       // how wide the chute is either side of the centre line
+  halfH: 40,       // and how tall
   hullSide: 15,    // half a hull, for working out where the wall is
-  turn: 74,        // units a second a pilot can slide across the chute
+  turn: 92,        // units a second a pilot can slide across the chute
   ringEvery: 70,   // a wireframe rib every this many units
+  chevEvery: 210,  // and a chevron painted on the road every this many
   gateEvery: 1300, // a gate to pass every this many units
   gateFirst: 900,  // the first gate, after the run-up
   length: 8400,    // the base length of a race
   perTier: 700,    // plus a little more for every bracket
+  // features are laid down in sequence, with clear track between them, so no
+  // two of them can ever land on each other
+  featureFirst: 1100,
+  featureGap: 280,
+  tailClear: 900,
   rampLen: 240,    // how long a launch ramp is
   rampRise: 26,    // and how high it lifts a hull
   rampMin: 150,    // the speed a hull needs before the ramp will throw it
-  rampFirst: 1200, // the first ramp
-  rampEvery: 1300, // and one every this many units after that
   gapBase: 132,    // the gap after a ramp…
   gapPerTier: 9,   // …and how much wider it gets per bracket
+  forkLen: 780,    // how long a split runs
+  forkMouth: 150,  // how long the island's nose takes to open
+  islandHalf: 16,  // half-width of the divider island
+  islandH: 56,     // and how tall it stands out of the road
+  pinchLen: 620,   // a squeeze down to…
+  pinchScale: 0.68, // …this much of the road
+  pinchEase: 120,  // eased in and out so the walls never step
+  padCount: 3,     // burst plates in a run
+  padSpacing: 95,  // and how far apart they sit
+  padR: 26,        // how close a hull must pass to take one
+  padRespawn: 14,  // seconds before a taken plate comes back
+  padHover: 12,    // how high a plate rides off the road
   air: 215,        // the launch a ramp gives — the orb's ramps use the same
   gravity: 430,    // and the same pull back down
   rivals: 3,       // four fly: the commander and three
@@ -108,6 +131,14 @@ const CHUTE = {
   callTime: 300,   // the rig calls the race after this long
 };
 const CHUTE_COLORS = [0xff6b7a, 0xffb45c, 0x8fd0ff, 0xc792ff];
+// What a burst plate hands out: drive, rapid fire, or a field ward that keeps
+// the other lanes' guns off a hull for a while.
+const CHUTE_PAD_KINDS = ['burst', 'rapid', 'ward'];
+const CHUTE_PAD_NAMES = { burst: 'DRIVE BURST', rapid: 'RAPID FIRE', ward: 'FIELD WARD' };
+const CHUTE_PAD_COLORS = { burst: 0xffb45c, rapid: 0x8fd0ff, ward: 0xc792ff };
+const CHUTE_PAD_CSS = { burst: '#ffb45c', rapid: '#8fd0ff', ward: '#c792ff' };
+/** The centre of one lane of a split, in the track's lateral coordinates. */
+const laneCentre = (fork, side) => side * (CHUTE.islandHalf + (fork.halfW - CHUTE.islandHalf) * 0.5);
 /** The chute's figures, for the audit to measure a track against. */
 export const CHUTE_SPEC = CHUTE;
 // Past this much of the course radius the field takes the helm. It only ever
@@ -163,7 +194,7 @@ const MODE_INFO = {
   },
   chute: {
     name: 'Chute Run',
-    line: 'Four pilots down the spiral. Gates to pass, ramps to take — and a gun to spoil someone else\'s line.',
+    line: 'Four pilots down the spiral. Gates to pass, ramps to jump, splits to pick — and a gun to spoil someone else\'s line.',
   },
 };
 
@@ -442,6 +473,11 @@ export class VectorChallenge {
           el('span', { class: 'vs-note', text: this.orb.note }),
         ]),
         el('div', { class: 'vec-stat' }, [
+          el('span', { class: 'vs-label', text: 'The chute' }),
+          el('span', { class: 'vs-value', text: `Chute Run · bracket ${this.tier}` }),
+          el('span', { class: 'vs-note', text: this._chuteRead() }),
+        ]),
+        el('div', { class: 'vec-stat' }, [
           el('span', { class: 'vs-label', text: 'Circuit record' }),
           el('span', { class: 'vs-value', text: `${wins} win${wins === 1 ? '' : 's'} · best ${this.rec.best || 0}` }),
           el('span', { class: 'vs-note', text: this.rec.champion ? `champion: ${this.rec.champion}` : 'no champion yet' }),
@@ -457,7 +493,7 @@ export class VectorChallenge {
         'The rig lays its course on one patch of the orb, so the ground you can see is the ground you are flying over; leave it and the field turns you back. ',
         'It carries hills, walls and launch ramps; cross a ramp fast and the field throws you over the walls. ',
         'Item pads hand out drive bursts, rapid fire and shields. ',
-        'In the chute there is no ground at all: it is a spiral of wire through open space with gates to pass and ramps to jump, and a hit up the chute costs a rival its thrust rather than its hull. ',
+        'In the chute there is no ground at all: it is a winding tube of wire through open space that breathes and lifts as it goes, with gates to pass, ramps to jump, squeezes where the road pulls in and splits where it opens out around a divider — two ways through, and no way back across once the nose has passed. One lane of a split carries the prize: a rift to jump, or a run of burst plates that hand out drive, rapid fire or a field ward. And a hit up the chute costs a rival its thrust rather than its hull. ',
         'You fly the fit in your bay, mount for mount, and the bracket fits its own pilots to match.',
       ]),
       btn('Step out', () => this.quit(), 'btn ghost'),
@@ -2037,8 +2073,11 @@ export class VectorChallenge {
         this._hudClock.textContent = `TIME ${Math.ceil(m.time)}`;
       }
     }
-    // what is left in the turbo reserve, so a pilot knows what there is to spend
-    if (p.turbo) {
+    // what is left in the turbo reserve, and whether a burst plate is burning
+    if (p.boost > 0) {
+      this._hudTurbo.textContent = 'DRIVE BURST';
+      this._hudTurbo.style.color = '#ffb45c';
+    } else if (p.turbo) {
       this._hudTurbo.textContent = 'TURBO BURNING';
       this._hudTurbo.style.color = '#ffd166';
     } else if (p.turboCharge < 0.999) {
@@ -2145,14 +2184,61 @@ export class VectorChallenge {
 
   /**
    * A point on the chute's centre line, `s` units along the track. It winds
-   * around its own axis and opens as it climbs, so the far end of the course is
-   * always somewhere else in space.
+   * around its own axis and opens as it climbs, and on top of that the whole
+   * path breathes, wanders and lifts — three seeded harmonics, so the track is
+   * strange in its own way every race instead of the same tidy helix.
    */
   _chutePoint(s, out) {
-    const t = clamp(s / this.chute.length, 0, 1);
-    const r = CHUTE.baseR + (CHUTE.openR - CHUTE.baseR) * t;
-    const ang = t * CHUTE.turns * Math.PI * 2 + this.chute.phase;
-    return out.set(Math.cos(ang) * r, s * CHUTE.rise, Math.sin(ang) * r);
+    const c = this.chute;
+    const t = clamp(s / c.length, 0, 1);
+    const r = CHUTE.baseR + (CHUTE.openR - CHUTE.baseR) * t
+      + Math.sin((s / c.wobbleLen) * Math.PI * 2 + c.wobblePhase) * c.wobbleR;
+    const ang = t * CHUTE.turns * Math.PI * 2 + c.phase
+      + Math.sin((s / c.driftLen) * Math.PI * 2 + c.driftPhase) * c.driftA;
+    const y = s * CHUTE.rise
+      + Math.sin((s / c.liftLen) * Math.PI * 2 + c.liftPhase) * c.liftA
+      + Math.sin((s / (c.liftLen * 0.43)) * Math.PI * 2 + c.liftPhase * 1.7) * c.liftA * 0.35;
+    return out.set(Math.cos(ang) * r, y, Math.sin(ang) * r);
+  }
+
+  /** How wide the road is at `s`: a split opens it out, a squeeze pulls it in. */
+  _chuteHalf(s) {
+    const c = this.chute;
+    let w = CHUTE.halfW;
+    for (const f of c.forks) {
+      if (s >= f.wide && s <= f.to) { w = Math.max(w, f.halfW); break; }
+    }
+    for (const n of c.pinches) {
+      if (s < n.from || s > n.to) continue;
+      const k = clamp(Math.min(s - n.from, n.to - s) / n.ease, 0, 1);
+      w *= 1 - (1 - CHUTE.pinchScale) * k;
+      break;
+    }
+    return w;
+  }
+
+  /** Half-width of the divider island at `s` — 0 anywhere but a split. */
+  _chuteIsland(s) {
+    for (const f of this.chute.forks) {
+      if (s < f.from || s > f.to) continue;
+      const k = clamp(Math.min(s - f.from, f.to - s) / CHUTE.forkMouth, 0, 1);
+      return CHUTE.islandHalf * k;
+    }
+    return 0;
+  }
+
+  /** Which side of an island a hull is on, against a feature's own lane. */
+  _chuteInLane(lat, lane) {
+    if (!lane) return true;
+    if (Math.abs(lat) < 1) return false;
+    return (lat > 0 ? 1 : -1) === lane;
+  }
+
+  /** Where a feature lies within the road, and the lane centres of a split. */
+  _chuteLane(s, side) {
+    const half = this._chuteHalf(s);
+    const island = this._chuteIsland(s);
+    return { centre: side * (island + (half - island) * 0.5), half: (half - island) * 0.5 };
   }
 
   /**
@@ -2192,16 +2278,18 @@ export class VectorChallenge {
     obj.quaternion.setFromRotationMatrix(this._mat.makeBasis(side, up, nose));
   }
 
-  /** The deck under a racer: a ramp lifts the floor, and the gaps have none. */
-  _chuteDeck(s) {
+  /** The road under a racer: a ramp lifts the floor, and the rifts have none. */
+  _chuteDeck(s, lat = 0) {
     for (const r of this.chute.ramps) {
+      if (!this._chuteInLane(lat, r.lane)) continue;
       if (s >= r.from && s <= r.to) return CHUTE.rampRise * clamp((s - r.from) / CHUTE.rampLen, 0, 1);
     }
     return 0;
   }
 
-  _inGap(s) {
-    return this.chute.gaps.some((g) => s >= g.from && s < g.to);
+  /** Is this point in the road over one of its holes? */
+  _inGap(s, lat = 0) {
+    return this.chute.gaps.some((g) => this._chuteInLane(lat, g.lane) && s >= g.from && s < g.to);
   }
 
   /** Who is ahead of whom: finishers by their time, everyone else by distance. */
@@ -2220,79 +2308,316 @@ export class VectorChallenge {
 
   /** How fast a racer's drive will take it right now. */
   _chuteCap(p) {
-    const top = p.turbo ? TURBO_SPEED : 250;
+    const top = p.turbo || p.boost > 0 ? TURBO_SPEED : 250;
     return p.daze > 0 ? top * CHUTE.dazeCut : top;
   }
 
   /**
-   * The track itself, in wire and phosphor: a rib every ringEvery units with
-   * four rails down the corners, a gate to pass, and a ramp with a hole after
-   * it. Ribs and rails are left out across a gap, because a hole in the course
-   * has to be a hole a pilot can see.
+   * The track, as pure data: how long it runs, how it wanders, and every
+   * feature along it. Deterministic for a bracket and a race number, so the
+   * lobby can read the track the rig is about to lay without building a metre
+   * of it — and the race that follows is the one the board described.
    */
-  _buildChute() {
+  _chutePlan() {
+    const key = `${this.tier}:${this.rec?.played || 0}`;
+    if (this._planKey === key && this._plan) return this._plan;
+    const rand = rngOf(this.state?.worldSeed ?? 1, 'chute', key);
     const length = Math.round(CHUTE.length + CHUTE.perTier * this.tier);
     const gapLen = Math.round(CHUTE.gapBase + CHUTE.gapPerTier * this.tier);
-    this.chute = { length, phase: this.rng.float(0, Math.PI * 2), gates: [], ramps: [], gaps: [] };
-    for (let s = CHUTE.gateFirst; s < length; s += CHUTE.gateEvery) this.chute.gates.push(Math.round(s));
-    this.chute.gates.push(length); // the line
-    for (let s = CHUTE.rampFirst; s + CHUTE.rampLen + gapLen <= length - 200; s += CHUTE.rampEvery) {
-      this.chute.ramps.push({ from: Math.round(s), to: Math.round(s + CHUTE.rampLen) });
-      this.chute.gaps.push({ from: Math.round(s + CHUTE.rampLen), to: Math.round(s + CHUTE.rampLen + gapLen) });
-    }
-
-    const wire = [];
-    const stamp = (a, b) => wire.push(a.x, a.y, a.z, b.x, b.y, b.z);
-    const corners = (s, lift) => {
-      const f = this._chuteFrame(s, this._cFrame);
-      const c = this._chutePoint(s, this._c1).clone();
-      const w = CHUTE.halfW;
-      const h = CHUTE.halfH + lift;
-      return [
-        cornerOf(c, f, -w, -h),
-        cornerOf(c, f, w, -h),
-        cornerOf(c, f, w, h),
-        cornerOf(c, f, -w, h),
-      ];
+    const plan = {
+      length, gapLen,
+      phase: rand.float(0, Math.PI * 2),
+      wobbleR: rand.float(CHUTE.wobbleR[0], CHUTE.wobbleR[1]),
+      wobbleLen: rand.float(CHUTE.wobbleLen[0], CHUTE.wobbleLen[1]),
+      wobblePhase: rand.float(0, Math.PI * 2),
+      driftA: rand.float(CHUTE.driftA[0], CHUTE.driftA[1]),
+      driftLen: rand.float(CHUTE.driftLen[0], CHUTE.driftLen[1]),
+      driftPhase: rand.float(0, Math.PI * 2),
+      liftA: rand.float(CHUTE.liftA[0], CHUTE.liftA[1]),
+      liftLen: rand.float(CHUTE.liftLen[0], CHUTE.liftLen[1]),
+      liftPhase: rand.float(0, Math.PI * 2),
+      gates: [], ramps: [], gaps: [], forks: [], pinches: [], pads: [],
     };
-    let prev = null;
-    for (let s = 0; s <= length; s += CHUTE.ringEvery) {
-      if (this._inGap(s)) { prev = null; continue; }
-      const c = corners(s, 0);
-      stamp(c[0], c[1]);
-      stamp(c[1], c[2]);
-      stamp(c[2], c[3]);
-      stamp(c[3], c[0]);
-      if (prev) for (let i = 0; i < 4; i++) stamp(prev[i], c[i]);
-      prev = c;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(wire), 3));
-    const track = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
-      color: 0x2cff9a, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
-    this.scene.add(track);
-    this.terrain.push(track);
 
-    // the gates: the line itself, and one to be sent back to after a gap
-    const gateWire = [];
-    const gstamp = (a, b) => gateWire.push(a.x, a.y, a.z, b.x, b.y, b.z);
-    for (const g of this.chute.gates) {
-      const last = g === length;
-      const c = corners(g, 0);
-      for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 0]]) gstamp(c[i], c[j]);
-      if (last) {
-        const d = corners(g - 8, 0);
-        for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 0]]) gstamp(d[i], d[j]);
+    // ---- the course, laid out in sequence so nothing lands on anything ----
+    let bag = [];
+    const nextKind = () => {
+      // a jump-heavy track with the odd split and squeeze, and never two of
+      // either back to back, so the shape of the race keeps changing
+      if (!bag.length) bag = rand.shuffle(['ramp', 'fork', 'ramp', 'pinch', 'fork', 'ramp', 'pinch']);
+      return bag.pop();
+    };
+    let s = CHUTE.featureFirst;
+    let prevKind = null;
+    while (s < length - CHUTE.tailClear) {
+      let kind = nextKind();
+      if (kind === prevKind && kind !== 'ramp') kind = 'ramp';
+      prevKind = kind;
+      if (kind === 'ramp') {
+        plan.ramps.push({ from: s, to: s + CHUTE.rampLen, lane: 0 });
+        plan.gaps.push({ from: s + CHUTE.rampLen, to: s + CHUTE.rampLen + gapLen, lane: 0 });
+        s += CHUTE.rampLen + gapLen + CHUTE.featureGap;
+      } else if (kind === 'pinch') {
+        plan.pinches.push({ from: s, to: s + CHUTE.pinchLen, ease: CHUTE.pinchEase });
+        s += CHUTE.pinchLen + CHUTE.featureGap;
+      } else {
+        // A split: the road opens out and an island grows down the middle of
+        // it, so there are two ways through and no way back across once the
+        // nose has passed. One lane carries the reward — a rift to jump, or a
+        // run of burst plates — and the other is plain track.
+        const from = s;
+        const to = s + CHUTE.forkLen;
+        const lane = rand.float(0, 1) < 0.5 ? -1 : 1;
+        const flavour = rand.float(0, 1) < 0.6 ? 'rift' : 'plates';
+        const fork = {
+          from, to, lane, flavour,
+          wide: from - CHUTE.forkMouth,
+          halfW: CHUTE.halfW + CHUTE.islandHalf * 2 + 10,
+        };
+        plan.forks.push(fork);
+        if (flavour === 'rift') {
+          const lip = from + Math.round(CHUTE.forkLen * 0.42);
+          plan.ramps.push({ from: lip - CHUTE.rampLen, to: lip, lane });
+          plan.gaps.push({ from: lip, to: lip + gapLen, lane });
+        } else {
+          for (let k = 0; k < CHUTE.padCount; k++) {
+            plan.pads.push({
+              s: from + Math.round(CHUTE.forkLen * 0.3) + k * CHUTE.padSpacing,
+              lat: laneCentre(fork, lane),
+              kind: k % 3 === 1 ? 'rapid' : k % 3 === 2 ? 'ward' : 'burst',
+            });
+          }
+        }
+        s = to + CHUTE.featureGap;
+      }
+      // now and then a lone plate on the plain track between features
+      if (rand.float(0, 1) < 0.35) {
+        plan.pads.push({
+          s: Math.round(s - CHUTE.featureGap * 0.5),
+          lat: rand.float(-0.4, 0.4) * CHUTE.halfW,
+          kind: rand.pick(CHUTE_PAD_KINDS),
+        });
       }
     }
-    const gateGeo = new THREE.BufferGeometry();
-    gateGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(gateWire), 3));
-    const gates = new THREE.LineSegments(gateGeo, new THREE.LineBasicMaterial({
-      color: 0xffe66b, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
-    this.scene.add(gates);
-    this.terrain.push(gates);
+
+    // ---- gates, kept clear of anything that changes the shape of the road ----
+    // A gate is also a reset point: a hull that falls into a rift is put back on
+    // the last one it passed, so a gate inside a ramp or a hole would drop it
+    // straight back into the thing it just failed.
+    const spans = [...plan.ramps, ...plan.gaps, ...plan.forks, ...plan.pinches];
+    for (let g = CHUTE.gateFirst; g < length; g += CHUTE.gateEvery) {
+      let at = Math.round(g);
+      let moved = true;
+      for (let pass = 0; pass < 4 && moved; pass++) {
+        moved = false;
+        for (const f of spans) {
+          if (at > f.from - 80 && at < f.to + 80) {
+            at = Math.round(f.to + 100);
+            moved = true;
+          }
+        }
+      }
+      if (at > length - 500) continue; // no cheap gate on the run to the line
+      if (plan.gates.length && at - plan.gates[plan.gates.length - 1] < 420) continue;
+      plan.gates.push(at);
+    }
+    plan.gates.push(length); // the line
+
+    this._planKey = key;
+    this._plan = plan;
+    return plan;
+  }
+
+  /** A one-line read of the track the rig is about to lay — what is on it. */
+  _chuteRead() {
+    const p = this._chutePlan();
+    const jumps = p.ramps.filter((r) => !r.lane).length;
+    const rifts = p.ramps.filter((r) => r.lane).length;
+    return `${p.gates.length} gates · ${jumps} jumps · ${p.forks.length} splits · ${rifts} lane rifts · ${p.pinches.length} squeezes · ${p.pads.length} plates`;
+  }
+
+  /**
+   * The track itself, in wire and phosphor: a rib every ringEvery units with
+   * rails down the corners, chevrons painted on the road, a gate to pass, ramps
+   * with holes after them, squeezes where the road pulls in and splits where it
+   * opens out around a divider. Ribs and rails are left out across a rift,
+   * because a hole in the course has to be a hole a pilot can see.
+   */
+  _buildChute() {
+    const plan = this._chutePlan();
+    // a copy per match: the plan is shared with the lobby, the match owns its own
+    this.chute = {
+      ...plan,
+      gates: [...plan.gates],
+      ramps: plan.ramps.map((r) => ({ ...r })),
+      gaps: plan.gaps.map((g) => ({ ...g })),
+      forks: plan.forks.map((f) => ({ ...f })),
+      pinches: plan.pinches.map((n) => ({ ...n })),
+      pads: plan.pads.map((p) => ({ ...p })),
+    };
+    const length = this.chute.length;
+
+    const addWire = (pts, color, opacity) => {
+      const arr = new Float32Array(pts.length * 3);
+      for (let i = 0; i < pts.length; i++) {
+        arr[i * 3] = pts[i].x;
+        arr[i * 3 + 1] = pts[i].y;
+        arr[i * 3 + 2] = pts[i].z;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      const obj = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+        color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      this.scene.add(obj);
+      this.terrain.push(obj);
+      return obj;
+    };
+    /** A point on the road: `s` along it, `lat` across it, `air` above it. */
+    const at = (s, lat, air) => {
+      const f = this._chuteFrame(s, this._cFrame);
+      const c = this._chutePoint(s, this._c1).clone();
+      return c.addScaledVector(f.side, lat).addScaledVector(f.up, air);
+    };
+    /** One chevron on the road, pointing down the track. */
+    const chevron = (list, s, lat, size, air) => {
+      list.push(
+        at(s, lat - size, air), at(s + size * 1.7, lat, air),
+        at(s + size * 1.7, lat, air), at(s, lat + size, air),
+      );
+    };
+    /** A cross-section of the road at `s`: floor left/centre/right, roof. */
+    const section = (s) => {
+      const half = this._chuteHalf(s);
+      const h = CHUTE.halfH;
+      return {
+        half,
+        p: [
+          at(s, -half, -h), at(s, 0, -h), at(s, half, -h), at(s, half, h), at(s, -half, h),
+        ],
+      };
+    };
+    const laneGone = (s, side) => this.chute.gaps.some((g) => g.lane === side && s >= g.from && s < g.to);
+
+    // ---- the tube: ribs and rails, following the road's width ----
+    const wire = [];
+    let prev = null;
+    for (let s = 0; s <= length; s += CHUTE.ringEvery) {
+      const cur = section(s);
+      const goneL = laneGone(s, -1);
+      const goneR = laneGone(s, 1);
+      // walls, floors and the centre line, per lane — the roof always stays, so
+      // a rift still reads as a hole in the road rather than the end of space
+      if (!goneL) { wire.push(cur.p[4], cur.p[0], cur.p[0], cur.p[1]); }
+      if (!goneR) { wire.push(cur.p[1], cur.p[2], cur.p[2], cur.p[3]); }
+      wire.push(cur.p[3], cur.p[4]);
+      if (prev) {
+        if (!goneL && !prev.goneL) wire.push(prev.p[0], cur.p[0], prev.p[4], cur.p[4]);
+        if (!goneR && !prev.goneR) wire.push(prev.p[2], cur.p[2], prev.p[3], cur.p[3]);
+        if (!(goneL && goneR) && !(prev.goneL && prev.goneR)) wire.push(prev.p[1], cur.p[1]);
+      }
+      prev = { p: cur.p, goneL, goneR };
+    }
+    addWire(wire, 0x2cff9a, 0.42);
+
+    // ---- the gates: the line itself, and one to be sent back to after a rift ----
+    const gateWire = [];
+    for (const g of this.chute.gates) {
+      const c = section(g);
+      for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 4]]) gateWire.push(c.p[i], c.p[j]);
+      if (g === length) {
+        const d = section(g - 8);
+        for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 4]]) gateWire.push(d.p[i], d.p[j]);
+      }
+    }
+    addWire(gateWire, 0xffe66b, 0.7);
+
+    // ---- the road markings: what the track is about to ask of a pilot ----
+    const marks = [];
+    for (let s = CHUTE.ringEvery * 2; s < length; s += CHUTE.chevEvery) {
+      const goneL = laneGone(s, -1);
+      const goneR = laneGone(s, 1);
+      if (goneL && goneR) continue;
+      const deck = this._chuteDeck(s, 0) - 7;
+      for (const side of [-1, 1]) {
+        if (side < 0 ? goneL : goneR) continue;
+        const mid = side * this._chuteHalf(s) * 0.45;
+        chevron(marks, s, mid, 13, deck);
+      }
+    }
+    addWire(marks, 0x2cff9a, 0.2);
+
+    // ---- what is coming: a split, a squeeze, or a rift in the lane you are in ----
+    const warn = [];
+    for (const f of this.chute.forks) {
+      const deck = this._chuteDeck(f.from, 0) - 7;
+      for (const side of [-1, 1]) {
+        const mid = laneCentre(f, side);
+        chevron(warn, f.wide - 30, mid, 18, deck);
+        chevron(warn, f.wide + 40, mid, 18, deck);
+      }
+    }
+    for (const n of this.chute.pinches) {
+      const deck = this._chuteDeck(n.from, 0) - 7;
+      for (const side of [-1, 1]) {
+        const mid = side * CHUTE.halfW * 0.5;
+        chevron(warn, n.from - 120, mid, 15, deck);
+      }
+    }
+    for (const g of this.chute.gaps) {
+      if (!g.lane) continue;
+      // hard chevrons down the lane that owns the rift: this one has to be jumped
+      const fork = this.chute.forks.find((f) => g.from >= f.from && g.from <= f.to) || { halfW: CHUTE.halfW };
+      const mid = laneCentre(fork, g.lane);
+      const deck = this._chuteDeck(g.from, mid) - 7;
+      for (const back of [300, 240, 180]) chevron(warn, g.from - back, mid, 20, deck);
+    }
+    addWire(warn, 0xffb45c, 0.34);
+
+    // ---- the divider islands: what turns a split into two ways through ----
+    const isle = [];
+    const floor = -CHUTE.halfH;
+    for (const f of this.chute.forks) {
+      let prevI = null;
+      for (let s = f.from; s <= f.to; s += CHUTE.ringEvery * 0.5) {
+        const half = this._chuteIsland(s);
+        const base = at(s, 0, floor);
+        const top = at(s, 0, floor + CHUTE.islandH);
+        const l = at(s, -half, floor + CHUTE.islandH);
+        const r = at(s, half, floor + CHUTE.islandH);
+        isle.push(l, top, r, top, l, base, r, base);
+        if (prevI) isle.push(prevI.l, l, prevI.r, r, prevI.top, top);
+        prevI = { l, r, top };
+      }
+    }
+    addWire(isle, 0xffb45c, 0.45);
+
+    this._buildChutePads();
+  }
+
+  /** The burst plates themselves: wire diamonds floating over the road. */
+  _buildChutePads() {
+    const geo = new THREE.OctahedronGeometry(9);
+    const edges = new THREE.EdgesGeometry(geo);
+    for (const pad of this.chute.pads) {
+      const g = new THREE.Group();
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: 0x171305, transparent: true, opacity: 0.8, depthWrite: false,
+      }));
+      m.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+        color: CHUTE_PAD_COLORS[pad.kind] || PAD_COLOR,
+        transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false,
+      })));
+      g.add(m);
+      this.scene.add(g);
+      this.terrain.push(g);
+      pad.group = g;
+      pad.mesh = m;
+      pad.alive = true;
+      pad.respawn = 0;
+      pad.phase = this.rng.float(0, 10);
+      this._seatChute(g, pad.s, pad.lat, this._chuteDeck(pad.s, pad.lat) + CHUTE.padHover, 0);
+    }
   }
 
   /** One hull on the grid, in the chute's own terms. */
@@ -2331,6 +2656,10 @@ export class VectorChallenge {
       score: 0, elims: 0, fireCd: this.rng.float(0, 1),
       wallT: -99, flashUntil: -1, wobble: this.rng.float(0, 1) * 10,
       turbo: 0, turboCharge: 1, daze: 0, spoilGuard: 0, finishAt: null,
+      // the race: gates passed, the lane a pilot has committed to in a split,
+      // and the place they last heard about
+      gates: 0, lane: 0, forkId: 0, place: 1, showPlace: null,
+      boost: 0, rapid: 0, warnFork: 0, warnRift: 0,
     };
     this._seatChute(group, p.s, p.lat, p.air, 0);
     return p;
@@ -2354,12 +2683,13 @@ export class VectorChallenge {
     this._buildRivalBoard();
     this.hud.querySelector('.vh-mode').textContent = `${MODE_INFO.chute.name.toUpperCase()} · THE SPIRAL · ${MODE_INFO.chute.line}`;
     audio.dock();
-    this._announce(`CHUTE RUN — ${this.chute.gates.length} GATES, ${this.pilots.length} FLYING`);
-  }
+    this._announce(`CHUTE RUN — ${this._chuteRead().toUpperCase()}`);  }
 
   /**
    * A hull that goes into a gap loses the race rather than the match: back to
-   * the last gate it passed, at gate speed, with the time that cost it.
+   * the last gate it passed, with enough drive under it to clear the jump it
+   * just missed — a hull sent back at a crawl loops there forever, and a race
+   * with a pilot stuck in it is not a race.
    */
   _chuteFall(p) {
     const passed = this.chute.gates.filter((g) => g <= p.s);
@@ -2368,7 +2698,7 @@ export class VectorChallenge {
     p.lat = 0;
     p.air = 0;
     p.vy = 0;
-    p.speed = 70;
+    p.speed = Math.max(70, CHUTE.rampMin * 1.35);
     p.daze = 0;
     this._burstAt(this._chuteWorld(p, this._c6, 8), 0xff6b7a, 1.1);
     if (p.isPlayer) this._pop('IN THE RIFT — BACK TO THE LAST GATE', '#ff9a6b');
@@ -2376,18 +2706,19 @@ export class VectorChallenge {
 
   /** Ramps, gravity and holes: the whole of the chute floor, in one place. */
   _chuteDeckStep(p, prev, dt) {
-    const deck = this._chuteDeck(p.s);
+    const deck = this._chuteDeck(p.s, p.lat);
     // A ramp that ends under a hull throws it from the lip — and only if it came
     // in fast, because the gap after a ramp is wider than a slow hull can cross.
     // This has to be read off the crossing itself: by the time a hull is over
     // the lip the deck under it is already the hole it is flying across.
     for (const r of this.chute.ramps) {
+      if (!this._chuteInLane(p.lat, r.lane)) continue;
       if (prev < r.to && p.s >= r.to && p.speed > CHUTE.rampMin) {
         p.air = Math.max(p.air, CHUTE.rampRise);
         p.vy = CHUTE.air;
       }
     }
-    const inGap = this._inGap(p.s);
+    const inGap = this._inGap(p.s, p.lat);
     if (p.air > deck + 0.01 || p.vy > 0) {
       p.vy -= CHUTE.gravity * dt;
       p.air += p.vy * dt;
@@ -2406,7 +2737,7 @@ export class VectorChallenge {
     if (this._keys.has('KeyD') || this._keys.has('ArrowRight')) steer += 1; // to starboard
     p.lat += steer * CHUTE.turn * dt;
     this._spendTurbo(p, this._keys.has('ShiftLeft') || this._keys.has('ShiftRight'), dt);
-    const accel = p.turbo ? TURBO_ACCEL : 240;
+    const accel = p.boost > 0 ? 400 : p.turbo ? TURBO_ACCEL : 240;
     if (this._keys.has('KeyW') || this._keys.has('ArrowUp')) p.speed += accel * dt;
     if (this._keys.has('KeyS') || this._keys.has('ArrowDown')) p.speed -= 200 * dt;
     p.speed *= Math.max(0, 1 - 0.35 * dt);
@@ -2414,14 +2745,49 @@ export class VectorChallenge {
     if (this._keys.has('Space')) this._fire(p);
   }
 
+  /** Which lane of a split a rival takes: the one that asks less of it. */
+  _chutePickLane(p, fork) {
+    if (fork.flavour === 'plates') return fork.lane; // the plates are the prize
+    // a rift is a jump, and most pilots would rather not: the field takes it
+    // about a quarter of the time, which is enough to keep a commander guessing
+    if (this.rng.float(0, 1) < 0.25) return fork.lane;
+    return -fork.lane;
+  }
+
   /**
-   * A rival's race: hold a line, spend the reserve on the straights, and put a
-   * bolt into whoever is just far enough ahead to be worth spoiling.
+   * A rival's race: hold a lane, take the plates it likes, spend the reserve on
+   * the straights, and put a bolt into whoever is just far enough ahead to be
+   * worth spoiling.
    */
   _chuteAi(p, dt) {
     p.wobble += dt;
-    const line = Math.sin((p.s + p.wobble * 90) / 320) * CHUTE.halfW * 0.5;
-    p.lat += clamp(line - p.lat, -CHUTE.turn * 0.85 * dt, CHUTE.turn * 0.85 * dt);
+    const half = this._chuteHalf(p.s);
+    let want = Math.sin((p.s + p.wobble * 90) / 320) * half * 0.45;
+
+    // A split is a commitment: the island does not negotiate, so a rival picks
+    // a lane while there is still road between the two of them, and once the
+    // nose is past it flies the lane it is already in.
+    const fork = this.chute.forks.find((f) => p.s > f.wide - 360 && p.s < f.to + 60);
+    if (fork) {
+      if (p.s >= fork.from + CHUTE.forkMouth) p.lane = p.lat >= 0 ? 1 : -1;
+      else if (p.forkId !== fork.from) { p.forkId = fork.from; p.lane = this._chutePickLane(p, fork); }
+      if (p.lane) want = laneCentre(fork, p.lane);
+    } else {
+      p.lane = 0;
+      p.forkId = 0;
+    }
+
+    // plates are worth a detour while there is road to take one on
+    let plate = null;
+    for (const pad of this.chute.pads) {
+      if (!pad.alive || pad.s <= p.s || pad.s - p.s > 540) continue;
+      const lane = Math.abs(pad.lat) > CHUTE.halfW * 0.5 ? Math.sign(pad.lat) : 0;
+      if (lane && p.lane && lane !== p.lane) continue;
+      if (!plate || pad.s < plate.s) plate = pad;
+    }
+    if (plate) want = plate.lat;
+
+    p.lat += clamp(want - p.lat, -CHUTE.turn * 0.85 * dt, CHUTE.turn * 0.85 * dt);
     const cap = this._chuteCap(p);
     this._spendTurbo(p, !p.daze && p.speed > 190, dt);
     p.speed += clamp(cap - p.speed, -140 * dt, 210 * dt);
@@ -2461,6 +2827,42 @@ export class VectorChallenge {
     return true;
   }
 
+  /** A burst plate, taken: drive, rapid fire or a ward against being spoiled. */
+  _chuteTake(p, pad) {
+    pad.alive = false;
+    pad.group.visible = false;
+    pad.respawn = CHUTE.padRespawn;
+    this._burstAt(this._chuteWorld(p, this._c6, 4), CHUTE_PAD_COLORS[pad.kind] || PAD_COLOR, 0.7);
+    audio.coin();
+    if (pad.kind === 'burst') p.boost = 3.2;
+    else if (pad.kind === 'rapid') p.rapid = 6;
+    else p.spoilGuard = Math.max(p.spoilGuard, 4);
+    if (p.isPlayer) this._pop(CHUTE_PAD_NAMES[pad.kind] || 'PLATE', CHUTE_PAD_CSS[pad.kind] || '#fff1a8');
+  }
+
+  /** Plates float over the road, turn, and come back a while after they are taken. */
+  _chutePadsStep(dt) {
+    for (const pad of this.chute.pads) {
+      pad.phase += dt;
+      if (pad.respawn > 0) {
+        pad.respawn -= dt;
+        if (pad.respawn <= 0) { pad.alive = true; pad.group.visible = true; }
+        continue;
+      }
+      const h = this._chuteDeck(pad.s, pad.lat) + CHUTE.padHover + Math.sin(pad.phase * 2.6) * 3;
+      this._seatChute(pad.group, pad.s, pad.lat, h, 0);
+      pad.mesh.rotation.y += dt * 1.8;
+      if (!pad.alive) continue;
+      for (const p of this.pilots) {
+        if (p.finishAt != null) continue;
+        if (Math.abs(p.s - pad.s) < CHUTE.padR && Math.abs(p.lat - pad.lat) < CHUTE.padR) {
+          this._chuteTake(p, pad);
+          break;
+        }
+      }
+    }
+  }
+
   /** Nothing is shot down out here: a hit takes a rival's drive, not its hull. */
   _chuteHit(victim, shooter) {
     // and a hull that has just been spoiled gets a moment: three rivals who can
@@ -2480,6 +2882,11 @@ export class VectorChallenge {
       sh.life -= dt;
       sh.s += sh.vel * dt;
       let dead = sh.life <= 0 || sh.s > this.chute.length + 40;
+      if (!dead) {
+        // the divider of a split eats anything that flies into it
+        const isle = this._chuteIsland(sh.s);
+        if (isle > 0 && Math.abs(sh.lat) < isle + 2) dead = true;
+      }
       if (!dead) {
         for (const q of this.pilots) {
           if (q === sh.owner || !q.alive || q.finishAt != null) continue;
@@ -2506,7 +2913,6 @@ export class VectorChallenge {
    */
   _chuteStep(dt) {
     const m = this.match;
-    const lim = CHUTE.halfW - CHUTE.hullSide;
     for (const p of this.pilots) {
       if (p.finishAt != null) {
         // home: the hull coasts on past the line and stops
@@ -2514,6 +2920,8 @@ export class VectorChallenge {
       } else {
         p.daze = Math.max(0, p.daze - dt);
         p.spoilGuard = Math.max(0, p.spoilGuard - dt);
+        p.boost = Math.max(0, p.boost - dt);
+        p.rapid = Math.max(0, p.rapid - dt);
         p.fireCd = Math.max(0, p.fireCd - dt);
         for (let i = 0; i < p.mountCd.length; i++) p.mountCd[i] = Math.max(0, p.mountCd[i] - dt);
         if (p.isPlayer) this._chutePlayer(p, dt);
@@ -2522,12 +2930,41 @@ export class VectorChallenge {
       const prev = p.s;
       if (p.finishAt == null) p.s += p.speed * dt;
       this._chuteDeckStep(p, prev, dt);
-      // the walls are the width of the chute, and they let a hull slide: there
-      // is nothing to stick to and nowhere to be pinned
+      // The walls are wherever the road is right now — it opens out at a split
+      // and pulls in at a squeeze — and they let a hull slide: there is nothing
+      // to stick to and nowhere to be pinned.
+      const lim = this._chuteHalf(p.s) - CHUTE.hullSide;
       if (p.lat > lim || p.lat < -lim) {
         p.lat = clamp(p.lat, -lim, lim);
         p.wallT = this.t;
         p.speed *= 0.985;
+      }
+      // The divider of a split is just as solid, and it does not budge: a hull
+      // that reaches it is put out into the lane it was already flying.
+      const isle = this._chuteIsland(p.s);
+      if (isle > 0) {
+        const need = isle + CHUTE.hullSide;
+        if (Math.abs(p.lat) < need) {
+          p.lat = (p.lat >= 0 ? 1 : -1) * need;
+          p.wallT = this.t;
+          p.speed *= 0.985;
+        }
+      }
+      // gates, and the running commentary a pilot races against
+      while (p.gates < this.chute.gates.length && p.s >= this.chute.gates[p.gates]) {
+        p.gates += 1;
+        if (p.isPlayer) {
+          this._pop(p.gates === this.chute.gates.length ? 'THE LINE' : `GATE ${p.gates} OF ${this.chute.gates.length}`, '#7dffa8');
+        }
+      }
+      if (p.isPlayer) {
+        const place = this._chutePlace(p);
+        if (p.showPlace !== place) {
+          if (p.showPlace != null) {
+            this._pop(place < p.showPlace ? `P${place} — TAKEN` : `P${place} — LOST`, place < p.showPlace ? '#7dffa8' : '#ffb45c');
+          }
+          p.showPlace = place;
+        }
       }
       if (p.finishAt == null && p.s >= this.chute.length) {
         p.finishAt = m.time;
@@ -2551,7 +2988,9 @@ export class VectorChallenge {
     const m = this.match;
     m.time += dt;
     this._chuteStep(dt);
+    this._chutePadsStep(dt);
     this._stepBursts(dt);
+    this._chuteCall();
     if (m.playerHome) {
       this._announce(`THE LINE — ${m.time.toFixed(1)}s`);
       m.over = true;
@@ -2563,6 +3002,27 @@ export class VectorChallenge {
     if (m.time > CHUTE.callTime) {
       m.over = true;
       this._finishMatch();
+    }
+  }
+
+  /** What the road is about to ask of the commander, called out in time. */
+  _chuteCall() {
+    const me = this.pilots[0];
+    if (!me) return;
+    const fork = this.chute.forks.find((f) => me.s > f.wide - 420 && me.s < f.wide);
+    if (fork && me.warnFork !== fork.from) {
+      me.warnFork = fork.from;
+      this._pop('SPLIT AHEAD — PICK A LANE', '#ffb45c');
+    }
+    const rift = this.chute.gaps.find((g) => g.lane && me.s > g.from - 400 && me.s < g.from && this._chuteInLane(me.lat, g.lane));
+    if (rift && me.warnRift !== rift.from) {
+      me.warnRift = rift.from;
+      this._pop('RIFT IN THIS LANE — JUMP IT', '#ff6b7a');
+    }
+    const pinch = this.chute.pinches.find((n) => me.s > n.from - 320 && me.s < n.from);
+    if (pinch && me.warnPinch !== pinch.from) {
+      me.warnPinch = pinch.from;
+      this._pop('SQUEEZE AHEAD', '#8fd0ff');
     }
   }
 
