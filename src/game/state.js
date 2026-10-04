@@ -153,6 +153,14 @@ export class GameState {
       mods: { ...(opts.story.mods || {}) },
       unlocked: [...(opts.story.unlocked || [])],
     } : { mods: {}, unlocked: [] };
+
+    // the holo-sim circuit: matches run, wins, and the champion's best score
+    this.vector = opts.vector && typeof opts.vector === 'object' ? {
+      played: opts.vector.played || 0,
+      wins: opts.vector.wins || 0,
+      best: opts.vector.best || 0,
+      champion: opts.vector.champion || null,
+    } : { played: 0, wins: 0, best: 0, champion: null };
     this.side = opts.side ? {
       active: { ...(opts.side.active || {}) },
       mods: { ...(opts.side.mods || {}) },
@@ -306,6 +314,7 @@ export class GameState {
         mods: { ...this.story.mods },
         unlocked: [...this.story.unlocked],
       },
+      vector: { ...this.vector },
       side: {
         active: { ...this.side.active },
         mods: { ...this.side.mods },
@@ -397,6 +406,12 @@ export class GameState {
       const oldFactionStage = obj.factionLine?.stage || 0;
       st.factionLine = { faction: st.allegiance, stage: oldStoryRank + oldFactionStage };
     }
+    st.vector = obj.vector && typeof obj.vector === 'object' ? {
+      played: obj.vector.played || 0,
+      wins: obj.vector.wins || 0,
+      best: obj.vector.best || 0,
+      champion: obj.vector.champion || null,
+    } : { played: 0, wins: 0, best: 0, champion: null };
     st.side = obj.side ? {
       active: { ...(obj.side.active || {}) },
       mods: { ...(obj.side.mods || {}) },

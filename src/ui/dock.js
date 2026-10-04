@@ -157,7 +157,10 @@ export class DockUI {
 
     const port = [];
     if (s.includes('trade')) port.push({ id: 'trade', label: 'Market', hint: 'Buy low, sell high' });
-    if (s.includes('bar')) port.push({ id: 'contracts', label: 'Contracts', hint: 'Work on the board' });
+    if (s.includes('bar')) {
+      port.push({ id: 'contracts', label: 'Contracts', hint: 'Work on the board' });
+      port.push({ id: 'challenge', label: 'Vector Challenge', hint: 'The holo-sim circuit' });
+    }
     if (port.length) groups.push({ label: 'The port', items: port });
 
     const ship = [{ id: 'berth', label: 'Berth', hint: 'Status · refuel · save' }];
@@ -266,6 +269,7 @@ export class DockUI {
       case 'holdings': this._renderHoldings(); break;
       case 'shipyard': this._renderShipyard(); break;
       case 'contracts': this._renderContracts(); break;
+      case 'challenge': this._renderChallenge(); break;
       case 'fleet': this._renderFleet(); break;
       case 'career': this._renderCareer(); break;
       case 'skills': this._renderSkills(); break;
@@ -1067,6 +1071,36 @@ export class DockUI {
       }
     }
     return parts.join(' · ');
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Vector Challenge                                                   */
+  /* ------------------------------------------------------------------ */
+
+  _renderChallenge() {
+    const { state, actions } = this.ctx;
+    const rec = state.vector || { played: 0, wins: 0, best: 0, champion: null };
+    const shipDef = SHIP_BY_ID[state.shipId] || SHIP_BY_ID.wayfarer;
+    this.body.append(el('div', { class: 'panel' }, [
+      el('h2', { text: 'The Vector Challenge' }),
+      el('p', { class: 'note', text: 'Every port with a bar keeps a holo-sim rig older than half the hulls outside — wire and phosphor, three pilots to a field, the way the old hands ran it before the charts were honest. The sim reads your registry and flies the ship you are sitting in right now.' }),
+      el('div', { class: 'svc-grid' }, [
+        el('div', { class: 'svc' }, [
+          el('h4', { text: 'Your rig' }),
+          el('p', { text: `${shipDef.name} (${shipDef.cls}) — flown as it sits in the bay, guns and all.` }),
+        ]),
+        el('div', { class: 'svc' }, [
+          el('h4', { text: 'Circuit record' }),
+          el('p', { text: `${rec.played || 0} matches · ${rec.wins || 0} wins · best score ${rec.best || 0}${rec.champion ? ` · champion: ${rec.champion}` : ''}` }),
+        ]),
+      ]),
+      el('h3', { text: 'Enter the field' }),
+      el('p', { class: 'note', text: 'A duel settles the old question — last pilot flying. The harvest is ninety seconds over the crystal field, most crystals when the clock runs out. W and S thrust, A and D yaw, SPACE fires. The field runs modern: hills, walls and launch ramps — cross a ramp fast and it throws you clean over the walls — and item pads hand out drive bursts, rapid fire and shields.' }),
+      el('div', { style: 'display:flex;gap:10px;flex-wrap:wrap' }, [
+        btn('Duel — last pilot flying', () => actions.startVectorChallenge('duel'), 'btn primary'),
+        btn('Harvest — the crystal field', () => actions.startVectorChallenge('harvest'), 'btn primary'),
+      ]),
+    ]));
   }
 
   /* ------------------------------------------------------------------ */

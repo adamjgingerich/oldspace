@@ -19,6 +19,7 @@ export const BIND_ACTIONS = [
   { id: 'target', label: 'Cycle hostile target', code: 'Tab' },
   { id: 'dock', label: 'Dock / scan', code: 'KeyE' },
   { id: 'claim', label: 'Claim prize', code: 'KeyC' },
+  { id: 'challenge', label: 'Vector Challenge', code: 'KeyR' },
   { id: 'jump', label: 'Ship’s computer', code: 'KeyJ' },
   { id: 'chart', label: 'Ship’s computer', code: 'KeyM' },
   { id: 'skills', label: 'Skill tree', code: 'KeyK' },

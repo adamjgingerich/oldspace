@@ -48,6 +48,10 @@ export function missionGuide(state, m, currentSystemId) {
       return { phase: 'sweep', verb: 'SWEEP', systemId: dest, stationId: null, here: here(dest), note: `${m.kills?.got ?? 0}/${m.kills?.need ?? '?'} raiders down — it settles on the last kill` };
     case 'relic':
       return { phase: 'vault', verb: 'OPEN VAULT', systemId: dest, stationId: null, here: here(dest), note: 'hold station by the vault and crack the cipher' };
+    case 'vector':
+      return m.done
+        ? { phase: 'return', verb: 'CLAIM', systemId: m.issuer.systemId, stationId: m.issuer.stationId, here: here(m.issuer.systemId), note: 'collect the purse at the issuing desk' }
+        : { phase: 'compete', verb: 'COMPETE', systemId: dest, stationId: null, here: here(dest), note: 'win one Vector Challenge match at the meetup' };
     default:
       return { phase: 'go', verb: 'FLY TO', systemId: dest, stationId: null, here: here(dest), note: '' };
   }
@@ -61,7 +65,7 @@ export function missionStationName(systemId, stationId) {
 
 /** Human labels per contract type, shared by the dock and the star chart. */
 export const MISSION_TAGS = {
-  delivery: 'DELIVERY', courier: 'COURIER', bounty: 'BOUNTY', survey: 'SURVEY', sweep: 'SWEEP', recovery: 'RECOVERY', relic: 'RELIC HUNT',
+  delivery: 'DELIVERY', courier: 'COURIER', bounty: 'BOUNTY', survey: 'SURVEY', sweep: 'SWEEP', recovery: 'RECOVERY', relic: 'RELIC HUNT', vector: 'VECTOR',
 };
 
 /** Per-type accent colors — dock tags, chart list and HUD markers stay in sync. */
@@ -73,6 +77,7 @@ export const MISSION_COLORS = {
   sweep: '#ff9a3c',
   recovery: '#63ffc0',
   relic: '#ffd27a',
+  vector: '#7dffa8',
 };
 
 /**
@@ -103,6 +108,7 @@ export function missionProgress(m) {
   }
   if (m.type === 'recovery' && m.pods) return `Recorder pods: ${m.pods.taken.length}/${m.pods.need}`;
   if (m.type === 'relic') return m.scanned ? 'the vault is open' : null;
+  if (m.type === 'vector') return m.done ? 'match won — claim the purse at the issuing desk' : 'win one match at the meetup';
   return null;
 }
 
@@ -749,6 +755,29 @@ export function generateBoard(state, station) {
     offers.push(offer);
   }
 
+  // ---- the circuit comes through: a Vector Challenge meetup ----
+  // Bars host the holo-sim circuit, and a travelling meetup needs a local
+  // pilot to make the field. Place first — one match, three pilots.
+  if (station.services?.includes('bar') && rng.chance(0.26)) {
+    const vTier = clamp(myTier + rng.int(-1, 1), 1, 6);
+    const vReach = reachableFrom(state.systemId, MAX_HOPS[vTier]);
+    const dest = weightedDest(rng, vReach.length ? vReach : reach, vTier);
+    const dname = SYSTEMS[dest.id].name;
+    const reward = Math.round(rng.int(900, 1600) * TIER_MULT[vTier] * deepPay(dest.id) * 1.15);
+    offers.push({
+      id: `${station.id}-d${state.day}-vec-${rng.int(100, 999)}`,
+      type: 'vector',
+      tier: vTier,
+      title: `The Vector Challenge — ${dname} meetup`,
+      desc: `The holo-sim circuit is holding a meetup at ${dname}, and the bracket needs a third pilot. Enter the Vector Challenge and place first — old-school wire and phosphor, three to a field, and the purse goes to the last one flying.`,
+      issuer: { stationId: station.id, systemId: state.systemId, faction: station.owner },
+      dest: { systemId: dest.id },
+      reward,
+      rep: { faction: station.owner, amount: 3 + vTier },
+      deadlineDay: state.day + 6 + dest.hops * 2,
+    });
+  }
+
   // ---- your flag's line: the one posting that is yours alone ----
   const lineOffer = factionQuestOffer(state, station, rng);
   if (lineOffer) offers.push(lineOffer);
@@ -778,6 +807,7 @@ export function acceptMission(state, offer) {
     bonus: offer.bonus ? { ...offer.bonus } : null,
     defect: offer.defect ? { ...offer.defect } : null,
     long: !!offer.long,
+    done: offer.type === 'vector' ? false : null,
     title: offer.title,
     desc: offer.desc,
     issuer: { ...offer.issuer },
@@ -810,7 +840,7 @@ export function findMission(state, id) {
 }
 
 /** Karma earned for completing each contract type. */
-export const CONTRACT_KARMA = { delivery: 2, courier: 1, survey: 3, bounty: 1, sweep: 2, recovery: 2, relic: 4 };
+export const CONTRACT_KARMA = { delivery: 2, courier: 1, survey: 3, bounty: 1, sweep: 2, recovery: 2, relic: 4, vector: 2 };
 
 /** Deliveries ready for handover at this station, surveys to file, finished recoveries. */
 export function completionsAt(state, systemId, stationId) {
@@ -828,8 +858,25 @@ export function completionsAt(state, systemId, stationId) {
     ) {
       ready.push({ mission: m, verb: 'Deliver pods' });
     }
+    if (m.type === 'vector' && m.done && m.issuer.systemId === systemId && m.issuer.stationId === stationId) {
+      ready.push({ mission: m, verb: 'Claim the purse' });
+    }
   }
   return ready;
+}
+
+/**
+ * A Vector Challenge match was won in `systemId`. Meetup contracts held for
+ * that system settle their win condition. Returns the completed missions.
+ */
+export function noteVectorWin(state, systemId) {
+  const completed = [];
+  for (const m of state.missions) {
+    if (m.type !== 'vector' || m.done || m.dest.systemId !== systemId) continue;
+    m.done = true;
+    completed.push(m);
+  }
+  return completed;
 }
 
 /**

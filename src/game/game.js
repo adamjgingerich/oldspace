@@ -33,6 +33,7 @@ import { TWIST_INFO, HAILS, RELIC_OPENED } from '../data/voices.js';
 import * as wormholes from './wormholes.js';
 import * as expeditions from './expeditions.js';
 import * as politics from './politics.js';
+import { VectorChallenge } from './vector.js';
 import { flashWarp } from '../ui/dom.js';
 import { toggleFullscreen } from '../ui/fullscreen.js';
 import { clamp, dist2 } from '../core/util.js';
@@ -267,6 +268,12 @@ export class Game {
       input.endFrame();
       return;
     }
+    if (this.mode === 'challenge') {
+      // the holo-sim runs its own loop and reads its own keys — the world holds
+      // its breath behind the rig
+      input.endFrame();
+      return;
+    }
     if (this.mode === 'warp') {
       // the fold plays out in real time; the helm is in somebody else's hands
       this.universe.update(dt * this.timeScale, dt);
@@ -348,6 +355,10 @@ export class Game {
         else if (this.universe.nearStar) this.beginScan('star');
       }
       if (input.wasPressed(binds.get('claim'))) this.actClaimPrize();
+      // the circuit's rig is beamed down from any station or settlement
+      if (input.wasPressed(binds.get('challenge'))) {
+        if (this.universe.nearPlanet || this.universe.nearStation) this.openVectorChallenge();
+      }
       // J and M both raise the ship's computer — one menu, no separate charts
       if (input.wasPressed(binds.get('jump')) || input.wasPressed(binds.get('chart'))) this.openComputer('map');
       if (input.wasPressed(binds.get('skills'))) this.openSkills();
@@ -404,6 +415,7 @@ export class Game {
     const u = this.universe;
     if (!u || !u.player.alive) return;
     if (u.nearStation) this.hint('dock', 'Press E to dock — trade, refit, and take contracts.');
+    if (u.nearPlanet || u.nearStation) this.hint('vector', 'Press R near a station or settlement to run the Vector Challenge — the old holo-sim circuit.');
     if (u.nearPlanet) this.hint('scan', 'Press E to scan a planet — first surveys pay a bounty.');
     if (u.nearStar) this.hint('scanstar', 'Press E for deep-core readings on the star — first surveys pay XP.');
     if (!u.warpBlock) this.hint('warp', 'Press J in open space to warp a lane — one lumen per jump.');
@@ -463,7 +475,7 @@ export class Game {
     if (!u) return null;
     if (u.nearStation && u.player.speed < 30) {
       const ready = missions.completionsAt(this.state, this.state.systemId, u.nearStation.record.id).length;
-      return { key: 'E', text: `Dock at ${u.nearStation.record.name}${ready ? ` — hand in ${ready} contract${ready === 1 ? '' : 's'}` : ''}` };
+      return { key: 'E', text: `Dock at ${u.nearStation.record.name}${ready ? ` — hand in ${ready} contract${ready === 1 ? '' : 's'}` : ''} · R for the Vector Challenge` };
     }
     if (u.nearStation) {
       return { text: `Slow to 30 to dock at ${u.nearStation.record.name}`, warn: true };
@@ -476,8 +488,8 @@ export class Game {
       return { key: 'E', text: `Enter wormhole → ${dest} (${WORMHOLE_LUMEN_COST} lumen)` };
     }
     if (u.nearPlanet) {
-      if (u.player.speed < SCAN_SPEED_LIMIT) return { key: 'E', text: `Scan ${u.nearPlanet.record.name} — hold close while the tape runs` };
-      return { text: `Slow below ${SCAN_SPEED_LIMIT} to scan ${u.nearPlanet.record.name}`, warn: true };
+      if (u.player.speed < SCAN_SPEED_LIMIT) return { key: 'E', text: `Scan ${u.nearPlanet.record.name} — hold close while the tape runs · R for the Vector Challenge` };
+      return { text: `Slow below ${SCAN_SPEED_LIMIT} to scan ${u.nearPlanet.record.name} · R for the Vector Challenge`, warn: true };
     }
     if (u.nearStar) {
       if (u.player.speed < SCAN_SPEED_LIMIT) return { key: 'E', text: `Scan the ${u.system.name} star — hold close while the tape runs` };
@@ -1989,6 +2001,72 @@ export class Game {
     this.mode = 'flight';
     this.ui.comms?.close();
     input.reset();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Vector Challenge — the holo-sim circuit                             */
+  /* ------------------------------------------------------------------ */
+
+  /** Open the rig. From a dock tab, `mode` starts a match at once. */
+  openVectorChallenge(mode = null) {
+    if (this.mode === 'challenge' || !this.state) return;
+    this._preChallengeMode = this.mode;
+    this.mode = 'challenge';
+    input.enabled = false; // the sim reads its own keys
+    input.reset();
+    const host = document.getElementById('overlays') || document.getElementById('app') || document.body;
+    this.challenge = new VectorChallenge({
+      host,
+      state: this.state,
+      autoMode: mode,
+      onFinish: (result) => this._finishVectorChallenge(result),
+      onQuit: () => this.closeVectorChallenge(),
+    });
+  }
+
+  startVectorChallenge(mode) {
+    if (this.mode !== 'docked') return;
+    this.openVectorChallenge(mode);
+  }
+
+  _finishVectorChallenge(result) {
+    const st = this.state;
+    const rec = st.vector;
+    rec.played += 1;
+    if (result.place === 1) rec.wins += 1;
+    if (result.score > rec.best) {
+      rec.best = result.score;
+      rec.champion = st.commander;
+    }
+    if (result.payout > 0) st.addCredits(result.payout);
+    const xpr = addXp(st, result.xp || 0);
+    if (xpr.levels > 0) this.ui.toasts.push(`Level ${xpr.level} — the lanes notice. (+${xpr.points} skill point${xpr.points > 1 ? 's' : ''})`, 'good');
+    if (result.forfeit) {
+      this.ui.toasts.push(`Vector Challenge — you stepped out. ${rec.wins} win${rec.wins === 1 ? '' : 's'} on the circuit.`, 'warn');
+    } else if (result.place === 1) {
+      this.ui.toasts.push(`Vector Challenge — first on the field. +₡${result.payout.toLocaleString()} · +${result.xp} XP.`, 'good');
+    } else {
+      this.ui.toasts.push(`Vector Challenge — you took ${['', 'first', 'second', 'third'][result.place] || result.place} place. Consolation ₡${result.payout.toLocaleString()}.`, '');
+    }
+    // meetup contracts settle on a win in the system where the bracket runs
+    if (result.place === 1 && !result.forfeit) {
+      const settled = missions.noteVectorWin(st, st.systemId);
+      for (const m of settled) {
+        this.ui.toasts.push(`The meetup win settles your contract: ${m.title}. Return to the issuing desk for the purse.`, 'good');
+      }
+    }
+    this.autosave();
+    if (this._preChallengeMode === 'docked') this.ui.dock.refreshIfOpen();
+  }
+
+  closeVectorChallenge() {
+    if (this.mode !== 'challenge') return;
+    // the sim tears its own rig down in quit(); here the world simply resumes
+    this.challenge = null;
+    this.mode = this._preChallengeMode === 'docked' ? 'docked' : 'flight';
+    input.enabled = true;
+    input.reset();
+    if (this.mode === 'docked') this.ui.dock.refreshIfOpen();
   }
 
   commsContext() {

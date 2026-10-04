@@ -2316,3 +2316,142 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   font-size: 9px;
 }
 .card.pick.sel .csig { box-shadow: inset 0 0 0 1px var(--amber); }
+
+/* ==================================================================
+   VECTOR CHALLENGE — the holo-sim circuit
+   ================================================================== */
+
+.vec-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: #020408;
+}
+.vec-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.vec-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px);
+  opacity: 0.75;
+}
+.vec-scan::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 52%, rgba(2, 4, 8, 0.78) 100%);
+}
+.vec-title {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+}
+.vec-title-main {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.42em;
+  color: #2cff9a;
+  text-shadow: 0 0 12px rgba(44, 255, 154, 0.8);
+}
+.vec-title-sub {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #4e8f78;
+  font-family: var(--mono);
+}
+.vec-hud {
+  position: absolute;
+  top: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 24px;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.14em;
+  color: #2cff9a;
+  text-shadow: 0 0 10px rgba(44, 255, 154, 0.7);
+  pointer-events: none;
+}
+.vec-hud.hidden, .vec-lobby.hidden, .vec-over.hidden { display: none; }
+.vec-lobby, .vec-over {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+}
+.vec-panel {
+  width: min(620px, 92vw);
+  background: rgba(3, 10, 14, 0.9);
+  border: 1px solid rgba(44, 255, 154, 0.4);
+  box-shadow:
+    0 0 0 3px rgba(44, 255, 154, 0.12),
+    0 0 46px rgba(44, 255, 154, 0.15),
+    inset 0 0 60px rgba(44, 255, 154, 0.05);
+  padding: 22px 24px;
+}
+.vec-panel h2 {
+  color: #2cff9a;
+  font-size: 20px;
+  letter-spacing: 0.18em;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+  text-shadow: 0 0 14px rgba(44, 255, 154, 0.7);
+  font-family: var(--mono);
+}
+.vec-panel .note { color: #9fd8c0; font-size: 12.5px; }
+.vec-lobby-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 14px 0;
+}
+.vec-stat {
+  border: 1px solid rgba(44, 255, 154, 0.25);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vs-label {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #4e8f78;
+  font-family: var(--mono);
+}
+.vs-value { color: #c8ffe8; font-size: 15px; font-family: var(--mono); }
+.vs-note { color: #5f8f80; font-size: 11px; }
+.vec-mode-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.vec-keys { color: #6fa892; font-size: 12px; font-family: var(--mono); }
+.vec-announce { text-align: center; width: auto; }
+.vec-announce h2 { font-size: 26px; animation: vecblink 1s steps(2) infinite; }
+@keyframes vecblink { 50% { opacity: 0.4; } }
+
+.vh-pop {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s, transform 0.15s;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  color: #fff1a8;
+  text-shadow: 0 0 12px rgba(255, 241, 168, 0.8);
+}
+.vh-pop.on { opacity: 1; transform: translateY(0); }

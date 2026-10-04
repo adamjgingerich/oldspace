@@ -74,6 +74,13 @@ export class DevMode {
           btn('Warp', () => this._warp(this.warpSelect.value), 'dev-btn'),
         ]),
       ]),
+      el('div', { class: 'dev-section' }, [
+        el('h4', { text: 'Vector Challenge' }),
+        el('div', { class: 'dev-row' }, [
+          btn('Duel', () => this._vector('duel'), 'dev-btn'),
+          btn('Harvest', () => this._vector('harvest'), 'dev-btn'),
+        ]),
+      ]),
       el('div', { class: 'dev-section' }, [el('h4', { text: 'Skills (free)' }), this.skillsWrap]),
     );
   }
@@ -151,6 +158,14 @@ export class DevMode {
     g._lastHull = g.universe.player.hull;
     g.target = null;
     g.ui.toasts.push(`DEV: warped to ${SYSTEMS[systemId].name} — free of charge.`, 'warn');
+  }
+
+  /** Jump straight into a Vector Challenge match — dev shortcut. */
+  _vector(mode) {
+    const g = this.game;
+    if (!g?.state) return;
+    g.openVectorChallenge(mode);
+    this.toggle(false);
   }
 
   /** Push edited state through the game (ship stats, dock, HUD). */
