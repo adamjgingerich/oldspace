@@ -47,9 +47,12 @@ const ORBS = [
   { name: 'PEBBLE', r: 1200, note: 'tight — the horizon is always in the way' },
 ];
 // How far behind and above the hull the rig rides, and how far ahead it aims.
-const CAM_BACK = 120;
-const CAM_UP = 130;
-const CAM_LOOK = 90;
+// Height and the aim point are what buy the long view — the height sets how far
+// away the horizon is, and looking further ahead puts more of it on screen.
+const CAM_BACK = 135;
+const CAM_UP = 165;
+const CAM_LOOK = 120;
+const CAM_AIM_H = 16;   // how high off the surface the rig aims
 // The sim normalises every hull to the same length so a freighter reads like a
 // freighter; this is that length, sized so a rival is a shape rather than a dot
 // at the ranges this field is fought over.
@@ -1298,10 +1301,25 @@ export class VectorChallenge {
     let wantSpeed = 150;
 
     if (m.mode === 'duel') {
-      const target = enemies[0] ? this._nearest(p, enemies) : null;
+      // The purse goes to the last pilot flying, so the commander is the one
+      // worth outlasting. Rivals that only ever chase whatever is nearest pair
+      // off with each other and let a pilot wander off the far side of the orb.
+      const player = this.pilots[0];
+      const target = player.alive && player !== p
+        ? player
+        : (enemies[0] ? this._nearest(p, enemies) : null);
       if (target) {
         const d = this._arc(p.u, target.u);
-        const aim = this._bearing(p.u, p.fwd, target.u);
+        // Aim where the target is going, not where it is. On a world this wide
+        // a pursuer that flies at a running target's tail just follows it round
+        // the planet, nose permanently off the mark; a lead turns that into a
+        // cut across its course, which is a firing position.
+        let aimAt = target.u;
+        if (target.speed > 1) {
+          const lead = Math.min(2.5, d / Math.max(40, p.speed + 120));
+          aimAt = this._ahead(target.u, target.fwd, target.speed * lead, this._w2);
+        }
+        const aim = this._bearing(p.u, p.fwd, aimAt);
         targetAngle = aim;
         // A duellist that orbits with its nose off the target never gets to
         // pull the trigger, so it lines up whenever the gun is close to ready
@@ -1702,7 +1720,7 @@ export class VectorChallenge {
         this.camera.position.lerp(pos, k);
         this.camera.up.copy(p.u);
         this._ahead(p.u, p.fwd, CAM_LOOK, this._w2);
-        this._pointAt(this._w2, this.groundAt(this._w2) + p.y + 14, this._w3);
+        this._pointAt(this._w2, this.groundAt(this._w2) + p.y + CAM_AIM_H, this._w3);
         this.camera.lookAt(this._w3);
       }
     } else {
