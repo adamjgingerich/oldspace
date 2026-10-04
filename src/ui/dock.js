@@ -940,7 +940,7 @@ export class DockUI {
       panel.append(
         el('div', { class: 'kv' }, [el('span', { text: 'Sworn to' }), el('b', { style: `color:${sworn.color}`, text: sworn.name })]),
         el('div', { class: 'kv' }, [el('span', { text: 'Standing' }), el('b', { text: `${state.rep[state.allegiance] ?? 0}` })]),
-        el('p', { class: 'note', html: `The ${sworn.name} chain is at stage ${(state.factionLine?.faction === state.allegiance ? state.factionLine.stage : 0) + 1} — the next posting waits at their desks. Standing grows 10% faster, their stations post their own work to you, and their skill tree is open. Learned ranks stay if you ever leave.` }),
+        el('p', { class: 'note', html: `The ${sworn.name} chain is at stage ${(state.factionLine?.faction === state.allegiance ? state.factionLine.stage : 0) + 1} — the next posting waits at ${missions.deskHint(state.allegiance, state.systemId)}. Standing grows 10% faster, their stations post their own work to you, and their skill tree is open. Learned ranks stay if you ever leave.` }),
       );
     } else {
       panel.append(el('p', { class: 'note', text: 'Unsworn: every desk deals with you and no flag claims you. Swearing opens a flag\'s own mission line and its skill tree — and closes its rivals\' blades to you.' }));
@@ -1140,9 +1140,23 @@ export class DockUI {
 
     if (!sworn) {
       this.body.append(el('h2', { text: 'Choose a flag' }));
-      this.body.append(el('p', { class: 'note', text: 'Three flags keep a written path. Run a chapter-one opening to sign on with one of them — or swear later at any desk. Until then, the open contracts below are yours.' }));
+      this.body.append(el('p', { class: 'note', text: 'Five flags keep a mission line. Run a chapter-one opening to sign on with the three written paths — the Vigil, the Clans and the Combine — or swear at any flag\'s own desk once your standing is good enough, and their line opens instead. Until then, the open contracts below are yours.' }));
       const joins = story.joinOffers(state, station).filter((o) => !state.missions.some((m) => m.id === o.id));
       for (const o of joins) this.body.append(joinCard(o));
+
+      // every flag, and the nearest berth of theirs to swear at — a captain
+      // looking for a flag's work should not have to guess where it lives
+      this.body.append(el('h3', { text: 'Flags and where they keep their desks' }));
+      this.body.append(el('p', { class: 'note', text: 'A flag hands its own mission line over at its own stations, and only to pilots flying its colours. These are the nearest of each flag\'s desks to where you are now.' }));
+      for (const fid of FACTION_IDS) {
+        const f = FACTIONS[fid];
+        const find = missions.factionDesks(fid, state.systemId);
+        const here = station.owner === fid;
+        this.body.append(el('div', { class: 'alleg-row' }, [
+          el('span', { class: 'aname', style: `color:${f.color}`, html: `${emblemSVG(fid, 16)} ${f.name}` }),
+          el('span', { class: 'arep', text: here ? 'you are at a desk of theirs' : `nearest desk: ${missions.deskHint(fid, state.systemId, 2)}` }),
+        ]));
+      }
     }
 
     // ---- side work: notices pinned by whoever needs something ----
@@ -1254,8 +1268,19 @@ export class DockUI {
     };
 
     const boardWrap = el('div', { style: 'margin-top:8px' });
-    if (lineOffers.length) {
-      const o = lineOffers[0];
+    // Where the line posts, every time a sworn pilot docks: the desk is the
+    // only place the chain's work is handed over, and it is worth saying so at
+    // a berth that has none.
+    if (sworn) {
+      const atDesk = station.owner === state.allegiance;
+      this.body.append(el('p', {
+        class: 'note boardpolicy own',
+        html: atDesk
+          ? `${emblemSVG(state.allegiance, 16)} This is a ${sworn.name} desk — your own line posts here, and nowhere else.`
+          : `${emblemSVG(state.allegiance, 16)} Your line posts at ${sworn.name} desks only — nearest: ${missions.deskHint(state.allegiance, state.systemId)}. The board here is open work, and none of it touches your line.`,
+      }));
+    }
+    for (const o of lineOffers.slice(0, 1)) {
       const flag = FACTIONS[o.line.faction];
       const chain = missions.factionChain(o.line.faction);
       const chainLen = chain.length;
@@ -1263,11 +1288,19 @@ export class DockUI {
       const storyLine = o.story ? story.STORY_LINES[o.story.line] : null;
       const where = storyLine
         ? `${storyLine.name} · chapter ${o.story.chapter} of ${storyLine.chapters.length}${o.story.oath ? ' · <span class="urgent">OATH</span>' : ''}`
-        : `${flag?.name || o.line.faction}, stage ${stage}${chainLen ? ` of ${chainLen}` : ''}`;
+        : o.line.repeat
+          ? `${flag?.name || o.line.faction} — standing work`
+          : `${flag?.name || o.line.faction}, stage ${stage} of ${chainLen}`;
+      const tail = o.line.repeat
+        ? ' The written line is run out — the desk keeps standing work coming, and pays more each time it is asked.'
+        : ` Finish it and the next posting unlocks at ${flag?.name || ''} desks.`;
       this.body.append(el('p', {
         class: 'note boardpolicy own',
-        html: `${emblemSVG(o.line.faction, 16)} Your flag's path — ${where}. Finish it and the next posting unlocks at ${flag?.name || ''} desks.${o.line.repeat ? ' The written line is run out — this posting repeats and pays more each time.' : ''}`,
+        html: `${emblemSVG(o.line.faction, 16)} Your flag's path — ${where}.${tail}`,
       }));
+    }
+    for (const o of lineOffers) {
+      const flag = FACTIONS[o.line.faction];
       boardWrap.append(offerCard(o, `${emblemSVG(o.line.faction, 14)}<span class="fwork">${(flag?.short || 'FLAG').toUpperCase()} PATH</span> · `));
     }
     if (openOffers.length) {

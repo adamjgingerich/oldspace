@@ -10,7 +10,7 @@ import { formatDeadline } from '../core/util.js';
 import { planetInfo, formatPopulation } from '../game/planetSurvey.js';
 import { levelFromXp, karmaLabel, KARMA_ACTS, karmaActCost, karmaActBlock, karmaActFaction } from '../game/skills.js';
 import { backgroundOf, driveOf } from '../game/character.js';
-import { MISSION_TAGS, tierStars, missionProgress } from '../game/missions.js';
+import { MISSION_TAGS, tierStars, missionProgress, deskHint } from '../game/missions.js';
 import { STORY_LINES } from '../game/story.js';
 import { SIDE_BY_ID } from '../game/sidequests.js';
 
@@ -85,12 +85,16 @@ export function karmaPanel(state, actions) {
 export function missionCard(state, m) {
   const line = m.story ? STORY_LINES[m.story.line] : null;
   const sideQ = m.side ? SIDE_BY_ID[m.side.group] : null;
+  // a flag's own work wears the flag's colours here too, not just on the board
+  const flagLine = !line && !sideQ && m.line ? FACTIONS[m.line.faction] : null;
   const tag = line ? `${line.name} · CH ${m.story.chapter}`
     : sideQ ? `${sideQ.name} · step ${m.side.step + 1}/${sideQ.steps.length}`
-      : (MISSION_TAGS[m.type] || 'CONTRACT');
+      : flagLine ? `${flagLine.short.toUpperCase()} LINE`
+        : (MISSION_TAGS[m.type] || 'CONTRACT');
   const attrs = { class: `mission ${m.type}` };
   if (line) attrs.style = `--mcol: ${line.color}`;
   else if (sideQ) attrs.style = `--mcol: ${sideQ.color}`;
+  else if (flagLine) attrs.style = `--mcol: ${flagLine.color}`;
   const issuerSys = SYSTEMS[m.issuer?.systemId];
   const card = el('div', attrs, [
     el('div', {
@@ -107,6 +111,14 @@ export function missionCard(state, m) {
   const prog = missionProgress(m);
   if (prog) card.append(el('p', { class: 'note', style: 'color: var(--mcol, #8fd0ff)', text: prog }));
   if (m.cargoLoaded) card.append(el('p', { class: 'note', text: `In the hold: ${m.cargoLoaded.qty} × ${m.cargoLoaded.id}` }));
+  // a flag's work: say where the line's next posting is handed over, so "and
+  // then where do I go?" is answered without a trip to a board
+  if (flagLine) {
+    card.append(el('p', {
+      class: 'note',
+      html: `<span style="color:${flagLine.color}">${flagLine.name}</span> line — the next posting is handed over at their desks: ${deskHint(m.line.faction, state.systemId)}.`,
+    }));
+  }
   return card;
 }
 

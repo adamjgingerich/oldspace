@@ -109,7 +109,7 @@ export class ChartUI {
   _questInfo() {
     const { state } = this.ctx;
     const info = {};
-    const rec = (id) => (info[id] = info[id] || { story: [], missions: 0, turnins: 0 });
+    const rec = (id) => (info[id] = info[id] || { story: [], missions: 0, turnins: 0, desk: null });
     for (const m of state.missions || []) {
       if (m.dest?.systemId) rec(m.dest.systemId).missions += 1;
       if ((m.type === 'survey' || m.type === 'recovery') && m.issuer?.systemId) {
@@ -117,6 +117,11 @@ export class ChartUI {
       }
     }
     const lvl = levelFromXp(state.xp || 0);
+    // your flag's desks: the stations that hand your line its next posting, and
+    // the one thing a sworn pilot most needs to find on a chart
+    if (state.allegiance && FACTIONS[state.allegiance]) {
+      for (const d of missions.factionDesks(state.allegiance, state.systemId).desks) rec(d.systemId).desk = d;
+    }
     if (state.allegiance) {
       // your flag's next written chapter, if the chain is still in its story run
       const chain = missions.factionChain(state.allegiance);
@@ -361,6 +366,10 @@ export class ChartUI {
     };
     const quests = this._questInfo();
     const vis = this._visibility(quests);
+    // where your flag's line posts, and which of its desks is nearest
+    const deskFind = this.ctx.state.allegiance && FACTIONS[this.ctx.state.allegiance]
+      ? missions.factionDesks(this.ctx.state.allegiance, this.ctx.state.systemId)
+      : null;
 
     // deep-space backdrop first: gradient, then nebula washes on a slower
     // parallax layer so the chart floats in front of the sky
@@ -552,6 +561,30 @@ export class ChartUI {
         c.fillStyle = rc;
         c.textAlign = 'center';
         c.fillText('◈ tracked course', x, y + 39 * r);
+      }
+
+      // your flag's desk: a small pennant under the star, and its distance when
+      // it is the nearest one or the system you are standing in
+      const desk = quests[id]?.desk;
+      if (desk) {
+        const df = FACTIONS[desk.faction];
+        const dy = y + 16 * r;
+        c.globalAlpha = 1;
+        c.strokeStyle = df?.color || 'rgba(230,240,255,0.9)';
+        c.lineWidth = 1.5 * r;
+        c.beginPath();
+        c.moveTo(x, dy - 5 * r);
+        c.lineTo(x + 5 * r, dy);
+        c.lineTo(x, dy + 5 * r);
+        c.lineTo(x - 5 * r, dy);
+        c.closePath();
+        c.stroke();
+        if (desk.hops === 0 || deskFind?.nearest?.systemId === id) {
+          c.font = `${8.5 * r}px "Segoe UI", sans-serif`;
+          c.fillStyle = df?.color || 'rgba(230,240,255,0.9)';
+          c.textAlign = 'center';
+          c.fillText(desk.hops === 0 ? 'your desk' : `your desk · ${desk.hops} lane${desk.hops === 1 ? '' : 's'}`, x, dy + 15 * r);
+        }
       }
 
       c.font = `${11 * r}px "Segoe UI", sans-serif`;
@@ -787,6 +820,10 @@ export class ChartUI {
     }
     const here = this.selected === state.systemId;
     const adjacent = SYSTEMS[state.systemId].links.includes(this.selected);
+    // where your flag's line posts, and which desk is nearest to you
+    const deskFind = state.allegiance && FACTIONS[state.allegiance]
+      ? missions.factionDesks(state.allegiance, state.systemId)
+      : null;
 
     // warp bay — any lane touching your position can be run from here
     if (adjacent && !here) {
@@ -897,10 +934,35 @@ export class ChartUI {
 
     side.append(el('h3', { text: 'Word' }), el('p', { class: 'note', text: sys.desc }));
 
+    // where your flag's line posts — the desk is the only place its work is
+    // handed over, so the chart says which one is nearest and whether one is here
+    if (deskFind?.nearest) {
+      const df = FACTIONS[deskFind.faction];
+      side.append(el('div', { class: 'kv' }, [
+        el('span', { text: `${df?.short || 'Flag'} desk` }),
+        el('b', {
+          style: `color:${df?.color || '#e8f0ff'}`,
+          text: deskFind.nearest.hops === 0
+            ? 'here — you are standing at one'
+            : `${deskFind.nearest.systemName} · ${deskFind.nearest.hops} lane${deskFind.nearest.hops === 1 ? '' : 's'} away`,
+        }),
+      ]));
+    }
+
     // quest activity for the selected system — why you might fly here
     const q = this._questInfo()[this.selected];
     if (q) {
       side.append(el('h3', { text: `Quest activity — ${sys.name}` }));
+      if (q.desk) {
+        const df = FACTIONS[q.desk.faction];
+        side.append(el('div', { class: 'kv' }, [
+          el('span', { text: 'Your flag\'s desk' }),
+          el('b', {
+            style: `color:${df?.color || '#e8f0ff'}`,
+            text: `${q.desk.stationName}${q.desk.count > 1 ? ` +${q.desk.count - 1}` : ''} — the line posts here`,
+          }),
+        ]));
+      }
       for (const line of q.story) {
         side.append(el('div', { class: 'kv' }, [
           el('span', { text: 'Story chapter' }),

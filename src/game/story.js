@@ -52,8 +52,8 @@ export const STORY_LINES = {
       {
         n: 4, lvl: 8, oath: true,
         title: 'The Oath of the Watch',
-        desc: 'The Vesper Gate is burning and the fleet needs every gun. Swear the oath, fly with the Watch, and break the raider tide — from that day your name is theirs, and so are their enemies.',
-        objective: { type: 'sweep', dest: 'vesper', foe: 'pirate', kills: 5 },
+        desc: 'The Vesper Gate is burning and the fleet needs every gun. Swear the oath, fly with the Watch, and break the raider tide where it is staging — out of Cordon, before it reaches the Gate. From that day your name is theirs, and so are their enemies.',
+        objective: { type: 'sweep', dest: 'cordon', foe: 'pirate', kills: 5 },
         reward: 22000, rep: 18,
         penalty: { faction: 'reaver', amount: -25 },
         unlock: ['vanguard'],

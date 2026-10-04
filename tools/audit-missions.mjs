@@ -10,9 +10,10 @@ import { WEAPON_BY_ID } from '../src/data/weapons.js';
 import { OUTFIT_BY_ID } from '../src/data/outfits.js';
 import { FACTIONS } from '../src/data/factions.js';
 import { GameState } from '../src/game/state.js';
-import { generateBoard, missionGuide } from '../src/game/missions.js';
+import { generateBoard, missionGuide, FACTION_LINES, PROCEDURAL_POOLS, factionChain, factionQuestOffers, factionDesks } from '../src/game/missions.js';
 import { STORY_LINES } from '../src/game/story.js';
 import { SIDE_QUESTS } from '../src/game/sidequests.js';
+import { rngOf } from '../src/core/rng.js';
 
 let fails = 0;
 let checks = 0;
@@ -62,7 +63,7 @@ for (const [id, sys] of Object.entries(SYSTEMS)) {
   }
   for (const st of sys.stations || []) {
     checks += 1;
-    if (!FACTIONS[st.owner]) bad(`${id}/${st.id}: owner '${st.owner}' unknown`);
+    if (!FACTIONS[st.owner] && st.owner !== 'none') bad(`${id}/${st.id}: owner '${st.owner}' unknown`);
   }
 }
 
@@ -161,6 +162,138 @@ for (const xp of [0, 1200, 6000, 20000, 60000]) {
   }
   checks += 1;
   if (!SYSTEMS.coriolis.stations.some((s) => s.id === 'coriolis-skyforge')) bad('coriolis-skyforge missing');
+}
+
+// 6) every flag's own line, stage by stage, at its desk and nowhere else
+{
+  const PLACEHOLDER = /\{[a-z]+\}/i;
+  const ownDesk = {};
+  const rivalDesk = {};
+  for (const [id, sys] of Object.entries(SYSTEMS)) {
+    for (const st of sys.stations || []) {
+      if (!ownDesk[st.owner]) ownDesk[st.owner] = { sys, st };
+      else if (!rivalDesk[st.owner]) rivalDesk[st.owner] = { sys, st };
+    }
+  }
+  for (const flag of Object.keys(FACTIONS)) {
+    const bench = ownDesk[flag];
+    checks += 1;
+    if (!bench) { bad(`flag ${flag}: keeps no station, so its line has nowhere to post`); continue; }
+    const line = FACTION_LINES[flag] || [];
+    const chain = factionChain(flag);
+    checks += 1;
+    if (chain.length < 8) bad(`flag ${flag}: its line is only ${chain.length} stages`);
+    checks += 1;
+    if (new Set(line.map((s) => s.key)).size !== line.length) bad(`flag ${flag}: two stages share a key`);
+    // every type the desk repeats must have a stage of that type to borrow the
+    // flag's own phrasing from, or its repeats are written for other work
+    checks += 1;
+    for (const t of PROCEDURAL_POOLS[flag] || []) {
+      if (!line.some((s) => s.type === t)) bad(`flag ${flag}: repeats ${t} work but its line has no ${t} stage to phrase it`);
+    }
+
+    // every desk the flag keeps hands over the same stage, wherever it is: a
+    // posting has to be flyable from each of them, not just the home office
+    const ours = Object.values(SYSTEMS).flatMap((sys) => (sys.stations || [])
+      .filter((st) => st.owner === flag)
+      .map((st) => ({ sys, st })));
+    for (let stage = 0; stage < chain.length; stage++) {
+      for (const bench of ours) {
+        const st = new GameState({ worldSeed: 9000 + stage, commander: 'Audit' });
+        st.allegiance = flag;
+        st.factionLine = { faction: flag, stage };
+        st.systemId = bench.sys.id;
+        st.day = 3;
+        const rng = rngOf(st.worldSeed, 'audit-line', flag, stage, bench.st.id);
+        const out = factionQuestOffers(st, bench.st, rng);
+        const w = `line ${flag} stage ${stage} at ${bench.st.id}`;
+        checks += 1;
+        if (out.length !== 1) { bad(`${w}: ${out.length} postings from the desk, expected 1`); continue; }
+        const o = out[0];
+        checks += 1;
+        if (o.line?.faction !== flag || o.line?.stage !== stage) bad(`${w}: posting carries ${JSON.stringify(o.line)}`);
+        checks += 1;
+        if (PLACEHOLDER.test(o.title) || PLACEHOLDER.test(o.desc)) bad(`${w}: un-filled placeholder in "${o.title}"`);
+        checks += 1;
+        if (!(Number.isFinite(o.reward) && o.reward > 500)) bad(`${w}: reward ${o.reward}`);
+        checks += 1;
+        if (!(o.deadlineDay > st.day)) bad(`${w}: deadline ${o.deadlineDay}`);
+        checks += 1;
+        if (!o.dest || !SYSTEMS[o.dest.systemId]) bad(`${w}: unknown dest ${o.dest?.systemId}`);
+        else if (!routeBetween(st.systemId, o.dest.systemId)) bad(`${w}: dest ${o.dest.systemId} unreachable from ${st.systemId}`);
+        checkObjective(w, { type: o.type, dest: o.dest?.systemId, cargo: o.cargo, target: o.target, kills: o.kills?.need, pods: o.pods?.need, foe: o.foe });
+        // what each kind of work needs in hand, and what it must not need
+        checks += 1;
+        if (o.type === 'delivery' && !o.cargo) bad(`${w}: a delivery with nothing to carry`);
+        if (o.type === 'courier' && !o.cargo) bad(`${w}: a courier with nothing to carry`);
+        if (o.type === 'recovery' && !(o.pods?.need >= 1)) bad(`${w}: recovery needs ${o.pods?.need} pods`);
+        if (o.type === 'sweep') {
+          if (!(o.kills?.need >= 1)) bad(`${w}: sweep needs ${o.kills?.need} kills`);
+          // a sweep is flown where the enemy is, or it is a wasted trip
+          const g = SYSTEMS[o.dest.systemId].danger;
+          if ((o.foe === 'navy' ? g.navy : g.pirates) < 0.35) bad(`${w}: sweep sent to ${o.dest.systemId}, which has no ${o.foe} to break`);
+        }
+        if (o.type === 'survey' && o.cargo) bad(`${w}: a survey is not carried, it is flown`);
+        // the written chapters come first in every chain that has them
+        const writtenRun = chain.filter((s2) => s2.kind === 'story').length;
+        checks += 1;
+        if (stage < writtenRun && !o.story) bad(`${w}: the written chapters run first, but this is not one`);
+      }
+      // the isolation rule: no other flag's desk hands you your own line
+      for (const other of Object.keys(FACTIONS)) {
+        if (other === flag) continue;
+        const remote = rivalDesk[other];
+        if (!remote) continue;
+        const s2 = new GameState({ worldSeed: 9000 + stage, commander: 'Audit' });
+        s2.allegiance = flag;
+        s2.factionLine = { faction: flag, stage };
+        s2.systemId = remote.sys.id;
+        checks += 1;
+        if (factionQuestOffers(s2, remote.st, rngOf(2, 'audit-line', other, stage)).length) {
+          bad(`line ${flag} stage ${stage}: a ${other} desk posted ${flag} line work`);
+        }
+      }
+    }
+
+    // the written line run out: standing work, several at a time, all distinct
+    const st2 = new GameState({ worldSeed: 5150, commander: 'Audit' });
+    st2.allegiance = flag;
+    st2.factionLine = { faction: flag, stage: chain.length };
+    st2.systemId = bench.sys.id;
+    const standing = factionQuestOffers(st2, bench.st, rngOf(7, 'audit-standing', flag));
+    checks += 1;
+    if (standing.length < 2) bad(`flag ${flag}: the desk posts ${standing.length} posting(s) with its line run out`);
+    checks += 1;
+    if (standing.some((o) => !o.line?.repeat)) bad(`flag ${flag}: standing work is not marked repeatable`);
+    checks += 1;
+    if (new Set(standing.map((o) => `${o.type}:${o.dest.systemId}`)).size !== standing.length) {
+      bad(`flag ${flag}: two standing postings are the same job in the same place`);
+    }
+    checks += 1;
+    if (standing.some((o) => PLACEHOLDER.test(o.title) || PLACEHOLDER.test(o.desc))) bad(`flag ${flag}: un-filled placeholder in standing work`);
+  }
+  console.log(`lines: ${Object.keys(FACTIONS).length} flags, ${Object.values(FACTION_LINES).reduce((n, l) => n + l.length, 0)} written stages`);
+}
+
+// 7) the desk finder: every flag's desks, nearest first, from every system
+{
+  for (const flag of Object.keys(FACTIONS)) {
+    for (const from of ['haven', 'coriolis', 'vesper', 'rusthaven', 'vekta']) {
+      const d = factionDesks(flag, from);
+      const w = `desks ${flag} from ${from}`;
+      checks += 1;
+      if (!d.desks.length) bad(`${w}: no desks found at all`);
+      checks += 1;
+      if (!d.desks.every((x, i) => i === 0 || d.desks[i - 1].hops <= x.hops)) bad(`${w}: not sorted by distance`);
+      checks += 1;
+      if (!d.desks.every((x) => routeBetween(from, x.systemId))) bad(`${w}: a desk is unreachable`);
+      checks += 1;
+      const hereHasDesk = (SYSTEMS[from].stations || []).some((s2) => s2.owner === flag);
+      if (!!d.here !== hereHasDesk) bad(`${w}: 'here' is ${!!d.here} but this system ${hereHasDesk ? 'has' : 'has no'} ${flag} station`);
+      checks += 1;
+      if (d.nearest !== (d.desks[0] || null)) bad(`${w}: nearest is not the first desk`);
+    }
+  }
 }
 
 console.log(`\naudit: ${checks} checks, ${offers} board offers generated (min board ${minCount}), ${fails} FAILURE(S)`);

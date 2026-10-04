@@ -267,51 +267,67 @@ function reachableFrom(sysId, maxHops = 2) {
 const NEUTRAL_TYPES = ['delivery', 'courier', 'survey'];
 
 /**
- * Each flag runs a mission line of its own: one posting at a time, shown only
- * at that flag's own desks, and only to captains flying its colours. Finish a
- * stage and the next unlocks. The line is your branch of the board — nobody
- * else's work ever leaks onto it, and the open contracts beside it never touch
- * it. The last stage repeats once the line is run out, so your flag always has
- * something for you.
+ * A flag's written line: the postings its own desks hand to its own pilots,
+ * in order, from a rookie's errand up to a genuine war at the top. Each one is
+ * authored — the flag's voice, the flag's work, the flag's enemies — and the
+ * chain runs through all of them before the desk falls back on standing work.
  *
- * Stage order is tier order: [2, 3, 4, 6, 7] — a rookie's errand up to a
- * genuine war at the top.
+ * The line is your branch of the board: it is shown only at your flag's own
+ * desks, and only to captains flying its colours, so nobody else's work ever
+ * leaks onto it and the open contracts beside it never touch it.
+ *
+ * Stage order is tier order: [2, 3, 4, 5, 5, 6, 7, 8].
  */
 export const FACTION_LINES = {
   free: [
     { key: 'lane', type: 'sweep', foe: 'pirate', tier: 2, rep: 5, days: 4, title: 'Keep the {dest} lane open', desc: 'Raiders have been picking at the {dest} approaches and the harbour board is tired of paying for new hulls. Put {kills} of them down and the ports will remember your name.' },
     { key: 'bond', type: 'courier', tier: 3, rep: 4, days: 3, title: 'Bond to {dest}', desc: 'A sealed case, countersigned at both ends, and a desk at {dest} that opens for nobody but the bearer. No questions are asked on this run, and none are answered.' },
     { key: 'depot', type: 'delivery', tier: 4, rep: 5, days: 4, title: 'Standing order — {dest}', desc: 'The ports keep each other fed because somebody carries the difference. {qty} × {commodity} is on the depot floor and {dest} is short.' },
+    { key: 'barge', type: 'recovery', tier: 5, rep: 5, days: 5, title: 'The barge at {dest}', desc: 'A harbour barge went under on the {dest} run with the season\'s tallies still in her belly. Bring back {need} recorder pods and the board will settle the salvage line by line.' },
+    { key: 'charter', type: 'courier', tier: 5, rep: 5, days: 3, title: 'Charter run — {dest}', desc: 'A harbour charter with three seals on it and no patience at all. Carry it into {dest} inside the window and the ports will know your name is good for the short runs.' },
     { key: 'gate', type: 'bounty', foe: 'pirate', tier: 6, rep: 7, days: 5, title: 'Clear the gate — {name}', desc: '{name} has been taxing the approaches to {dest} and the ports have had enough. Run the mark down and the harbour board will open every door it has.' },
     { key: 'deep', type: 'survey', tier: 7, rep: 9, days: 6, title: 'Chart the deep lane — {dest}', desc: 'The Free Ports mean to map a lane the great flags will not touch. Fly to {dest}, lock the beacon for a full sweep, and bring the tape home. The charts are the prize.' },
+    { key: 'muster', type: 'sweep', foe: 'pirate', tier: 8, rep: 11, days: 6, title: 'Break the {dest} muster', desc: 'The raiders are mustering in the open at {dest} for the first time in years, and every harbour board on the lane has read the same report. Put {kills} of them down and the inner lanes stop paying protection.' },
   ],
   combine: [
     { key: 'manifest', type: 'delivery', tier: 2, rep: 4, days: 3, title: 'Manifest to {dest}', desc: 'A Combine freight order, filed in triplicate and priced to the minute. {qty} × {commodity}, landed on schedule — the auditors read the arrival stamp, not the story.' },
     { key: 'tariff', type: 'sweep', foe: 'pirate', tier: 3, rep: 5, days: 4, title: 'Tariff enforcement — {dest}', desc: 'Every hull taken off the {dest} lane is a tariff the Combine never collects. Clear {kills} raiders out of it and the subsidy clears the same day.' },
     { key: 'ledger', type: 'recovery', tier: 4, rep: 5, days: 5, title: 'Recover the ledger — {dest}', desc: 'A bonded courier went down on the {dest} approach with the season\'s ledgers aboard. Bring back {need} recorder pods and the consortium will owe you a favour it can actually pay.' },
+    { key: 'dispatch', type: 'courier', tier: 5, rep: 5, days: 3, title: 'Dispatch rider — {dest}', desc: 'A bonded dispatch with a Combine seal goes into {dest} by hand, not by wire. The consortium trusts couriers more than it trusts relay operators, and pays accordingly.' },
+    { key: 'toll', type: 'sweep', foe: 'pirate', tier: 5, rep: 6, days: 4, title: 'Toll gate at {dest}', desc: 'Every raider working the {dest} toll is a toll the Combine never books. Remove {kills} of them and the quarter closes square for once.' },
     { key: 'audit', type: 'bounty', foe: 'pirate', tier: 6, rep: 7, days: 5, title: 'Audit — {name}', desc: '{name} has been skimming the {dest} lanes without a charter, and the Combine does not share. Execute the writ and the margin is yours.' },
     { key: 'monopoly', type: 'delivery', tier: 7, rep: 9, days: 6, title: 'Corner the {dest} market', desc: 'The Combine is ready to own the {dest} exchange, and the last crate in the way is in your hold. Land {qty} × {commodity} and the desk will owe you a percentage of a percentage.' },
+    { key: 'embargo', type: 'sweep', foe: 'pirate', tier: 8, rep: 11, days: 6, title: 'Enforce the {dest} embargo', desc: 'The Board has closed the {dest} trade and the word is being cheerfully ignored. Clear {kills} hulls running the embargo and the Board will make sure the right people hear who held the line.' },
   ],
   vigil: [
     { key: 'warrant', type: 'bounty', foe: 'pirate', tier: 2, rep: 5, days: 5, title: 'Warrant: {name}', desc: '{name} is named on enough counts to fill a drawer and has been seen on the {dest} lanes. The Watch wants the warrant executed, not negotiated. Fly there and end it.' },
     { key: 'patrol', type: 'sweep', foe: 'pirate', tier: 3, rep: 5, days: 4, title: 'Patrol sweep — {dest}', desc: 'The Watch is a hull short on the {dest} station and the raiders have noticed. Break {kills} of them and the log will show the lane held.' },
     { key: 'inquiry', type: 'recovery', tier: 4, rep: 5, days: 5, title: 'Board of inquiry — {dest}', desc: 'A hull is missing on the {dest} approach and the board wants the recorder before the insurance men do. Recover {need} pods and bring them home.' },
+    { key: 'escort', type: 'delivery', tier: 5, rep: 5, days: 4, title: 'Convoy escort — {dest}', desc: 'A relief convoy needs a hull carrying guns it does not have to explain. Land {qty} × {commodity} at {dest} under the escort writ and the Watch will log who rode with it.' },
+    { key: 'census', type: 'survey', tier: 5, rep: 6, days: 5, title: 'Census run — {dest}', desc: 'The Watch counts hulls, lanes and mouths, and does not trust second-hand numbers. Fly to {dest}, lock the beacon for a full sweep, and bring the tape home for the ledger.' },
     { key: 'crusade', type: 'sweep', foe: 'pirate', tier: 6, rep: 7, days: 5, title: 'The {dest} crusade', desc: 'The Watch is clearing the {dest} lane hull by hull, and this is your cut of the line. Break {kills} raiders and the Vigil will call you its own.' },
     { key: 'dread', type: 'bounty', foe: 'pirate', tier: 7, rep: 9, days: 6, title: 'The warrant on {name}', desc: '{name} has a capital hull, a long memory, and a warrant older than most captains. The Watch wants the name struck off. Fly to {dest} and do it.' },
+    { key: 'assize', type: 'sweep', foe: 'pirate', tier: 8, rep: 11, days: 6, title: 'The {dest} assize', desc: 'The Watch is holding an assize at {dest} and the raiders mean to make a point of it. Break {kills} of them and the point becomes the Watch\'s, entered in the log with your name on it.' },
   ],
   reaver: [
     { key: 'silence', type: 'bounty', foe: 'vigil', tier: 2, rep: 5, days: 5, title: 'Silence {name} of the Vigil', desc: '{name} has been working the {dest} lanes with a warrant book and a very smug look. The Clans want the lane quiet and the example loud.' },
     { key: 'break', type: 'sweep', foe: 'navy', tier: 3, rep: 6, days: 4, title: 'Break the {dest} patrol', desc: 'The Vigil keeps a picket on the {dest} lane because it thinks that makes the lane theirs. Break {kills} patrols and the Clans will hear of it before the Watch does.' },
     { key: 'fence', type: 'delivery', tier: 4, rep: 5, days: 4, title: 'Move the haul — {dest}', desc: 'Last week\'s takings need a hull nobody logs. {qty} × {commodity} rides with you, and {dest} pays in coin with no names on it.' },
+    { key: 'snatch', type: 'courier', tier: 5, rep: 5, days: 3, title: 'Snatch and run — {dest}', desc: 'A strongbox came off a convoy and the Clans want it a long way from where it was taken. Get it into {dest} before anyone with a ledger thinks to start looking.' },
+    { key: 'prizes', type: 'recovery', tier: 5, rep: 6, days: 5, title: 'Prize salvage at {dest}', desc: 'Two prizes went down hard on the {dest} crossing with the good part still aboard. Bring back {need} recorder pods and the Elders will cut you in on the rest.' },
     { key: 'takings', type: 'recovery', tier: 6, rep: 7, days: 5, title: 'The wreck at {dest}', desc: 'A prize hull went down on the {dest} crossing with the Clans\' cut still aboard. Bring back {need} recorder pods and the Elders will drink to your name.' },
     { key: 'warlord', type: 'bounty', foe: 'vigil', tier: 7, rep: 9, days: 6, title: 'The price on {name}', desc: 'The Clans have put a proper price on {name} of the Vigil, and the honour of collecting it is yours. Fly to {dest} and bring the Watch word of it.' },
+    { key: 'reckoning', type: 'sweep', foe: 'navy', tier: 8, rep: 11, days: 6, title: 'The {dest} reckoning', desc: 'The Watch has leaned on the Clans\' lanes for a season and the Clans have settled on when that stops. Break {kills} patrols at {dest} and the lesson will carry further than the lane.' },
   ],
   kreth: [
     { key: 'debt', type: 'bounty', foe: 'pirate', tier: 2, rep: 5, days: 5, title: 'A name to collect — {name}', desc: '{name} raised a hand to a House factor on the {dest} run, and the Houses are patient accountants. The debt is payable in full, in person.' },
     { key: 'honour', type: 'delivery', tier: 3, rep: 4, days: 4, title: 'Honour freight — {dest}', desc: 'A consignment with a seal on it and a name cut into the seal. {qty} × {commodity} goes to {dest}, and the Houses will remember who carried it.' },
     { key: 'heirloom', type: 'recovery', tier: 4, rep: 5, days: 5, title: 'Recover the House cargo — {dest}', desc: 'A House launch was lost on the {dest} crossing with something aboard that is older than the ship. Bring back {need} recorder pods and the name on that seal is yours to call.' },
+    { key: 'errand', type: 'courier', tier: 5, rep: 5, days: 3, title: 'A quiet errand — {dest}', desc: 'A name-seal, a closed case, and a House that writes nothing down. Carry it into {dest} and the Houses will count it as an errand done properly, which is the only way they count anything.' },
+    { key: 'chronicle', type: 'survey', tier: 5, rep: 6, days: 5, title: 'The chronicle at {dest}', desc: 'The Houses keep an ancestor\'s beacon at {dest} that has gone quiet, and quiet is not a word they accept. Fly there, lock the beacon, and bring the tape home. The record is the debt.' },
     { key: 'duel', type: 'bounty', foe: 'pirate', tier: 6, rep: 7, days: 5, title: 'A duel, by proxy — {name}', desc: 'A House champion wants {name} removed without the Houses\' fingerprints on it. You are the blade. Fly to {dest} and finish the duel.' },
     { key: 'ancestor', type: 'recovery', tier: 7, rep: 9, days: 6, title: 'The ancestor\'s due — {dest}', desc: 'Something that belonged to an ancestor lies in the wreck field at {dest}, and the Houses pay in names, not coin. Recover {need} recorder pods and the debt is theirs to you.' },
+    { key: 'vendetta', type: 'sweep', foe: 'pirate', tier: 8, rep: 11, days: 6, title: 'The {dest} vendetta', desc: 'A hundred-year account has come due at {dest} and the Houses settle those in the open. Put {kills} of them down and a page of the ledger of names closes.' },
   ],
 };
 
@@ -350,13 +366,20 @@ export function factionChain(faction) {
 }
 
 /** Work each flag keeps generating once its written line is run out. */
-const PROCEDURAL_POOLS = {
-  free: ['sweep', 'delivery', 'courier', 'survey'],
-  combine: ['delivery', 'sweep', 'recovery'],
-  vigil: ['bounty', 'sweep', 'recovery'],
-  reaver: ['bounty', 'sweep', 'delivery'],
-  kreth: ['bounty', 'delivery', 'recovery'],
+export const PROCEDURAL_POOLS = {
+  free: ['sweep', 'delivery', 'courier', 'survey', 'recovery'],
+  combine: ['delivery', 'sweep', 'recovery', 'courier'],
+  vigil: ['bounty', 'sweep', 'recovery', 'delivery', 'survey'],
+  reaver: ['bounty', 'sweep', 'delivery', 'recovery', 'courier'],
+  kreth: ['bounty', 'delivery', 'recovery', 'courier', 'survey'],
 };
+
+/**
+ * How many postings a desk puts up once its written line is run out. The line
+ * itself is one stage at a time — it is a path, and a path has one next step —
+ * but a desk whose path is finished still has a board, so it shows a few.
+ */
+const REPEAT_POSTINGS = 3;
 
 /**
  * Beyond the written chain the desk keeps generating the same honest work in
@@ -392,7 +415,22 @@ function buildFactionStageOffer(state, station, rng, flag, spec, stageIdx, repea
   const reach = reachableFrom(state.systemId, MAX_HOPS[tier]);
   const cands = reach.length ? reach : reachableFrom(state.systemId, 2);
   if (!cands.length) return null;
-  const dest = weightedDest(rng, cands, tier);
+  // A sweep has to be flown where the enemy actually is: sending a pilot to
+  // break Vigil patrols in a system the Watch does not fly is a wasted trip. If
+  // the tier's own reach holds none of them, look further before settling for
+  // anywhere at all.
+  const foe = spec.type === 'sweep' ? (spec.foe || 'pirate') : null;
+  const isHot = (id) => {
+    const g = SYSTEMS[id].danger;
+    return (foe === 'navy' ? g.navy : g.pirates) >= 0.35;
+  };
+  let hot = foe ? cands.filter((c) => isHot(c.id)) : [];
+  if (foe && !hot.length) {
+    const wider = reachableFrom(state.systemId, MAX_HOPS[tier] + 2);
+    hot = wider.filter((c) => isHot(c.id));
+    if (!hot.length) hot = reachableFrom(state.systemId, 2).filter((c) => isHot(c.id));
+  }
+  const dest = weightedDest(rng, hot.length ? hot : cands, tier);
   const dname = SYSTEMS[dest.id].name;
   // repeatable postings climb a little in pay each time they are asked
   const climb = repeat ? 1 + (stageIdx - chainLen + 1) * 0.16 : 1;
@@ -411,7 +449,7 @@ function buildFactionStageOffer(state, station, rng, flag, spec, stageIdx, repea
 
   if (spec.type === 'sweep') {
     const kills = tier <= 2 ? clamp(rng.int(tier, tier + 1), 2, 6) : clamp(rng.int(1 + tier, 2 + tier), 2, 6);
-    offer.foe = spec.foe || 'pirate';
+    offer.foe = foe || 'pirate';
     offer.kills = { need: kills, got: 0 };
     offer.reward = Math.round((rng.int(600, 1100) + kills * 420) * mul);
     offer.title = fillText(spec.title, { dest: dname, kills });
@@ -453,6 +491,12 @@ function buildFactionStageOffer(state, station, rng, flag, spec, stageIdx, repea
     offer.title = fillText(spec.title, { dest: SYSTEMS[cDest.id].name, noun });
     offer.desc = `${fillText(spec.desc, { dest: SYSTEMS[cDest.id].name, noun })} ${noun[0].toUpperCase()}${noun.slice(1)} in the hold.`;
     offer.deadlineDay = state.day + 2 + cDest.hops;
+  } else if (spec.type === 'survey') {
+    // a survey is flown rather than carried: the beacon lock is the work, so
+    // there is no cargo to fill the hold with, and the tape is the proof
+    offer.reward = Math.round(rng.int(700, 1400) * mul);
+    offer.title = fillText(spec.title, { dest: dname });
+    offer.desc = fillText(spec.desc, { dest: dname });
   } else {
     const legalPool = (SYSTEMS[state.systemId].economy.produces.length
       ? SYSTEMS[state.systemId].economy.produces
@@ -469,15 +513,20 @@ function buildFactionStageOffer(state, station, rng, flag, spec, stageIdx, repea
 }
 
 /**
- * The one posting from your flag's chain, if this is your flag's desk. Null
+ * The postings from your flag's chain, if this is your flag's desk. Empty
  * anywhere else — rival flags, free ports and no-flag berths carry no chain
  * work for you, so nothing from another branch ever reaches your board.
+ *
+ * The chain hands over one stage at a time, because a path has one next step:
+ * finish a stage and the next unlocks. Once the written line is run out, the
+ * desk keeps the same honest work coming and puts a short shelf of it up at
+ * once, priced higher each time it is asked.
  */
-export function factionQuestOffer(state, station, rng) {
+export function factionQuestOffers(state, station, rng) {
   const flag = state.allegiance;
-  if (!isFaction(flag) || station.owner !== flag) return null;
+  if (!isFaction(flag) || station.owner !== flag) return [];
   const chain = factionChain(flag);
-  if (!chain.length) return null;
+  if (!chain.length) return [];
   const ls = state.factionLine && state.factionLine.faction === flag
     ? state.factionLine
     : { faction: flag, stage: 0 };
@@ -489,13 +538,104 @@ export function factionQuestOffer(state, station, rng) {
       const ch = line.chapters[spec.chapter - 1];
       const offer = buildStoryOffer(line, ch, state, station);
       offer.line = { faction: flag, stage: stageIdx, repeat: false };
-      return offer;
+      return [offer];
     }
-    return buildFactionStageOffer(state, station, rng, flag, spec, stageIdx, false);
+    const offer = buildFactionStageOffer(state, station, rng, flag, spec, stageIdx, false);
+    return offer ? [offer] : [];
   }
-  // the chain is run out — the desk keeps the same honest work coming, priced up
-  const spec = proceduralFactionStage(flag, ls.stage, rng);
-  return buildFactionStageOffer(state, station, rng, flag, spec, ls.stage, true);
+  // the written line is run out: standing work, several at a time, and never
+  // two postings that are the same job in the same place
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < 14 && out.length < REPEAT_POSTINGS; i++) {
+    const spec = proceduralFactionStage(flag, ls.stage + i, rng);
+    const offer = buildFactionStageOffer(state, station, rng, flag, spec, ls.stage + i, true);
+    if (!offer) continue;
+    const key = `${offer.type}:${offer.dest.systemId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(offer);
+  }
+  return out;
+}
+
+/** The one posting your flag's desk is leading with, for callers that show one. */
+export function factionQuestOffer(state, station, rng) {
+  return factionQuestOffers(state, station, rng)[0] || null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Where a flag's desks are                                            */
+/* ------------------------------------------------------------------ */
+
+// Lanes never move, so distances from a system are memoized forever.
+const DESK_CACHE = new Map();
+
+/**
+ * Every desk a flag keeps, nearest first, with how many lanes away each one is.
+ * A sworn pilot is shown this wherever they dock: the line only posts at these
+ * stations, so knowing where they are is the difference between flying a path
+ * and wondering where the path went.
+ */
+export function factionDesks(faction, fromSystemId) {
+  const key = `${faction}:${fromSystemId}`;
+  let out = DESK_CACHE.get(key);
+  if (out) return out;
+  // walk outward once: the first time a system is reached is the shortest way
+  const hops = new Map([[fromSystemId, 0]]);
+  let frontier = [fromSystemId];
+  while (frontier.length) {
+    const next = [];
+    for (const id of frontier) {
+      for (const l of SYSTEMS[id].links) {
+        if (hops.has(l)) continue;
+        hops.set(l, hops.get(id) + 1);
+        next.push(l);
+      }
+    }
+    frontier = next;
+  }
+  const desks = [];
+  for (const [id, d] of hops) {
+    const mine = (SYSTEMS[id].stations || []).filter((st) => st.owner === faction);
+    if (!mine.length) continue;
+    desks.push({
+      systemId: id,
+      systemName: SYSTEMS[id].name,
+      hops: d,
+      count: mine.length,
+      stationId: mine[0].id,
+      stationName: mine[0].name,
+      stationType: mine[0].type,
+    });
+  }
+  desks.sort((a, b) => a.hops - b.hops || a.systemName.localeCompare(b.systemName));
+  out = {
+    faction,
+    fromSystemId,
+    desks,
+    here: desks.find((d) => d.hops === 0) || null,
+    nearest: desks[0] || null,
+  };
+  DESK_CACHE.set(key, out);
+  return out;
+}
+
+/**
+ * Where a flag's line posts, as words: its nearest desks and how many lanes away
+ * each one is. The chain is only handed over at a flag's own stations, so a
+ * pilot needs the distance, not just the name — and this is the one place that
+ * phrasing lives, so the board, the log and the allegiance panel all agree.
+ */
+export function deskHint(faction, fromSystemId, max = 3) {
+  const find = factionDesks(faction, fromSystemId);
+  if (!find.desks.length) return 'no desk charted';
+  const near = find.desks.slice(0, max).map((d) => {
+    const where = d.hops === 0 ? 'here' : `${d.hops} lane${d.hops === 1 ? '' : 's'}`;
+    return `${d.systemName} (${where})`;
+  });
+  const more = find.desks.length - near.length;
+  return `${near.join(', ')}${more > 0 ? `, and ${more} more` : ''}`;
 }
 
 /**
@@ -778,9 +918,8 @@ export function generateBoard(state, station) {
     });
   }
 
-  // ---- your flag's line: the one posting that is yours alone ----
-  const lineOffer = factionQuestOffer(state, station, rng);
-  if (lineOffer) offers.push(lineOffer);
+  // ---- your flag's line: the postings that are yours alone ----
+  for (const offer of factionQuestOffers(state, station, rng)) offers.push(offer);
   return offers;
 }
 
@@ -950,8 +1089,11 @@ export function finishMission(state, mission) {
     }
   }
 
-  // your flag's line advances one posting — the next stage waits at their desks
-  if (mission.line && state.factionLine?.faction === mission.line.faction && state.factionLine.stage === mission.line.stage) {
+  // your flag's line advances one posting — the next stage waits at their desks.
+  // Standing work repeats, so it never moves the line: a desk whose path is
+  // finished should not keep reporting that the next posting has unlocked.
+  if (mission.line && !mission.line.repeat
+    && state.factionLine?.faction === mission.line.faction && state.factionLine.stage === mission.line.stage) {
     state.factionLine.stage += 1;
     const flag = FACTIONS[mission.line.faction];
     extras.push(`next ${flag?.short || 'flag'} posting unlocked`);
