@@ -32,6 +32,8 @@ const OBJ_COLORS = {
   SCAN: '#a58cff',
   RAID: '#ff9a3c',
   RECOVER: '#63ffc0',
+  MEET: '#7dffa8',
+  PURSE: '#7dffa8',
   WARP: '#56e6ff',
 };
 
@@ -575,6 +577,23 @@ export class Hud {
           }
         } else {
           pushForSystem('RECOVER', m.dest.systemId, m.id);
+        }
+      } else if (m.type === 'vector' && m.dest) {
+        // the meetup runs at a bar in the host system; once the match is won
+        // the purse waits back at the issuing desk
+        if (!m.done) {
+          if (m.dest.systemId === u.systemId) {
+            for (const st of u.stations) pushObj('MEET', st.x, st.z, st.record.name, m.id);
+          } else {
+            pushForSystem('MEET', m.dest.systemId, m.id);
+          }
+        } else if (m.issuer) {
+          if (m.issuer.systemId === u.systemId) {
+            const st = u.stations.find((s) => s.record.id === m.issuer.stationId);
+            if (st) pushObj('PURSE', st.x, st.z, st.record.name, m.id);
+          } else {
+            pushForSystem('PURSE', m.issuer.systemId, m.id);
+          }
         }
       }
     }
