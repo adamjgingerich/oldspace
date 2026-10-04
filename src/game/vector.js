@@ -954,6 +954,9 @@ export class VectorChallenge {
   }
 
   _hit(victim, shooter) {
+    // a pilot already out cannot be hit again — the shots skip the dead, but
+    // this keeps a stray call from counting a second elimination
+    if (!victim.alive) return;
     this._spawnBurst(victim.x, victim.y + 6, victim.z, victim.color, 0.8);
     audio.hit();
     if (this.match.mode === 'harvest') {
@@ -984,7 +987,9 @@ export class VectorChallenge {
         }
       }
       if (victim.isPlayer) {
-        this._place = 1 + this.pilots.filter((q) => !q.isPlayer && !q.alive).length;
+        // Everyone still flying outranks a pilot who just went out, so the
+        // place counts the rivals left alive — not the ones already down.
+        this._place = 1 + this.pilots.filter((q) => !q.isPlayer && q.alive).length;
         this.match.over = true;
         this._finishMatch();
       }
