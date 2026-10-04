@@ -1,5 +1,5 @@
-// Data integrity audit for the systems added for the melee rings, the shield
-// lattices, the disruptor family, the karma acts and the character cards.
+// Data integrity audit for the free-fire systems, the shield lattices, the
+// disruptor family, the karma acts and the character cards.
 //
 //   node tools/audit-systems.mjs
 //
@@ -43,16 +43,19 @@ for (const sys of Object.values(SYSTEMS)) {
   }
 }
 
-/* ---- the melee rings ---- */
-const melee = Object.values(SYSTEMS).filter((s) => s.melee);
-if (melee.length < 2) fail(`only ${melee.length} melee systems`);
-for (const sys of melee) {
-  if (sys.stations.length !== 1) fail(`${sys.id} melee ring has ${sys.stations.length} stations, want 1`);
-  if (sys.danger.navy > 0) fail(`${sys.id} melee ring still has a navy presence`);
-  if (sys.danger.pirates < 1) fail(`${sys.id} melee ring has too little contender traffic`);
-  if (sys.gov !== 'free') fail(`${sys.id} melee ring is owned by ${sys.gov}`);
+/* ---- the free-fire systems ---- */
+const freefire = Object.values(SYSTEMS).filter((s) => s.freefire);
+if (freefire.length < 2) fail(`only ${freefire.length} free-fire systems`);
+for (const sys of freefire) {
+  if (sys.stations.length !== 1) fail(`${sys.id} has ${sys.stations.length} stations, want 1`);
+  if (sys.danger.navy > 0) fail(`${sys.id} still has a navy presence`);
+  if (sys.danger.pirates < 1) fail(`${sys.id} has too little raider traffic`);
+  if (sys.gov !== 'none') fail(`${sys.id} is owned by ${sys.gov} — free-fire ground flies no flag`);
+  for (const st of sys.stations) {
+    if (st.owner !== 'none') fail(`${sys.id}/${st.id} is owned by ${st.owner} — free-fire stations are unclaimed`);
+  }
 }
-console.log('melee rings:', melee.map((s) => `${s.name} (${s.id})`).join(', '));
+console.log('free-fire systems:', freefire.map((s) => `${s.name} (${s.id})`).join(', '));
 
 /* ---- disruptors and shield-aware weapons ---- */
 const kinds = new Set(['laser', 'kinetic', 'beam', 'missile', 'disruptor']);

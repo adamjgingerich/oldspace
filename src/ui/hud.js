@@ -9,6 +9,8 @@ import { FACTIONS } from '../data/factions.js';
 import { careerSummary } from '../game/skills.js';
 import { BURST } from '../game/ship.js';
 import { MISSION_COLORS, missionGuide, missionStationName } from '../game/missions.js';
+import { factionHex } from '../data/factions.js';
+import { Hologram } from './hologram.js';
 
 const ROLE_COLORS = {
   pirate: '#ff8a6a',
@@ -47,6 +49,7 @@ export class Hud {
     this.visible = false;
     this._labels = new Map();
     this._plates = new Map();
+    this._holo = null;
     this._lastUniverse = null;
     this._lastPlatesUniverse = null;
     this._project = new THREE.Vector3();
@@ -74,7 +77,8 @@ export class Hud {
       el('div', { class: 'statline' }, [el('span', { text: 'Drift' }), el('span', {}, [this.statDrift])]),
       el('div', { class: 'statline' }, [el('span', { text: 'View' }), el('span', {}, [this.statZoom])]),
     ]);
-    this.vane = el('canvas', { id: 'vectorvane', width: 212, height: 124 });
+    // tall enough for all three rows — burn, retro and the burst tank
+    this.vane = el('canvas', { id: 'vectorvane', width: 212, height: 160 });
     const tl = el('div', { class: 'hud-box hud-tl' }, [tlInner, el('div', { class: 'rack' }, [this.vane])]);
 
     // ---- top-right: purse & clock ----
@@ -91,16 +95,20 @@ export class Hud {
       el('div', { class: 'rack' }, [this.credits, this.lineSystem, this.lineNav, this.lineMission, this.lineHold, this.lineLumen, this.lineRep, this.lineCareer, this.lineFleet]),
     ]);
 
-    // ---- target plate ----
+    // ---- target plate ---- (left: the live ID hologram, right: the readout)
     this.tName = el('div', { class: 'tname', text: '' });
     this.tMeta = el('div', { class: 'tmeta', text: '' });
     this.tState = el('div', { class: 'tstate hidden', text: '' });
     this.tShield = this._bar('shield', 'Shields');
     this.tHull = this._bar('hull', 'Hull');
     this.tSnare = this._bar('snare', 'Snare');
-    this.targetPlate = el('div', { class: 'hud-box hud-target targetplate' }, [
+    this.tStage = el('div', { class: 'tstage' }, [
+      el('span', { class: 'tcap', text: 'TARGET ID' }),
+    ]);
+    this.tRead = el('div', { class: 'tread' }, [
       this.tName, this.tMeta, this.tState, this.tShield.wrap, this.tHull.wrap, this.tSnare.wrap,
     ]);
+    this.targetPlate = el('div', { class: 'hud-box hud-target targetplate' }, [this.tStage, this.tRead]);
 
     // ---- prompt ----
     this.prompt = el('div', { class: 'hud-box hud-prompt' });
@@ -136,6 +144,7 @@ export class Hud {
     this.labelsRoot.classList.add('hidden');
     this._clearLabels();
     this._clearPlates();
+    this._holo?.setVisible(false);
   }
 
   update(ctx) {
@@ -275,9 +284,11 @@ export class Hud {
       this.tSnare.wrap.classList.toggle('hidden', !(snare > 0.01));
       this.tSnare.fill.style.width = `${snare * 100}%`;
       this.tSnare.value.textContent = `${Math.round(snare * 100)}%`;
+      this._syncHologram(t);
     } else {
       this.targetPlate.classList.remove('on');
       this.targetPlate.classList.add('hidden');
+      this._holo?.setVisible(false);
     }
 
     this._drawVector(ctx);
@@ -285,6 +296,18 @@ export class Hud {
     this._updateLabels(ctx);
     this._updateReticle(ctx);
     this._updatePlates(ctx);
+  }
+
+  /**
+   * The locked hull, modelled as it flies. The lanes are watched from overhead,
+   * so the plate is too: the model wears the target's own heading and turns in
+   * the same direction the window shows. Built once per lock, never per frame.
+   */
+  _syncHologram(t) {
+    if (!this._holo) this._holo = new Hologram(this.tStage);
+    this._holo.setTarget(t.def, t.loadout, parseInt(factionHex(t.faction).slice(1), 16));
+    this._holo.orient(t.heading);
+    this._holo.setVisible(true);
   }
 
   /* ---------------------------------------------------------------- */

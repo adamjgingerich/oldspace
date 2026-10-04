@@ -385,7 +385,7 @@ export class Menus {
       ['Disruptor snare', `${kb('disable')} — snare coils only bite a hull whose shields are down; three hits stop her dead`],
       ['Claim a prize', `${kb('claim')} — take a snared or beaten ship whole; far cheaper in karma and reputation than a kill`],
       ['Hail / communications', `${kb('comms')} — talk to stations, worlds, and ships you have snared or beaten`],
-      ['Select a ship', `${kb('target')} cycles contacts · or click a hull directly`],
+      ['Select a ship', `${kb('target')} cycles contacts · or click a hull directly — the plate models it overhead, as the window shows it`],
       ['Fleet: focus target', `${kb('focusFire')}`],
       ['Fleet: regroup', `${kb('regroup')}`],
       ['Scramble docked craft', `${kb('scramble')}`],

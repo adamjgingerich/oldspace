@@ -5,7 +5,7 @@
 import { el } from './dom.js';
 import { SYSTEMS } from '../data/systems.js';
 import { SHIPS } from '../data/ships.js';
-import { FACTIONS } from '../data/factions.js';
+import { FACTIONS, isFaction, factionLabel } from '../data/factions.js';
 import { formatDeadline } from '../core/util.js';
 import { planetInfo, formatPopulation } from '../game/planetSurvey.js';
 import { levelFromXp, karmaLabel, KARMA_ACTS, karmaActCost, karmaActBlock, karmaActFaction } from '../game/skills.js';
@@ -117,7 +117,11 @@ export function missionCard(state, m) {
 function systemCard(id, sys) {
   const card = el('div', { class: 'panel', style: 'margin-bottom:10px' }, [
     el('h3', { text: `${sys.name} — ${sys.tagline}` }),
-    kv('Government', FACTIONS[sys.gov]?.name || sys.gov),
+    kv('Government', isFaction(sys.gov) ? FACTIONS[sys.gov].name : sys.freefire ? 'No flag — free-fire' : 'No flag'),
+    sys.freefire ? el('p', {
+      class: 'note freefire-note',
+      text: 'Free-fire ground: no flag, no writ. Any hull may be attacked or taken here and nothing is recorded against you for it.',
+    }) : null,
     kv('Tech level', sys.tech),
     kv('Pirate activity', `${Math.round(sys.danger.pirates * 100)}%`),
     kv('Vigil presence', `${Math.round(sys.danger.navy * 100)}%`),
@@ -152,7 +156,7 @@ function planetCard(state, rec) {
 function stationCard(sys, stn) {
   return el('div', { class: 'panel', style: 'margin-bottom:10px' }, [
     el('h3', { text: stn.name }),
-    el('p', { class: 'note', text: `${stn.type} · ${FACTIONS[stn.owner]?.name || stn.owner} · ${sys.name}` }),
+    el('p', { class: 'note', text: `${stn.type} · ${factionLabel(stn.owner)} · ${sys.name}` }),
     el('p', { style: 'font-size:12px', text: stn.desc || 'No public record — the berth keeps its own books.' }),
     el('p', { class: 'note', text: `Services: ${stn.services.join(', ')}` }),
   ]);

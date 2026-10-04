@@ -93,6 +93,9 @@ export function tickPolitics(state) {
       }
     }
     const candidates = [...border].filter((nb) => {
+      // nobody presses a claim on free-fire space — that is the one rule every
+      // flag quietly agrees on, and the charts would be useless without it
+      if (SYSTEMS[nb]?.freefire) return false;
       const home = FACTIONS[factionOf(state, nb)]?.home || [];
       return !home.includes(nb); // never take a rival's heart
     });

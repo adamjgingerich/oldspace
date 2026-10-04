@@ -103,12 +103,12 @@ export class Combat {
     const dirZ = Math.cos(angle);
     let hitShip = null;
     let hitDist = w.range;
-    // in the ring there are no colours to respect — every hull is a target
-    const melee = !!this.universe.melee;
+    // in free-fire space there are no colours to respect — every hull is a target
+    const freefire = !!this.universe.freefire;
 
     for (const s of this.universe.ships) {
       if (!s.alive || s === ship) continue;
-      if (!melee && !ship.isPlayer && !s.isPlayer && s.faction === ship.faction) continue;
+      if (!freefire && !ship.isPlayer && !s.isPlayer && s.faction === ship.faction) continue;
       if (!ship.isPlayer && ship.role === 'escort' && s.isPlayer) continue;
       if (ship.isPlayer && s.role === 'escort') continue;
       const rx = s.x - x;
@@ -296,11 +296,11 @@ export class Combat {
 
       // --- ships ---
       let hit = false;
-      const melee = !!u.melee;
+      const freefire = !!u.freefire;
       for (const ship of ships) {
         if (!ship.alive || ship === p.owner) continue;
         // AI shots respect their own colours; player shots respect nothing
-        if (!melee && !p.owner.isPlayer && !ship.isPlayer && ship.faction === p.owner.faction) continue;
+        if (!freefire && !p.owner.isPlayer && !ship.isPlayer && ship.faction === p.owner.faction) continue;
         // your wing never hits you, and your guns never hit your wing
         if (!p.owner.isPlayer && p.owner.role === 'escort' && ship.isPlayer) continue;
         if (p.owner.isPlayer && ship.role === 'escort') continue;

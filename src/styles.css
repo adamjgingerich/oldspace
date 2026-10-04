@@ -718,7 +718,43 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 
 #radar { display: block; margin: 0 auto; max-width: 100%; }
 
-.targetplate { display: flex; flex-direction: column; gap: 3px; }
+.targetplate { display: flex; flex-direction: row; align-items: center; gap: 10px; }
+.targetplate .tread { display: flex; flex-direction: column; gap: 3px; min-width: 196px; }
+/* the holoview: a live overhead model of the locked hull, framed like a scope */
+.targetplate .tstage {
+  position: relative;
+  width: 174px;
+  height: 118px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(0deg, rgba(120, 190, 240, 0.055) 0 1px, transparent 1px 4px),
+    radial-gradient(120% 90% at 50% 42%, rgba(60, 130, 190, 0.22), rgba(6, 12, 20, 0.55) 72%);
+  border: 1px solid rgba(120, 190, 240, 0.28);
+  box-shadow: inset 0 0 22px rgba(40, 110, 170, 0.35);
+}
+.targetplate .tstage .holo-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.targetplate .tstage .tcap {
+  position: absolute;
+  left: 5px;
+  top: 3px;
+  z-index: 2;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  color: rgba(180, 220, 250, 0.72);
+}
+/* corner ticks, scope-style */
+.targetplate .tstage::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  z-index: 2;
+  pointer-events: none;
+  border: 1px solid rgba(150, 210, 250, 0.16);
+  border-radius: 1px;
+}
+.targetplate .tstage:not(.on) .holo-canvas { opacity: 0; }
 .targetplate .tname { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: var(--bone); }
 .targetplate .tmeta { font-family: var(--mono); font-size: 10px; color: var(--dim); }
 .targetplate.on { box-shadow: 0 0 0 2px rgba(255, 95, 134, 0.55), inset 2px 2px 0 rgba(255, 200, 220, 0.12), inset -2px -2px 0 rgba(20, 0, 8, 0.7), 0 10px 26px rgba(0, 0, 0, 0.55); }

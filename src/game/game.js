@@ -402,9 +402,9 @@ export class Game {
     if (!this.state.hints?.radio && (this.target || u.nearStation || u.nearPlanet)) {
       this.hint('radio', 'Press T to open a channel — hail a station, a world, or a ship you have snared or beaten.');
     }
-    // the ring has its own rules, and they are worth stating plainly
-    if (u.melee) {
-      this.hint('melee', 'This is a melee ring: every hull in the sky is a contender, and every one of them is fair game. Nothing you do here — killing, snaring, or taking a ship whole — costs you karma or standing with any flag. Fly in and fight.');
+    // free-fire space has no law and no ledger, and it is worth saying so
+    if (u.freefire) {
+      this.hint('freefire', 'No flag holds this ground: no patrols, no files, no grudges. Attack anyone you meet and take whatever you can — nothing you do here costs you karma or standing.');
     }
   }
 
@@ -578,16 +578,6 @@ export class Game {
           payload.mercy
             ? `${s.def.name} taken — the crew is put ashore at the next berth. A prize, not a funeral.`
             : `${s.def.name} taken and broken up for parts.`,
-          'good',
-        );
-        break;
-      }
-      case 'meleeBout': {
-        const s = payload.ship;
-        this.ui.toasts.push(
-          payload.outcome === 'captured'
-            ? `Bout over — ${s.name}'s hull is yours. No flag files a protest in the ring.`
-            : `Bout over — ${s.name} is out of the ring. The book will remember the name.`,
           'good',
         );
         break;

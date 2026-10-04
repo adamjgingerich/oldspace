@@ -245,8 +245,8 @@ export class Universe {
     if (!sys) throw new Error(`Unknown system ${systemId}`);
     this.systemId = systemId;
     this.system = sys;
-    // a melee ring: a free-for-all with no law and no ledger
-    this.melee = !!sys.melee;
+    // free-fire ground: no flag polices it, and nothing done here is written down
+    this.freefire = !!sys.freefire;
     if (this.state?.visited) this.state.visited[systemId] = true; // the fog lifts where you fly
     this.ships = [];
     this.stations = [];
@@ -501,19 +501,19 @@ export class Universe {
 
   _manageSpawns(initial = false) {
     const cfg = this.system.danger;
-    // --- melee rings ------------------------------------------------------
-    // No patrols, no shipping, no law: just contenders. They arrive to fight
-    // each other and anyone else in the ring, and the population is topped up
-    // as they die. Nothing else in the spawn system applies here.
-    if (this.melee) {
-      let contenders = 0;
+    // --- free-fire systems -------------------------------------------------
+    // No patrols and no paperwork: just more hulls than the lanes would
+    // normally carry, all of them fair game for each other.
+    if (this.freefire) {
+      let raiders = 0;
       for (const s of this.ships) {
         if (s.isPlayer || s.despawn || s.role === 'escort') continue;
-        contenders++;
+        if (s.role === 'pirate' || s.role === 'bounty') raiders++;
       }
-      const threat = threatLevel(this.state);
-      const target = clamp(3 + Math.round(threat / 3), 3, 9);
-      if (contenders < target) this._spawnContender(rngOf(this.state.worldSeed, 'melee', this.systemId, Math.floor(this.time)));
+      const want = clamp(3 + Math.round(threatLevel(this.state) / 3), 3, 9);
+      if (raiders < want) {
+        this._spawnPirate(rngOf(this.state.worldSeed, 'freefire', this.systemId, Math.floor(this.time)));
+      }
       return;
     }
     let pirates = 0;
@@ -579,59 +579,11 @@ export class Universe {
   }
 
   /**
-   * A contender in the ring. Same airframes as the lanes see, but flagged
-   * `contender`: nothing it does — and nothing done to it — touches karma or
-   * reputation, and every other hull in the system is fair game.
+   * A raider in free-fire space. Same airframe rules as anywhere else, but
+   * wearing whichever flag they feel like: with no law in the system, nobody
+   * is keeping track of whose colours are whose.
    */
-  _spawnContender(rng) {
-    const threat = threatLevel(this.state);
-    const pool = threat <= 6
-      ? ['sparrowhawk', 'marlin', 'rampart', 'corsair']
-      : threat <= 14
-        ? ['corsair', 'voskar', 'clipper', 'hussar', 'merlin']
-        : threat <= 24
-          ? ['corsair', 'voskar', 'dragoon', 'anvil', 'tempest']
-          : ['dragoon', 'legion', 'redoubt', 'monarch', 'anvil'];
-    const shipId = rng.pick(pool);
-    const p = this._edgePoint(rng, !!this.system.asteroids);
-    const weapons = [
-      rng.chance(0.5) ? 'twinpulse' : 'pulse',
-      rng.chance(0.35) ? 'harpoon' : rng.chance(0.6) ? 'damping' : null,
-      rng.chance(0.25) ? 'snare' : null,
-    ];
-    const ship = Ship.npc(shipId, {
-      scene: this.scene, x: p.x, z: p.z, heading: rng.float(0, TAU),
-      // contenders fly in from every march, wearing their own colours
-      faction: rng.pick(['free', 'reaver', 'combine', 'kreth', 'vigil']),
-      role: 'pirate',
-      name: `${rng.pick(PIRATE_FIRST)} ${rng.pick(PIRATE_EPITHET)}`,
-      // the ring is where every lattice in the sky turns up to be tested
-      shieldType: rng.pick(['lattice', 'flowweave', 'duelist', 'ledger', 'ember', 'aegis', 'capacitor', 'faraday', 'ghostveil']),
-      loadout: { weapons },
-    });
-    ship.weapons = weapons;
-    ship.ammo = { harpoon: 5 };
-    ship.contender = true;
-    ship.hull = ship.stats.hull;
-    ship.shield = ship.stats.shield;
-    // the ring sharpens with the captain, like every other lane — a green
-    // pilot meets sloppy brawlers, a famous one meets the best in the Reach
-    const skill = threat <= 4 ? { aim: 0.06, dmg: 0.5, cd: 1.4 }
-      : threat <= 8 ? { aim: 0.045, dmg: 0.65, cd: 1.25 }
-        : threat <= 14 ? { aim: 0.03, dmg: 0.8, cd: 1.12 }
-          : threat <= 22 ? { aim: 0.02, dmg: 0.95, cd: 1.02 }
-            : { aim: 0.012, dmg: 1.08, cd: 0.95 };
-    ship.aimError = skill.aim;
-    ship.dmgMult = skill.dmg;
-    ship.cdMult = skill.cd;
-    // nobody comes to the ring to run
-    if (ship.ai) ship.ai.bravado = 1;
-    this._addNpc(ship, 'pirate', p);
-  }
-
   _spawnPirate(rng) {
-    if (this.melee) return this._spawnContender(rng);
-    if (this.melee) return this._spawnContender(rng);
     const threat = threatLevel(this.state);
     const danger = this.system.danger.pirates;
     // the raiders you meet grow with your renown — knife-fights are earned
@@ -657,6 +609,12 @@ export class Universe {
       if (threat >= 32 && danger >= 0.6 && rng.chance(0.12)) pool.push('legion'); // an assault hull on the prowl
       if (threat >= 34 && danger >= 0.65 && rng.chance(0.08)) pool.push('redoubt'); // a battleship flying a clan pennant
       if (threat >= 36 && danger >= 0.7 && rng.chance(0.05)) pool.push('monarch'); // the clan dreadnoughts answer only to the renown
+      if (threat >= 16 && rng.chance(0.3)) pool.push('nettle'); // the new yards' light work, flown hard
+      if (threat >= 20 && danger >= 0.4 && rng.chance(0.3)) pool.push('sidewinder', 'kestrel');
+      if (threat >= 24 && danger >= 0.45 && rng.chance(0.25)) pool.push('sickle'); // a crescent raider, all curve and drive
+      if (threat >= 30 && danger >= 0.55 && rng.chance(0.14)) pool.push('balefire'); // a spinal cruiser with one very long argument
+      if (threat >= 34 && danger >= 0.62 && rng.chance(0.1)) pool.push('harrow', 'halfmoon'); // alpha cruisers on the clan rolls
+      if (threat >= 37 && danger >= 0.68 && rng.chance(0.06)) pool.push('thunderhead', 'matriarch'); // and the monoliths behind them
     }
     const ace = threat >= 18 && rng.chance(0.15); // a named killer, living off this lane
     const shipId = rng.pick(pool);
@@ -677,15 +635,29 @@ export class Universe {
     if (shipId === 'legion') weapons = ['flenser', 'flenser', 'twinpulse', rng.chance(0.5) ? 'harpoon' : null];
     if (shipId === 'redoubt') weapons = ['flenser', 'flenser', 'twinpulse', rng.chance(0.6) ? 'harpoon' : null, null];
     if (shipId === 'monarch') weapons = ['flenser', 'flenser', 'twinpulse', 'harpoon', null, null];
+    if (shipId === 'nettle') weapons = ['twinpulse', rng.chance(0.3) ? 'harpoon' : null];
+    if (shipId === 'sidewinder') weapons = ['pulse', rng.chance(0.5) ? 'harpoon' : 'dart', null];
+    if (shipId === 'kestrel') weapons = ['stiletto', rng.chance(0.4) ? 'harpoon' : null];
+    if (shipId === 'sickle') weapons = ['flenser', 'twinpulse', rng.chance(0.5) ? 'harpoon' : null, null];
+    if (shipId === 'balefire') weapons = ['hellbore', 'flenser', 'twinpulse', rng.chance(0.5) ? 'harpoon' : null, null];
+    if (shipId === 'harrow') weapons = ['gauss', 'flenser', 'flenser', 'twinpulse', null, null];
+    if (shipId === 'halfmoon') weapons = ['hellbore', 'flenser', 'flenser', 'pulse', null, null];
+    if (shipId === 'thunderhead') weapons = ['gauss', 'gauss', 'flenser', 'twinpulse', 'harpoon', null];
+    if (shipId === 'matriarch') weapons = ['griefheart', 'flenser', 'flenser', 'twinpulse', 'harpoon', null];
     // veteran clans hunt prizes as readily as kills — a snare coil goes into a
     // free hardpoint once the lanes get serious, and shows on the hull
     if (threat >= 15 && rng.chance(0.3)) {
       const free = weapons.indexOf(null);
       if (free >= 0) weapons[free] = threat >= 26 ? 'damping' : 'snare';
     }
+    // in free-fire space nobody checks your papers, so raiders fly whatever
+    // colours they like — including each other's
+    const raiderFaction = this.freefire
+      ? rng.pick(['free', 'reaver', 'combine', 'kreth', 'vigil'])
+      : 'reaver';
     const ship = Ship.npc(shipId, {
       scene: this.scene, x: p.x, z: p.z, heading: rng.float(0, TAU),
-      faction: 'reaver', role: 'pirate', name: 'Reaver raider',
+      faction: raiderFaction, role: 'pirate', name: 'Reaver raider',
       loadout: { weapons },
     });
     // green crews fly patched-up junk; veterans meet fully-kitted raiders
@@ -708,6 +680,11 @@ export class Universe {
     const hostile = Math.min(1, this.hostileWeight());
     if (threat >= 12 && rng.chance(0.15 * hostile)) ship.hunting = true;
     if (threat >= 18 && rng.chance(0.22 * hostile)) ship.hunting = true;
+    // nobody in a free-fire system is waiting for an excuse
+    if (this.freefire) {
+      ship.aggroed = true;
+      if (ship.ai) ship.ai.bravado = 1;
+    }
     if (ace) {
       ship.name = 'Reaver ace';
       ship.hull = ship.stats.hull;
@@ -726,9 +703,11 @@ export class Universe {
     const threat = threatLevel(this.state);
     const halcyonChance = threat <= 12 ? 0 : clamp(0.15 + (threat - 12) * 0.04, 0, 0.6);
     const shipId = rng.chance(halcyonChance) ? 'halcyon'
-      : threat > 8 && rng.chance(0.4) ? 'watchman' : 'sparrowhawk';
+      : threat > 18 && rng.chance(0.25) ? 'quill'
+        : threat > 14 && rng.chance(0.3) ? 'kestrel'
+          : threat > 8 && rng.chance(0.4) ? 'watchman' : 'sparrowhawk';
     const p = this._edgePoint(rng);
-    const weapons = [shipId === 'halcyon' ? 'sunbeam' : shipId === 'watchman' ? (rng.chance(0.5) ? 'twinpulse' : 'pulse') : 'pulse', null];
+    const weapons = [shipId === 'halcyon' ? 'sunbeam' : shipId === 'quill' ? 'gauss' : shipId === 'kestrel' ? 'stiletto' : shipId === 'watchman' ? (rng.chance(0.5) ? 'twinpulse' : 'pulse') : 'pulse', null];
     const ship = Ship.npc(shipId, {
       scene: this.scene, x: p.x, z: p.z, heading: rng.float(0, TAU),
       faction: 'vigil', role: 'navy', name: 'Vigil patrol',
@@ -746,7 +725,7 @@ export class Universe {
 
   _spawnHouse(rng) {
     const threat = threatLevel(this.state);
-    const shipId = rng.chance(0.3) ? 'voskar' : rng.chance(0.5) ? 'corsair' : 'sparrowhawk';
+    const shipId = rng.chance(0.3) ? 'voskar' : rng.chance(0.22) ? 'sickle' : rng.chance(0.5) ? 'corsair' : 'sparrowhawk';
     const p = this._edgePoint(rng);
     const house = rng.pick(HOUSE_NAMES);
     const weapons = [rng.chance(0.6) ? 'twinpulse' : 'pulse', rng.chance(0.4) ? 'harpoon' : null];
@@ -766,8 +745,8 @@ export class Universe {
   _spawnTrader(rng) {
     // the lanes roll a full market — lighters, traders, bulk haulers, and once
     // in a great while a grand liner that clears the whole lane by itself
-    const pool = ['vagrant', 'mule', 'dhow', 'ketch', 'drayman', 'ox', 'schooner', 'dromond', 'barque', 'vintner'];
-    const shipId = rng.chance(0.22) ? 'stormgalleon' : rng.chance(0.035) ? 'palladium' : rng.pick(pool);
+    const pool = ['vagrant', 'mule', 'dhow', 'ketch', 'drayman', 'ox', 'schooner', 'dromond', 'barque', 'vintner', 'ferryman', 'mainsail', 'sluice'];
+    const shipId = rng.chance(0.22) ? 'stormgalleon' : rng.chance(0.06) ? 'cabochon' : rng.chance(0.035) ? 'palladium' : rng.pick(pool);
     const p = this._edgePoint(rng);
     const station = rng.pick(this.stations);
     const weapons = [rng.chance(0.4) ? 'needler' : null, null];
@@ -806,19 +785,19 @@ export class Universe {
     let shipId; let faction; let name; let weapons;
     if (gov === 'reaver' ? rng.chance(0.75) : (cfg.pirates > 0.55 && rng.chance(0.35))) {
       // a clan column running the gauntlet — it has business elsewhere
-      shipId = rng.pick(['tempest', 'redoubt']);
+      shipId = rng.pick(['tempest', 'redoubt', 'halfmoon', 'thunderhead']);
       faction = 'reaver'; name = 'Reaver war column';
       weapons = ['flenser', 'flenser', 'twinpulse', 'harpoon', null];
     } else if (gov === 'vigil' || (gov === 'free' && rng.chance(0.6))) {
-      shipId = rng.pick(['redoubt', 'monarch', 'tempest']);
+      shipId = rng.pick(['redoubt', 'monarch', 'tempest', 'cathedral', 'sunspire']);
       faction = 'vigil'; name = 'Vigil line squadron';
       weapons = ['flenser', 'flenser', 'twinpulse', 'harpoon', null];
     } else if (gov === 'kreth') {
-      shipId = rng.pick(['redoubt', 'monarch', 'sceptre']);
+      shipId = rng.pick(['redoubt', 'monarch', 'sceptre', 'matriarch', 'cathedral']);
       faction = 'kreth'; name = `${rng.pick(HOUSE_NAMES)} banner`;
       weapons = ['flenser', 'twinpulse', 'harpoon', null];
     } else {
-      shipId = rng.pick(['palladium', 'leviathan']);
+      shipId = rng.pick(['palladium', 'leviathan', 'worldheart', 'cataract', 'coliseum']);
       faction = 'combine'; name = 'Combine grand convoy';
       weapons = ['pulse', null];
     }
@@ -1057,8 +1036,8 @@ export class Universe {
   npcHostileToPlayer(npc) {
     const st = this.state;
     if (!npc.alive) return false;
-    // in the ring, everyone is here for the same reason
-    if (this.melee) return npc.role !== 'escort';
+    // in free-fire space, anyone who is not flying your wing is a threat
+    if (this.freefire) return npc.role !== 'escort';
     const grudge = this.grudgeActive(npc.faction);
     switch (npc.role) {
       case 'pirate':
@@ -1077,7 +1056,7 @@ export class Universe {
   /** Days a faction holds a grudge after its kin are attacked — at least one warp. */
   noteGrudge(faction) {
     if (!faction) return;
-    if (this.melee) return; // nothing done in the ring follows you out
+    if (this.freefire) return; // nothing done in these systems follows you out
     const st = this.state;
     st.grudge[faction] = Math.max(st.grudge[faction] || 0, st.day + 2);
   }
@@ -1181,10 +1160,11 @@ export class Universe {
     if (a.surrendered || b.surrendered) return false;
     // neither is a snared hull worth a shot: it is drifting, and it is salvage
     if (a.disabled || b.disabled) return false;
-    // --- the ring ---------------------------------------------------------
-    // In a melee system every hull is a contender: no flags, no kin, no rules.
-    // Wings are still yours, because your own escorts are not contenders.
-    if (this.melee) {
+    // --- free-fire systems -------------------------------------------------
+    // No flags, no kin and no rules: every hull in the system is fair game for
+    // every other. The only exception is your own wing, which stays yours.
+    if (this.freefire) {
+      if (a.isPlayer || b.isPlayer) return this.npcHostileToPlayer(a.isPlayer ? b : a);
       if (a.role === 'escort' || b.role === 'escort') {
         return (a.role === 'escort') !== (b.role === 'escort');
       }
@@ -1270,11 +1250,10 @@ export class Universe {
     if (killer === this.player) {
       const st = this.state;
       st.stats.kills++;
-      // A kill in the ring is a bout, not a crime: no flag is watching, no
-      // ledger is kept, and nothing you do here follows you out. Experience
-      // still counts — it is a competition, after all.
-      const melee = this.melee || ship.contender;
-      if (!melee) {
+      // Free-fire ground: no flag is watching and no ledger is kept, so nothing
+      // here costs karma or standing. Experience still counts.
+      const freefire = this.freefire;
+      if (!freefire) {
         if (ship.role === 'pirate') {
           st.addRep('vigil', 2);
           st.addRep('combine', 1);
@@ -1303,12 +1282,10 @@ export class Universe {
           else if (ship.faction === 'combine') st.addRep('combine', -6);
           this.onEvent?.('capitalDown', { ship });
         }
-      } else if (ship.contender) {
-        this.onEvent?.('meleeBout', { ship, outcome: 'destroyed' });
       }
       // character progression: experience and karma
       const xpRes = addXp(st, XP_BY_ROLE[ship.role] || 20);
-      if (!melee) {
+      if (!freefire) {
         addKarma(st, KARMA_BY_ROLE[ship.role] || 0, `destroyed a ${ship.role} — ${ship.def.name}`);
       }
       this.onEvent?.('xpGain', { ...xpRes, role: ship.role });
@@ -1345,11 +1322,10 @@ export class Universe {
     const st = this.state;
     const role = ship.role;
     st.stats.captures = (st.stats.captures || 0) + 1;
-    // In the ring a prize is a prize: the bout ends, the hull changes hands,
-    // and nobody keeps a file on it. Only outside the ring does the ledger run.
-    if (this.melee || ship.contender) {
+    // In free-fire space a prize is just a prize: the hull changes hands and
+    // nobody keeps a file on it. Only outside does the ledger run.
+    if (this.freefire) {
       this.onEvent?.('shipCaptured', { ship, mercy, role });
-      if (ship.contender) this.onEvent?.('meleeBout', { ship, outcome: 'captured' });
       return;
     }
     const karma = CAPTURE_KARMA[role] ?? 0;

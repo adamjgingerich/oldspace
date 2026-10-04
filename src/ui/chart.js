@@ -3,7 +3,7 @@
 
 import { el, btn } from './dom.js';
 import { SYSTEMS } from '../data/systems.js';
-import { FACTIONS } from '../data/factions.js';
+import { FACTIONS, isFaction } from '../data/factions.js';
 import { clamp, formatDeadline, fmtCredits } from '../core/util.js';
 import { rngOf } from '../core/rng.js';
 import { lumenCourierFee } from '../game/game.js';
@@ -74,7 +74,7 @@ const LAYOUT = {
   scarmarch: [0.140, 0.550],
   brokenjaw: [0.090, 0.420],
   wreckerbay: [0.680, 0.130],
-  // the melee rings — off the trade lanes, on nobody's charts but a contender's
+  // the free-fire systems — off the trade lanes, and on nobody's books
   thelists: [0.430, 0.930],
   gallowsring: [0.690, 0.960],
   emberdrome: [0.885, 0.075],
@@ -465,7 +465,21 @@ export class ChartUI {
       // a faction-coloured glow under every charted star — whose colours fly
       // here reads at a glance, and how far each flag's reach extends
       const fac = FACTIONS[this.ctx.state.influence?.[id] || sys.gov];
-      if (fac) {
+      if (sys.freefire) {
+        // free-fire ground: nobody's colours, and the chart says so out loud
+        c.save();
+        c.strokeStyle = 'rgba(255, 150, 120, 0.55)';
+        c.lineWidth = 1.5 * r;
+        c.setLineDash([4 * r, 4.5 * r]);
+        c.beginPath();
+        c.arc(x, y, 15 * r, 0, Math.PI * 2);
+        c.stroke();
+        c.restore();
+        c.font = `${8.5 * r}px "Segoe UI", sans-serif`;
+        c.fillStyle = 'rgba(255, 176, 148, 0.92)';
+        c.textAlign = 'center';
+        c.fillText('NO FLAG', x, y + 27 * r);
+      } else if (fac) {
         const halo = c.createRadialGradient(x, y, 2 * r, x, y, 13 * r);
         halo.addColorStop(0, `${fac.color}55`);
         halo.addColorStop(0.55, `${fac.color}1e`);
@@ -834,8 +848,9 @@ export class ChartUI {
     );
 
     const kv = (k, v) => el('div', { class: 'kv' }, [el('span', { text: k }), el('b', { text: v })]);
+    const govId = state.influence?.[this.selected] || sys.gov;
     side.append(
-      kv('Government', FACTIONS[state.influence?.[this.selected] || sys.gov]?.name || sys.gov),
+      kv('Government', isFaction(govId) ? FACTIONS[govId].name : sys.freefire ? 'No flag — free-fire' : 'No flag'),
       kv('Traffic', trafficLabel(state, this.selected)),
       kv('Tech level', String(sys.tech)),
       kv('Jump lanes', String(sys.links.length)),
@@ -843,6 +858,13 @@ export class ChartUI {
       kv('Vigil presence', `${Math.round(sys.danger.navy * 100)}%`),
       kv('Services', [...new Set(sys.stations.flatMap((s) => s.services))].join(', ')),
     );
+    if (sys.freefire) {
+      side.append(el('p', {
+        class: 'note freefire-note',
+        text: 'Free-fire ground. No flag holds these orbits, no ledger follows a hull in, and none follows it out: '
+          + 'any hull may be attacked or taken here, and no standing or karma turns on it.',
+      }));
+    }
     const charter = state.holdings?.[this.selected];
     if (charter) {
       side.append(kv('Charter', charter.asset === 'spacedock' ? 'planet spacedock — yours' : charter.asset === 'planet' ? 'world charter — yours' : 'station licence — yours'));

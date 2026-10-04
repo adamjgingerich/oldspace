@@ -118,8 +118,8 @@ const SHIELD_MULT = [0, 0.95, 1.05, 1.25, 1.4, 1.5, 1.55, 1.6, 1.65];
  * four stars, and capitals only on five-star work. Entries may be a single id
  * or a short list to pick from.
  */
-const PIRATE_BOUNTY_SHIPS = [null, 'wayfarer', 'marlin', 'voskar', ['dragoon', 'cuirassier', 'rapier'], 'tempest', ['tempest', 'legion'], ['redoubt', 'marshal'], 'monarch'];
-const VIGIL_BOUNTY_SHIPS = [null, 'sparrowhawk', 'watchman', ['halcyon', 'watchman'], ['paladin', 'marshal'], 'monarch', ['monarch', 'leviathan'], ['redoubt', 'colossus'], ['colossus', 'sceptre']];
+const PIRATE_BOUNTY_SHIPS = [null, 'wayfarer', 'marlin', 'voskar', ['dragoon', 'cuirassier', 'rapier'], 'tempest', ['tempest', 'legion', 'harrow'], ['redoubt', 'marshal', 'thunderhead'], ['monarch', 'sceptre', 'matriarch']];
+const VIGIL_BOUNTY_SHIPS = [null, 'sparrowhawk', 'watchman', ['halcyon', 'watchman'], ['paladin', 'marshal'], 'monarch', ['monarch', 'leviathan', 'sunspire'], ['redoubt', 'colossus', 'cathedral'], ['colossus', 'sceptre', 'worldheart']];
 /** Target gun fit by tier — rookies face a single barrel; eight-star marks carry dreadnought batteries. */
 const BOUNTY_ARMS = [null, ['pulse', null], ['pulse', null], ['pulse', 'harpoon'], ['twinpulse', 'harpoon'], ['flenser', 'flenser', 'harpoon'], ['flenser', 'flenser', 'harpoon'], ['flenser', 'twinpulse', 'harpoon'], ['flenser', 'flenser', 'twinpulse', 'harpoon']];
 const BOUNTY_AMMO = [0, 0, 0, 3, 5, 8, 8, 9, 10];

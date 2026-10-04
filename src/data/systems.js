@@ -1359,88 +1359,86 @@ export const SYSTEMS = {
   },
 
   /* ------------------------------------------------------------------ */
-  /* The melee systems.                                                  */
+  /* The free-fire systems.                                              */
   /*                                                                     */
-  /* Old arenas, prison circuits and cinder rings where the lanes settle */
-  /* their arguments in the open. One station, no patrols, no law: every */
-  /* hull in the sky is a contender, and nothing that happens inside      */
-  /* these orbits follows a captain home. `melee: true` is read by        */
-  /* universe.js — it spawns contenders instead of traffic, makes every   */
-  /* ship hostile to every other, and suspends karma and reputation for   */
-  /* anything done to a hull that is under way in here.                   */
+  /* Three orbits no flag bothers to police. Whoever is in them is       */
+  /* fair game for whoever else is in them, and nothing done here is     */
+  /* written down against a captain: no bounty, no grudge, no karma, no  */
+  /* standing lost. `freefire: true` is read by universe.js, which makes */
+  /* every hull hostile to every other hull and suspends the reputation  */
+  /* and karma consequences of fighting or taking a ship inside them.    */
   /* ------------------------------------------------------------------ */
 
   thelists: {
-    id: 'thelists', name: 'The Lists', tagline: 'Sanctioned blood sport',
+    id: 'thelists', name: 'Unwrit', tagline: 'No flag keeps a file',
     star: { color: 0xff9a6a, size: 76 },
     theme: { bg: 0x0c0508, nebula: [0x5e2a3a, 0x2a1420] },
-    tech: 4, gov: 'free', melee: true,
+    tech: 4, gov: 'none', freefire: true,
     links: ['quietus', 'glassfall'],
     economy: { produces: ['ore'], demands: ['medicine', 'luxuries', 'wine'] },
     stations: [
       {
-        id: 'thelists-crosstree', name: 'Crosstree', type: 'haven', owner: 'free',
+        id: 'thelists-crosstree', name: 'Freehand', type: 'haven', owner: 'none',
         services: ['trade', 'refuel', 'bar', 'mechanic', 'shipyard'],
         dist: 620, angle: 0.9,
-        desc: 'A ring of scaffolds and betting boards. The book is kept on paper, the winners are paid in cash, and the wounded are patched for a fee.',
+        desc: 'A trading post bolted to a hollow rock. It sells to anyone, asks nothing, and keeps no records for anybody — which is exactly why it is still standing.',
       },
     ],
     planets: [
-      { name: 'The Lists', radius: 72, dist: 900, angle: 3.0, color: 0x8a5a4a, type: 'rocky' },
-      { name: 'Booth', radius: 24, dist: 1180, angle: 5.2, color: 0x9a9a9a, type: 'moon' },
+      { name: 'Unwrit', radius: 72, dist: 900, angle: 3.0, color: 0x8a5a4a, type: 'rocky' },
+      { name: 'Stray', radius: 24, dist: 1180, angle: 5.2, color: 0x9a9a9a, type: 'moon' },
     ],
     asteroids: { count: 110, dist: 1450, spread: 620 },
     danger: { pirates: 1, navy: 0 },
-    desc: 'A hollow belt of scaffold platforms where captains settle scores in the open. Bring a hull, declare a name, and nobody asks why. What happens in the ropes stays in the ropes — the bookmaker sees to it.',
+    desc: 'A hollow belt off the lane chart where no flag keeps a file. The Vigil does not come here, the Combine does not invoice here, and the Clans do not bother claiming it. Attack who you like, take what you can hold, and no one will record a word of it against you.',
   },
 
   gallowsring: {
-    id: 'gallowsring', name: 'Gallows Ring', tagline: 'The old prison circuit',
+    id: 'gallowsring', name: 'Deadlight', tagline: 'Where the writ runs out',
     star: { color: 0xc8d0e0, size: 62 },
     theme: { bg: 0x06080c, nebula: [0x2e3a4e, 0x1a2028] },
-    tech: 3, gov: 'free', melee: true,
+    tech: 3, gov: 'none', freefire: true,
     links: ['deadmansmile', 'caldera'],
     economy: { produces: ['ice'], demands: ['medicine', 'grain', 'machinery'] },
     stations: [
       {
-        id: 'gallowsring-wardens', name: "Warden's Rest", type: 'bastion', owner: 'free',
+        id: 'gallowsring-wardens', name: 'Cold Harbour', type: 'bastion', owner: 'none',
         services: ['trade', 'refuel', 'bar', 'mechanic'],
-        dist: 680, angle: 2.4,
-        desc: 'The last block of a decommissioned prison ring. The cells hold cargo now, and the exercise yard is a duelling floor.',
+        desc: 'A decommissioned station nobody patrols and nobody closed. It takes hulls for repair and crews for a drink, and asks no questions it would have to write down.',
       },
     ],
     planets: [
-      { name: 'Gallows', radius: 66, dist: 880, angle: 1.2, color: 0x6a6a72, type: 'rocky' },
-      { name: 'Rope', radius: 22, dist: 1150, angle: 4.6, color: 0x8a8a8a, type: 'moon' },
+      { name: 'Deadlight', radius: 66, dist: 880, angle: 1.2, color: 0x6a6a72, type: 'rocky' },
+      { name: 'Spur', radius: 22, dist: 1150, angle: 4.6, color: 0x8a8a8a, type: 'moon' },
     ],
     asteroids: { count: 80, dist: 1520, spread: 560 },
     danger: { pirates: 1, navy: 0 },
-    desc: 'A dead prison ring the Watch abandoned and nobody claimed. Wardens are gone; the rules they left behind are not. Contenders fly in from both marches to fight where no flag keeps a file.',
+    desc: 'The last station on a lane that was never finished. Both marches quietly agree it belongs to neither, which means every hull in the system is unescorted, unregistered, and owed nothing by anyone. Settle whatever you like out here.',
   },
 
   emberdrome: {
-    id: 'emberdrome', name: 'Emberdrome', tagline: 'Cinders and grudges',
+    id: 'emberdrome', name: 'Cinderreach', tagline: 'Cinders, and no law',
     star: { color: 0xff8a4a, size: 88 },
     theme: { bg: 0x0b0402, nebula: [0x6a2c14, 0x301408] },
-    tech: 5, gov: 'free', melee: true,
+    tech: 5, gov: 'none', freefire: true,
     links: ['wreckerbay', 'tinderbox'],
     economy: { produces: ['ash', 'machinery'], demands: ['medicine', 'ice', 'grain'] },
     stations: [
       {
-        id: 'emberdrome-cinder', name: 'Cinder Gate', type: 'spacedock', owner: 'free',
-        parent: 'Emberdrome',
+        id: 'emberdrome-cinder', name: 'Ashgate', type: 'spacedock', owner: 'none',
+        parent: 'Cinderreach',
         services: ['trade', 'refuel', 'bar', 'mechanic', 'shipyard'],
         dist: 700, angle: 1.6,
-        desc: 'A dock hung over a molten hemisphere, built from the hulls that lost. Its yards will sell you a hull and bet against you in the same breath.',
+        desc: 'A dock hung over a molten hemisphere by people who wanted to be somewhere nobody would look. Its yards will repair anything and ask for no paperwork doing it.',
       },
     ],
     planets: [
-      { name: 'Emberdrome', radius: 92, dist: 900, angle: 1.6, color: 0xa8482a, type: 'molten' },
+      { name: 'Cinderreach', radius: 92, dist: 900, angle: 1.6, color: 0xa8482a, type: 'molten' },
       { name: 'Slag', radius: 25, dist: 1200, angle: 4.1, color: 0x7a6a5a, type: 'moon' },
     ],
     asteroids: { count: 65, dist: 1560, spread: 500 },
     danger: { pirates: 1, navy: 0 },
-    desc: 'A cinder world with a ring of scaffold duelling floors, run by whoever last won them. The Clans send their arguments here to be settled in the ash.',
+    desc: 'A cinder world too hot to claim and too poor to garrison. Ships come here to meet each other without witnesses, which is why so few of them leave. No flag applies, and no flag will hear about it.',
   },
 };
 

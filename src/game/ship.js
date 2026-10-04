@@ -8,11 +8,12 @@ import { SHIP_BY_ID } from '../data/ships.js';
 import { DEFAULT_SHIELD_TYPE, applyShieldProfile, shieldProfile, shieldTypeFor } from '../data/shields.js';
 
 /**
- * Engine burst (hold Shift): extra forward thrust for a short burn, with a
- * tank that refills over time. Cutting out empty requires a partial re-arm
- * so the tank cannot be stuttered at zero.
+ * Engine burst (hold Shift): a long shove of extra thrust out of a tank that
+ * refills over time. The tank is generous enough to cross a knife-fight in one
+ * burn; cutting it out empty requires a partial re-arm, so it cannot be
+ * stuttered at zero.
  */
-export const BURST = { duration: 1.8, recharge: 6.5, rearm: 0.3, accel: 1.4 };
+export const BURST = { duration: 3.4, recharge: 10.5, rearm: 0.35, accel: 1.4 };
 
 /**
  * Disruptor snares. A snare coil does nothing to a raised lattice — three
@@ -78,6 +79,8 @@ export class Ship {
     this.stats = stats || baseStats(def, { faction, role, shieldType });
     this.scene = scene;
     this.shipProfile = shieldProfile(this.stats.shieldType || DEFAULT_SHIELD_TYPE);
+    // kept so a view can rebuild this exact hull — gun fit and all
+    this.loadout = loadout;
     this.isPlayer = isPlayer;
     this.faction = faction;
     this.name = name || def.name;

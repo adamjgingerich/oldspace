@@ -9,11 +9,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { withRim } from './materials.js';
 import { glowSprite } from './fx.js';
 import { rngOf } from './rng.js';
-import { FACTIONS } from '../data/factions.js';
+import { factionHex } from '../data/factions.js';
 import { WEAPON_BY_ID } from '../data/weapons.js';
 import { OUTFIT_BY_ID } from '../data/outfits.js';
 
-export const factionColor = (id) => new THREE.Color(FACTIONS[id]?.color || '#8ef0b8');
+export const factionColor = (id) => new THREE.Color(factionHex(id));
 
 /* ------------------------------------------------------------------ */
 /* Shared materials                                                    */
@@ -2439,6 +2439,427 @@ export function buildShip(def, { accent = 0x9fd8ff, isPlayer = false, loadout = 
       addRunningLight(0xff5566, -R * 1.45, R * 0.15, L * 0.05, L * 0.05);
       addRunningLight(0x55ff88, R * 1.45, R * 0.15, L * 0.05, L * 0.05);
       addRunningLight(0xffffff, 0, -R * 0.15, L * 0.62, L * 0.055);
+      break;
+    }
+
+    /* ----------------------------------------- ring-drive habitat (liner) */
+    case 'torus': {
+      const R = L * 0.1;
+      hullR = R;
+      const heavy = def.variant === 'heavy';
+      const fleet = def.variant === 'fleet';
+      const ringR = L * (heavy ? 0.25 : fleet ? 0.22 : 0.19);
+      const tube = ringR * (heavy ? 0.28 : 0.22);
+      // hardpoints: prow pair, spine, waist pair, stern pair, keel
+      hardpoints.push(
+        [-L * 0.13, -R * 0.5, L * 0.34], [L * 0.13, -R * 0.5, L * 0.34],
+        [0, R * 0.66, L * 0.24],
+        [-L * 0.24, -R * 0.2, 0], [L * 0.24, -R * 0.2, 0],
+        [-L * 0.18, -R * 0.35, -L * 0.3], [L * 0.18, -R * 0.35, -L * 0.3],
+        [0, -R * 0.5, -L * 0.44],
+      );
+      // the spine: one long flattened hull threaded through the hub
+      bucket.put('H', fuselage(L, R, 14, null, 0.8));
+      // prow: armoured wedge, shoulder domes, mast
+      bucket.put('T', xf(new THREE.ConeGeometry(R * 0.8, L * 0.15, 12), [0, 0, L * 0.52], [Math.PI / 2, 0, 0]));
+      bucket.put('D', xf(new THREE.CylinderGeometry(R * 0.34, R * 0.44, L * 0.08, 10), [0, 0, L * 0.45], [Math.PI / 2, 0, 0]));
+      bucket.put('A', xf(new THREE.SphereGeometry(R * 0.24, 10, 8), [0, 0, L * 0.57]));
+      for (const s of [-1, 1]) {
+        bucket.put('D', xf(new THREE.SphereGeometry(R * 0.3, 10, 8), [s * R * 0.72, 0, L * 0.3]));
+        antenna(bucket, L, s * R * 0.5, R * 0.5, L * 0.2, L * 0.07, true);
+      }
+      // the habitation ring: torus, keel band, hub spokes, lit outer windows
+      bucket.put('T', xf(new THREE.TorusGeometry(ringR, tube, 10, 30)));
+      bucket.put('D', xf(new THREE.TorusGeometry(ringR, tube * 0.32, 6, 26), [0, 0, -tube * 0.95]));
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        bucket.put('L', xf(new THREE.BoxGeometry(tube * 0.45, ringR, R * 0.42), [Math.cos(a) * ringR * 0.5, Math.sin(a) * ringR * 0.5, 0], [0, 0, a]));
+      }
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2;
+        bucket.put('A', xf(new THREE.BoxGeometry(tube * 0.42, tube * 0.18, R * 0.3), [Math.cos(a) * (ringR + tube * 0.72), Math.sin(a) * (ringR + tube * 0.72), 0], [0, 0, a]));
+      }
+      for (const s of [-1, 1]) {
+        for (const a of [0.7, 2.44]) {
+          pipe(bucket, L, [0, 0, s * L * 0.14], [Math.cos(a) * ringR * 0.8, Math.sin(a) * ringR * 0.8, s * L * 0.05], 0.008);
+        }
+      }
+      // detail pass
+      plateBelt(bucket, L, R * 0.94, R * 0.1, L * 0.1, 1, 2, 5, 1);
+      plateBelt(bucket, L, -R * 0.94, R * 0.1, L * 0.1, -1, 2, 5, 1);
+      hatch(bucket, L, R * 0.96, -R * 0.05, -L * 0.2, 1, 1.1);
+      hatch(bucket, L, -R * 0.96, -R * 0.05, -L * 0.2, -1, 1.1);
+      radiator(bucket, L, R * 0.86, R * 0.3, -L * 0.34, 1, 4, 1);
+      radiator(bucket, L, -R * 0.86, R * 0.3, -L * 0.34, -1, 4, 1);
+      turret(bucket, L, R * 0.7, R * 0.55, -L * 0.06, 1.1, 0.3);
+      turret(bucket, L, -R * 0.7, R * 0.55, -L * 0.06, 1.1, -0.3);
+      sensorArray(bucket, L, 0, R * 0.72, -L * 0.26, 0.2);
+      greebles(bucket, L, R, rng, 22);
+      hullClutter(bucket, L, R, rng, 10);
+      rcsQuad(bucket, L, -R * 0.9, R * 0.2, L * 0.26);
+      rcsQuad(bucket, L, R * 0.9, R * 0.2, L * 0.26);
+      // propulsion: a linear bank on the spine stern, verniers out on the ring
+      addEngineCluster([
+        [0, R * 0.05, -L * 0.5], [-R * 0.85, R * 0.05, -L * 0.46], [R * 0.85, R * 0.05, -L * 0.46],
+      ], R * 0.42, L * 0.09, 1.1, heavy);
+      addVerniers([[-ringR * 0.72, 0, -L * 0.08], [ringR * 0.72, 0, -L * 0.08]], R * 0.26);
+      addRunningLight(0xff5566, -ringR * 1.12, 0, L * 0.02, L * 0.05);
+      addRunningLight(0x55ff88, ringR * 1.12, 0, L * 0.02, L * 0.05);
+      addRunningLight(0xffffff, 0, 0, L * 0.63, L * 0.05);
+      break;
+    }
+
+    /* ----------------------------------------------- twin-hull catamaran */
+    case 'cat': {
+      const R = L * 0.072;
+      hullR = R;
+      const heavy = def.variant === 'heavy';
+      const span = L * (heavy ? 0.19 : 0.23);
+      hardpoints.push(
+        [-span, -R * 0.3, L * 0.3], [span, -R * 0.3, L * 0.3],
+        [0, R * 1.55, L * 0.06],
+        [-span * 1.12, R * 0.2, -L * 0.1], [span * 1.12, R * 0.2, -L * 0.1],
+        [0, -R * 0.7, -L * 0.3], [0, R * 1.1, -L * 0.26],
+      );
+      for (const s of [-1, 1]) {
+        // slim outrigger hull with a plough bow
+        bucket.put('H', xf(fuselage(L * 0.92, R, 12, null, 0.85), [s * span, 0, 0]));
+        bucket.put('T', xf(new THREE.ConeGeometry(R * 0.9, L * 0.12, 10), [s * span, 0, L * 0.48], [Math.PI / 2, 0, 0]));
+        plateBelt(bucket, L, s * span + s * R * 0.95, R * 0.05, L * 0.02, s, 2, 5, 0.8);
+        hatch(bucket, L, s * span + s * R * 0.96, -R * 0.05, -L * 0.2, s, 0.9);
+        vent(bucket, L, s * span, R * 0.9, -L * 0.3, 0);
+      }
+      // cross-deck: three armoured bridges, a boom, cable runs
+      bucket.put('T', xf(new THREE.BoxGeometry(span * 2.05, R * 0.5, L * 0.2), [0, 0, L * 0.2]));
+      bucket.put('T', xf(new THREE.BoxGeometry(span * 2.0, R * 0.42, L * 0.16), [0, R * 0.1, -L * 0.06]));
+      bucket.put('T', xf(new THREE.BoxGeometry(span * 1.85, R * 0.4, L * 0.14), [0, 0, -L * 0.3]));
+      bucket.put('H', xf(new THREE.BoxGeometry(span * 0.6, R * 1.9, L * 0.34), [0, R * 0.9, L * 0.04]));
+      // bridge island: glass band, lit sill, sensor mast
+      bucket.put('G', xf(new THREE.BoxGeometry(span * 0.52, R * 0.5, L * 0.06), [0, R * 1.7, L * 0.18]));
+      bucket.put('A', xf(new THREE.BoxGeometry(span * 0.62, R * 0.08, L * 0.28), [0, R * 1.75, 0]));
+      sensorArray(bucket, L, 0, R * 2.2, -L * 0.02, 0.18);
+      bucket.put('D', xf(new THREE.BoxGeometry(span * 0.34, R * 0.3, L * 0.5), [0, -R * 0.5, -L * 0.12]));
+      for (const s of [-1, 1]) {
+        pipe(bucket, L, [s * span * 0.5, R * 0.4, L * 0.24], [s * span * 0.95, -R * 0.1, -L * 0.24], 0.006);
+        radiator(bucket, L, s * span * 0.55, R * 0.9, -L * 0.34, s, 3, 0.7);
+        turret(bucket, L, s * span * 0.5, R * 0.75, L * 0.26, 0.9, s * 0.3);
+        missilePod(bucket, L, s * span * 0.6, -R * 0.2, L * 0.1, 4, 0.7);
+        rcsQuad(bucket, L, s * span, R * 0.25, L * 0.12);
+      }
+      greebles(bucket, L, R, rng, 20);
+      hullClutter(bucket, L, R, rng, 10);
+      // propulsion: one bank per hull — the reason a catamaran is fast
+      for (const s of [-1, 1]) {
+        addEngineCluster([
+          [s * span, R * 0.06, -L * 0.48], [s * span * 1.04, -R * 0.35, -L * 0.44],
+        ], R * 0.42, L * 0.08, 0.95);
+      }
+      addVerniers([[-span * 0.6, R * 0.3, -L * 0.2], [span * 0.6, R * 0.3, -L * 0.2]], R * 0.24);
+      addRunningLight(0xff5566, -span, R * 0.4, L * 0.16, L * 0.045);
+      addRunningLight(0x55ff88, span, R * 0.4, L * 0.16, L * 0.045);
+      addRunningLight(0xffffff, 0, R * 2.4, -L * 0.06, L * 0.05);
+      break;
+    }
+
+    /* ------------------------------------------------ flying-wing delta */
+    case 'dart': {
+      const R = L * 0.062;
+      hullR = R;
+      const heavy = def.variant === 'heavy';
+      const span = L * (heavy ? 0.5 : 0.44);
+      hardpoints.push(
+        [-L * 0.16, -R * 0.4, L * 0.06], [L * 0.16, -R * 0.4, L * 0.06],
+        [0, R * 0.5, L * 0.02],
+        [-L * 0.34, -R * 0.3, -L * 0.16], [L * 0.34, -R * 0.3, -L * 0.16],
+      );
+      // one broad lifting body: a thick delta plate, no separate fuselage
+      const plan = new THREE.Shape();
+      plan.moveTo(0, L * 0.5);
+      plan.lineTo(span, -L * 0.24);
+      plan.lineTo(span * 0.84, -L * 0.4);
+      plan.lineTo(-span * 0.84, -L * 0.4);
+      plan.lineTo(-span, -L * 0.24);
+      plan.closePath();
+      bucket.put('H', xf(new THREE.ExtrudeGeometry(plan, {
+        depth: R * 1.15, bevelEnabled: true, bevelThickness: R * 0.4, bevelSize: R * 0.34, bevelSegments: 1,
+      }), [0, R * 0.35, 0], [Math.PI / 2, 0, 0]));
+      // armoured leading edge, spine strake, cockpit blister
+      bucket.put('T', xf(new THREE.BoxGeometry(span * 1.5, R * 0.3, L * 0.16), [0, R * 0.55, L * 0.14]));
+      bucket.put('A', xf(new THREE.BoxGeometry(span * 1.2, R * 0.06, L * 0.03), [0, R * 0.67, L * 0.2]));
+      bucket.put('G', xf(new THREE.SphereGeometry(R * 1.5, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.5), [0, R * 0.5, L * 0.14], [0, 0, 0], [1, 0.42, 1.7]));
+      bucket.put('D', xf(new THREE.BoxGeometry(R * 0.5, R * 0.16, L * 0.05), [0, R * 0.6, -L * 0.02]));
+      // wingtip fins, nav lenses, intake louvres, strake domes
+      for (const s of [-1, 1]) {
+        bucket.put('H', xf(finPlate(L * 0.2, L * 0.1, L * 0.016, L * 0.05), [s * span * 0.8, R * 0.35, -L * 0.3], [0, 0, -s * 0.18]));
+        bucket.put('A', xf(new THREE.BoxGeometry(L * 0.005, L * 0.024, L * 0.06), [s * span * 0.8, R * 0.35 + L * 0.07, -L * 0.3], [0, 0, -s * 0.18]));
+        vent(bucket, L, s * span * 0.54, R * 0.72, L * 0.06, s * 0.4);
+        rcsQuad(bucket, L, s * span * 0.48, R * 0.25, L * 0.2);
+        bucket.put('L', xf(new THREE.SphereGeometry(R * 0.3, 8, 6), [s * span * 0.62, R * 0.7, -L * 0.14]));
+        bucket.put('D', xf(new THREE.BoxGeometry(R * 1.6, R * 0.24, L * 0.14), [s * span * 0.45, R * 0.42, -L * 0.2]));
+      }
+      greebles(bucket, L, R, rng, 16);
+      hullClutter(bucket, L, R, rng, 8);
+      // propulsion: three recessed nozzles buried in the trailing edge
+      addEngineCluster([
+        [0, R * 0.45, -L * 0.4], [-L * 0.12, R * 0.45, -L * 0.39], [L * 0.12, R * 0.45, -L * 0.39],
+      ], R * 0.34, L * 0.06, 0.8);
+      addRunningLight(0xff5566, -span * 0.86, R * 0.3, -L * 0.24, L * 0.05);
+      addRunningLight(0x55ff88, span * 0.86, R * 0.3, -L * 0.24, L * 0.05);
+      addRunningLight(0xffffff, 0, R * 0.7, L * 0.4, L * 0.05);
+      break;
+    }
+
+    /* ------------------------------------- spinal lance (outrigger drive) */
+    case 'lance': {
+      const R = L * 0.062;
+      hullR = R;
+      const heavy = def.variant === 'heavy';
+      hardpoints.push(
+        [0, R * 0.55, L * 0.34],
+        [-L * 0.1, -R * 0.4, L * 0.12], [L * 0.1, -R * 0.4, L * 0.12],
+        [-L * 0.16, R * 0.1, -L * 0.12], [L * 0.16, R * 0.1, -L * 0.12],
+      );
+      // a needle: one long slim spindle, thin at the waist, plated aft
+      bucket.put('H', fuselage(L * 1.08, R, 12, [
+        [0, 0.5], [0.06, 0.72], [0.18, 0.92], [0.38, 1.0], [0.58, 0.98], [0.74, 0.84], [0.88, 0.6], [0.96, 0.3], [1, 0],
+      ], 0.66));
+      // prow: spinal gun housing, muzzle, targeting eye
+      bucket.put('T', xf(new THREE.CylinderGeometry(R * 0.5, R * 0.78, L * 0.24, 10), [0, R * 0.05, L * 0.42], [Math.PI / 2, 0, 0]));
+      bucket.put('D', xf(new THREE.CylinderGeometry(R * 0.26, R * 0.3, L * 0.14, 8), [0, R * 0.05, L * 0.6], [Math.PI / 2, 0, 0]));
+      bucket.put('N', xf(new THREE.CylinderGeometry(R * 0.18, R * 0.2, L * 0.04, 8), [0, R * 0.05, L * 0.68], [Math.PI / 2, 0, 0]));
+      bucket.put('A', xf(new THREE.SphereGeometry(R * 0.16, 8, 6), [0, R * 0.5, L * 0.4]));
+      // engine booms carried amidships — the drives sit forward of the stern
+      for (const s of [-1, 1]) {
+        bucket.put('T', xf(new THREE.CylinderGeometry(R * 0.34, R * 0.4, L * 0.3, 8), [s * R * 1.55, -R * 0.05, L * 0.1], [Math.PI / 2, 0, 0]));
+        bucket.put('D', xf(new THREE.BoxGeometry(R * 0.24, R * 0.5, L * 0.2), [s * R * 0.9, -R * 0.05, L * 0.1]));
+        pipe(bucket, L, [s * R * 0.6, 0, L * 0.24], [s * R * 1.4, 0, L * 0.24], 0.006);
+        plateBelt(bucket, L, s * R * 0.95, R * 0.1, 0, s, 2, 5, 0.75);
+        vent(bucket, L, s * R * 0.8, R * 0.5, -L * 0.08, s * 0.6);
+        rcsQuad(bucket, L, s * R * 0.85, R * 0.15, L * 0.3);
+      }
+      bucket.put('H', xf(finPlate(L * 0.22, L * 0.14, L * 0.02, L * 0.08), [0, R * 0.5, -L * 0.3]));
+      radiator(bucket, L, R * 0.7, R * 0.6, -L * 0.24, 1, 3, 0.7);
+      radiator(bucket, L, -R * 0.7, R * 0.6, -L * 0.24, -1, 3, 0.7);
+      hatch(bucket, L, R * 0.95, -R * 0.1, L * 0.05, 1, 0.8);
+      hatch(bucket, L, -R * 0.95, -R * 0.1, L * 0.05, -1, 0.8);
+      greebles(bucket, L, R, rng, 16);
+      hullClutter(bucket, L, R, rng, 8);
+      // propulsion: two heavy outrigger bells on the booms, one small stern bell
+      addEngineCluster([
+        [-R * 1.55, -R * 0.05, -L * 0.06], [R * 1.55, -R * 0.05, -L * 0.06],
+      ], R * 0.58, L * 0.15, 1.15, heavy);
+      addEngineCluster([[0, 0, -L * 0.55]], R * 0.42, L * 0.09, 0.9);
+      addVerniers([[-R * 0.6, -R * 0.3, L * 0.4], [R * 0.6, -R * 0.3, L * 0.4]], R * 0.2);
+      addRunningLight(0xff5566, -R * 1.8, 0, L * 0.2, L * 0.06);
+      addRunningLight(0x55ff88, R * 1.8, 0, L * 0.2, L * 0.06);
+      addRunningLight(0xffffff, 0, R * 0.6, L * 0.72, L * 0.05);
+      break;
+    }
+
+    /* ------------------------------------ radial-pod industrial (crab) */
+    case 'crab': {
+      const R = L * 0.085;
+      hullR = R;
+      const heavy = def.variant === 'heavy';
+      const podR = L * (heavy ? 0.36 : 0.32);
+      hardpoints.push(
+        [0, R * 0.7, L * 0.3],
+        [-L * 0.2, -R * 0.5, L * 0.1], [L * 0.2, -R * 0.5, L * 0.1],
+        [0, -R * 0.95, -L * 0.28], [0, R * 0.95, -L * 0.28],
+        [-L * 0.28, 0, -L * 0.12], [L * 0.28, 0, -L * 0.12],
+      );
+      // a short central spine with a cutting head forward
+      bucket.put('H', xf(fuselage(L * 0.78, R * 0.72, 12, null, 0.8)));
+      bucket.put('T', xf(new THREE.CylinderGeometry(R * 0.62, R * 0.5, L * 0.1, 12), [0, 0, L * 0.4], [Math.PI / 2, 0, 0]));
+      bucket.put('L', xf(new THREE.TorusGeometry(R * 0.6, R * 0.09, 6, 16), [0, 0, L * 0.45]));
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        bucket.put('D', xf(new THREE.ConeGeometry(R * 0.14, L * 0.05, 6), [Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5, L * 0.48], [Math.PI / 2, 0, 0]));
+      }
+      // four pods on truss arms, each with its own bell, lamp and cradle
+      for (const a of heavy ? [0.55, 1.9, 3.7, 5.05] : [0.62, 2.14, 3.76, 5.28]) {
+        const px = Math.cos(a) * podR;
+        const py = Math.sin(a) * podR;
+        pipe(bucket, L, [Math.cos(a) * R * 0.7, Math.sin(a) * R * 0.7, -L * 0.02], [px, py, -L * 0.02], 0.01, 'T');
+        pipe(bucket, L, [Math.cos(a) * R * 0.7, Math.sin(a) * R * 0.7, L * 0.14], [px, py, L * 0.1], 0.007);
+        bucket.put('H', xf(new THREE.CylinderGeometry(R * 0.5, R * 0.56, L * 0.34, 10), [px, py, 0], [Math.PI / 2, 0, 0]));
+        bucket.put('T', xf(new THREE.TorusGeometry(R * 0.52, R * 0.08, 6, 14), [px, py, L * 0.17]));
+        bucket.put('A', xf(new THREE.SphereGeometry(R * 0.14, 8, 6), [px, py, L * 0.2]));
+        bucket.put('D', xf(new THREE.BoxGeometry(R * 0.5, R * 0.5, L * 0.06), [px, py, -L * 0.17]));
+        addEngineCluster([[px, py, -L * 0.18]], R * 0.34, L * 0.07, 0.85);
+      }
+      radiator(bucket, L, R * 0.9, R * 0.9, -L * 0.2, 1, 3, 0.8);
+      radiator(bucket, L, -R * 0.9, -R * 0.9, -L * 0.2, -1, 3, 0.8);
+      hatch(bucket, L, R * 0.72, 0, L * 0.05, 1, 0.9);
+      hatch(bucket, L, -R * 0.72, 0, L * 0.05, -1, 0.9);
+      greebles(bucket, L, R, rng, 18);
+      hullClutter(bucket, L, R, rng, 10);
+      addVerniers([[-R * 0.6, -R * 0.6, L * 0.2], [R * 0.6, R * 0.6, L * 0.2]], R * 0.2);
+      addRunningLight(0xff5566, -podR, 0, -L * 0.1, L * 0.05);
+      addRunningLight(0x55ff88, podR, 0, -L * 0.1, L * 0.05);
+      addRunningLight(0xffffff, 0, 0, L * 0.5, L * 0.06);
+      break;
+    }
+
+    /* ------------------------------------------- crescent (swept-arc hull) */
+    case 'crescent': {
+      const R = L * 0.088;
+      hullR = R;
+      const heavy = def.variant === 'heavy';
+      const bend = heavy ? 0.1 : 0.15;
+      hardpoints.push(
+        [-L * 0.08, R * 0.5, L * 0.24], [L * 0.14, R * 0.5, L * 0.14],
+        [0, -R * 0.5, L * 0.2], [0, -R * 0.6, -L * 0.16],
+        [L * 0.32, R * 0.3, -L * 0.08], [-L * 0.16, -R * 0.5, -L * 0.28],
+      );
+      // the hull is three spindle segments set along a gentle arc: a crescent
+      const segs = [
+        { t: 0.31, a: 0, r: 0.86 },
+        { t: 0.0, a: bend, r: 1 },
+        { t: -0.31, a: bend * 2.05, r: 0.82 },
+      ];
+      for (const s of segs) {
+        const x = Math.sin(s.a) * L * 0.46;
+        const z = s.t * L;
+        bucket.put('H', xf(fuselage(L * 0.44, R * s.r, 12, null, 0.84), [x, 0, z], [0, s.a, 0]));
+      }
+      // inner fairing fills the concave side; a strake rides the convex edge
+      bucket.put('T', xf(new THREE.BoxGeometry(R * 0.5, R * 0.6, L * 0.5), [L * 0.18, 0, -L * 0.02], [0, bend, 0]));
+      for (let i = 0; i < 3; i++) {
+        bucket.put('T', xf(new THREE.BoxGeometry(R * 0.22, R * 0.3, L * 0.16), [L * (0.3 - i * 0.14), R * 0.05, L * (0.24 - i * 0.24)], [0, bend * 0.8, 0]));
+      }
+      // bow: ram, eye, twin masts; the nose is canted off-axis
+      bucket.put('T', xf(new THREE.ConeGeometry(R * 0.7, L * 0.14, 10), [L * 0.05, 0, L * 0.48], [Math.PI / 2, 0, 0]));
+      bucket.put('A', xf(new THREE.SphereGeometry(R * 0.2, 8, 6), [0, 0, L * 0.5]));
+      antenna(bucket, L, -L * 0.04, R * 0.5, L * 0.2, L * 0.08, true);
+      bucket.put('H', xf(finPlate(L * 0.24, L * 0.13, L * 0.02, L * 0.07), [L * 0.02, R * 0.5, -L * 0.22], [0, bend * 1.6, 0]));
+      // side blisters and detail work
+      for (const s of [-1, 1]) {
+        bucket.put('D', xf(new THREE.SphereGeometry(R * 0.42, 10, 8), [s * R * 0.7, 0, L * (s > 0 ? -0.12 : 0.16)]));
+        vent(bucket, L, s * R * 0.8, R * 0.3, L * (s > 0 ? 0.02 : 0.3), s * 0.5);
+        radiator(bucket, L, s * R * 0.8, R * 0.45, -L * 0.26, s, 3, 0.75);
+        rcsQuad(bucket, L, s * R * 0.85, R * 0.1, L * (s > 0 ? 0.26 : -0.02));
+      }
+      hatch(bucket, L, L * 0.1, -R * 0.6, L * 0.06, 1, 0.9);
+      greebles(bucket, L, R, rng, 18);
+      hullClutter(bucket, L, R, rng, 9);
+      // propulsion: drive pods on the convex side, angled along the arc
+      addEngineCluster([
+        [L * 0.3, -R * 0.35, -L * 0.3], [L * 0.12, R * 0.45, -L * 0.4],
+      ], R * 0.46, L * 0.12, 1.05, heavy);
+      addEngineCluster([[L * 0.42, R * 0.1, -L * 0.14]], R * 0.3, L * 0.08, 0.8);
+      addVerniers([[-L * 0.18, -R * 0.3, L * 0.34], [L * 0.08, -R * 0.5, L * 0.3]], R * 0.22);
+      addRunningLight(0xff5566, -L * 0.16, R * 0.2, L * 0.08, L * 0.05);
+      addRunningLight(0x55ff88, L * 0.46, R * 0.2, -L * 0.1, L * 0.05);
+      addRunningLight(0xffffff, 0, 0, L * 0.56, L * 0.05);
+      break;
+    }
+
+    /* -------------------------------------------------- saucer (dome) */
+    case 'dome': {
+      // the disc is the hull, so its diameter is the ship's length — a saucer
+      // reads at its true size next to a spindle of the same tonnage
+      const R = L * 0.5;
+      hullR = R * 0.72;
+      const heavy = def.variant === 'heavy';
+      // ring of gun mounts: the dorsal shoulders first, then the rim
+      hardpoints.push(
+        [-R * 0.45, R * 0.16, R * 0.2], [R * 0.45, R * 0.16, R * 0.2],
+        [0, R * 0.5, -R * 0.18],
+        [-R * 0.62, R * 0.14, -R * 0.16], [R * 0.62, R * 0.14, -R * 0.16],
+        [0, -R * 0.2, R * 0.62], [0, -R * 0.2, -R * 0.62],
+      );
+      // a wide flat disc: hull plate, armoured rim, dorsal dome, ventral boss
+      bucket.put('H', xf(new THREE.CylinderGeometry(R, R * 0.86, R * 0.28, 26), [0, 0, 0]));
+      bucket.put('T', xf(new THREE.TorusGeometry(R * 0.99, R * 0.07, 6, 30), [0, 0, 0]));
+      bucket.put('H', xf(new THREE.SphereGeometry(R * 0.52, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), [0, R * 0.12, 0]));
+      bucket.put('G', xf(new THREE.CylinderGeometry(R * 0.34, R * 0.36, R * 0.14, 18), [0, R * 0.38, 0]));
+      bucket.put('D', xf(new THREE.CylinderGeometry(R * 0.3, R * 0.44, R * 0.24, 12), [0, -R * 0.2, 0]));
+      sensorArray(bucket, L, 0, R * 0.48, -R * 0.14, 0.16);
+      // lit window ring on the rim, rim turrets, intake louvres forward
+      for (let i = 0; i < 22; i++) {
+        const a = (i / 22) * Math.PI * 2;
+        bucket.put('A', xf(new THREE.BoxGeometry(R * 0.16, R * 0.06, R * 0.03), [Math.cos(a) * R * 0.98, 0, Math.sin(a) * R * 0.98], [0, -a, 0]));
+      }
+      for (const a of [0.5, 2.2, 3.9, 5.6]) {
+        turret(bucket, L, Math.cos(a) * R * 0.78, R * 0.16, Math.sin(a) * R * 0.78, 0.9, -a);
+      }
+      for (const a of [1.1, 1.9]) {
+        vent(bucket, L, Math.cos(a) * R * 0.7, R * 0.16, Math.sin(-a) * R * 0.7, 0);
+      }
+      for (const s of [-1, 1]) {
+        bucket.put('D', xf(new THREE.BoxGeometry(R * 0.5, R * 0.2, R * 0.5), [s * R * 0.55, -R * 0.2, 0]));
+        hatch(bucket, L, s * R * 0.9, 0, 0, s, 1.2);
+      }
+      greebles(bucket, L, R * 0.7, rng, 20);
+      hullClutter(bucket, L, R * 0.7, rng, 10);
+      // propulsion: a ring of bells around the aft rim, plus one central drive
+      for (const a of [Math.PI * 1.14, Math.PI * 1.36, Math.PI * 1.64, Math.PI * 1.86]) {
+        addEngineCluster([[Math.cos(a) * R * 0.74, -R * 0.08, Math.sin(a) * R * 0.74]], R * 0.2, L * 0.05, 0.7);
+      }
+      addEngineCluster([[0, -R * 0.16, -R * 0.3]], R * 0.42, L * 0.08, 1.15, heavy);
+      addVerniers([[0, R * 0.2, -R * 0.9], [0, R * 0.2, R * 0.9]], R * 0.16);
+      addRunningLight(0xff5566, -R * 1.05, 0, 0, L * 0.05);
+      addRunningLight(0x55ff88, R * 1.05, 0, 0, L * 0.05);
+      addRunningLight(0xffffff, 0, R * 0.5, 0, L * 0.06);
+      break;
+    }
+
+    /* ---------------------------------------------- monolith (obelisk) */
+    case 'obelisk': {
+      const R = L * 0.1;
+      hullR = R;
+      const heavy = def.variant === 'heavy';
+      const decks = heavy ? 4 : 3;
+      hardpoints.push(
+        [0, R * (0.5 + decks * 0.5), L * 0.36],
+        [-R * 1.05, R * 0.5, L * 0.2], [R * 1.05, R * 0.5, L * 0.2],
+        [-R * 1.1, R * 0.1, -L * 0.06], [R * 1.1, R * 0.1, -L * 0.06],
+        [0, -R * 0.95, L * 0.1],
+        [-R * 1.0, R * 0.45, -L * 0.3], [R * 1.0, R * 0.45, -L * 0.3],
+        [0, R * (0.5 + decks * 0.5), -L * 0.2], [0, -R * 0.9, -L * 0.32],
+      );
+      // a monolith: stacked armour decks rising from a wide keel box
+      bucket.put('H', xf(new THREE.BoxGeometry(R * 1.9, R * 0.6, L * 0.84), [0, 0, -L * 0.02]));
+      for (let i = 0; i < decks; i++) {
+        const w = R * (1.6 - i * 0.22);
+        const h = R * (0.5 - i * 0.05);
+        bucket.put(i === decks - 1 ? 'H' : 'T', xf(new THREE.BoxGeometry(w, h, L * (0.74 - i * 0.09)), [0, R * (0.3 + i * 0.5), L * 0.02 + i * L * 0.01]));
+        // lit window rows along each deck
+        for (const s of [-1, 1]) {
+          windowBand(bucket, L, s * w * 0.5, R * (0.3 + i * 0.5), L * (0.1 - i * 0.06), s > 0 ? 0 : Math.PI, 4, L * 0.07);
+        }
+      }
+      // prow: a squared wedge shoved through the deck stack, with a ram face
+      bucket.put('H', xf(new THREE.ConeGeometry(R * 1.15, L * 0.24, 4), [0, R * 0.2, L * 0.46], [Math.PI / 2, 0, Math.PI * 0.25]));
+      bucket.put('T', xf(new THREE.BoxGeometry(R * 0.9, R * 0.5, L * 0.06), [0, R * 0.2, L * 0.56]));
+      bucket.put('A', xf(new THREE.BoxGeometry(R * 0.8, R * 0.06, L * 0.02), [0, R * 0.42, L * 0.56]));
+      // fortress stern: casemate block, hangar mouth, gantry cranes
+      bucket.put('T', xf(new THREE.BoxGeometry(R * 1.7, R * 0.9, L * 0.16), [0, R * 0.4, -L * 0.46]));
+      bucket.put('D', xf(new THREE.BoxGeometry(R * 0.9, R * 0.34, L * 0.05), [0, -R * 0.1, -L * 0.52]));
+      bucket.put('A', xf(new THREE.BoxGeometry(R * 0.84, R * 0.05, L * 0.02), [0, -R * 0.28, -L * 0.52]));
+      for (const s of [-1, 1]) {
+        pipe(bucket, L, [s * R * 1.4, R * 0.6, -L * 0.3], [s * R * 0.7, R * 0.9, -L * 0.42], 0.008);
+        plateBelt(bucket, L, s * R * 1.42, R * 0.05, L * 0.02, s, 3, 6, 1.05, 'T');
+        radiator(bucket, L, s * R * 1.5, R * 0.55, -L * 0.12, s, 4, 1.1);
+        turret(bucket, L, s * R * 0.85, R * 0.62, L * 0.3, 1.2, s * 0.35);
+        turret(bucket, L, s * R * 0.8, R * 1.05, -L * 0.08, 1.1, s * 0.2);
+        hatch(bucket, L, s * R * 1.9, -R * 0.05, -L * 0.02, s, 1.3);
+        missilePod(bucket, L, s * R * 0.95, R * 0.62, -L * 0.22, 8, 1.15);
+        rcsQuad(bucket, L, s * R * 1.6, R * 0.15, L * 0.2);
+      }
+      sensorArray(bucket, L, 0, R * (0.5 + decks * 0.5), -L * 0.14, 0.22);
+      greebles(bucket, L, R, rng, 30);
+      hullClutter(bucket, L, R, rng, 14);
+      // propulsion: one fortress bell astern, two great outrigger drives
+      addEngineCluster([[0, R * 0.15, -L * 0.5]], R * 0.62, L * 0.13, 1.25, heavy);
+      addEngineCluster([
+        [-R * 1.05, -R * 0.2, -L * 0.46], [R * 1.05, -R * 0.2, -L * 0.46],
+      ], R * 0.42, L * 0.1, 1.05);
+      addVerniers([[0, R * 0.7, -L * 0.42], [-R * 1.35, R * 0.3, L * 0.1], [R * 1.35, R * 0.3, L * 0.1]], R * 0.26);
+      addRunningLight(0xff5566, -R * 1.95, R * 0.1, L * 0.05, L * 0.055);
+      addRunningLight(0x55ff88, R * 1.95, R * 0.1, L * 0.05, L * 0.055);
+      addRunningLight(0xffffff, 0, R * 0.2, L * 0.6, L * 0.05);
       break;
     }
   }
