@@ -37,13 +37,23 @@ import { el, btn, clear } from '../ui/dom.js';
 
 const SCALE = 460;            // the orb every count on the field is tuned against
 // The circuit's orbs, widest first. Bracket intensity picks one: the tighter
-// the orb, the more of the field is in someone's way.
+// the orb, the more of the field is in someone's way. They are big worlds on
+// purpose — a wide orb and a high chase rig are what let a pilot see a rival
+// coming, and a fight you can see coming is a fight you can fly.
 const ORBS = [
-  { name: 'THE PLAIN', r: 820, note: 'a wide one — long runs, clear shots' },
-  { name: 'BASIN', r: 700, note: 'steady ground and room to turn' },
-  { name: 'MARBLE', r: 580, note: 'no long shots left on this one' },
-  { name: 'PEBBLE', r: 460, note: 'tight — the horizon is always in the way' },
+  { name: 'THE PLAIN', r: 2100, note: 'a wide one — long runs, clear shots' },
+  { name: 'BASIN', r: 1750, note: 'steady ground and room to turn' },
+  { name: 'MARBLE', r: 1450, note: 'no long shots left on this one' },
+  { name: 'PEBBLE', r: 1200, note: 'tight — the horizon is always in the way' },
 ];
+// How far behind and above the hull the rig rides, and how far ahead it aims.
+const CAM_BACK = 120;
+const CAM_UP = 130;
+const CAM_LOOK = 90;
+// The sim normalises every hull to the same length so a freighter reads like a
+// freighter; this is that length, sized so a rival is a shape rather than a dot
+// at the ranges this field is fought over.
+const HULL_LEN = 30;
 const PLAYER_COLOR = 0x6effa8;
 const AI_COLORS = [0xff6b7a, 0xffb45c, 0x8fd0ff, 0xc792ff];
 const CRYSTAL_COLOR = 0x5cffd8;
@@ -202,8 +212,12 @@ export class VectorChallenge {
     this.tier = challengeTier(state, intensity);
     this.orb = orbForTier(this.tier);
     this.orbR = this.orb.r;
-    // how much furniture the field carries, relative to the tuned-up orb
-    this.density = this.orbR / SCALE;
+    // Counts follow the orb, but not as fast as its area grows: a wide orb is
+    // meant to feel open, and open is what makes a fight readable at range.
+    this.density = Math.pow(this.orbR / SCALE, 0.7);
+    // Firing and circling ranges are tuned on an 820 orb; on a bigger world they
+    // have to reach further, or the sim fights in the same little patch of it.
+    this.reach = this.orbR / 820;
 
     this.match = null;
     this.pilots = [];
@@ -346,7 +360,7 @@ export class VectorChallenge {
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, alpha: false, stencil: false });
     this.renderer.setClearColor(0x020408);
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(60, 1, 1, 12000);
+    this.camera = new THREE.PerspectiveCamera(60, 1, 1, 30000);
     this.camera.position.set(0, 60, -140);
     this.camera.up.set(0, 1, 0);
 
@@ -357,7 +371,7 @@ export class VectorChallenge {
       const a = this.rng.float(0, 1) * Math.PI * 2;
       const y = this.rng.float(-1, 1);
       const r = Math.sqrt(Math.max(0, 1 - y * y));
-      const d = 3000 + this.rng.float(0, 1) * 2600;
+      const d = 9000 + this.rng.float(0, 1) * 8000;
       starPos[i * 3] = Math.cos(a) * r * d;
       starPos[i * 3 + 1] = y * d;
       starPos[i * 3 + 2] = Math.sin(a) * r * d;
@@ -499,6 +513,16 @@ export class VectorChallenge {
     out.copy(this._s4).addScaledVector(u, -this._s4.dot(u));
     if (out.lengthSq() < 1e-9) out.copy(this._s3.crossVectors(u, this._s4.set(0, 1, 0)));
     return out.normalize();
+  }
+
+  /** A random direction within `maxArc` of another — a spot on the same patch. */
+  _scatterNear(centre, maxArc, out) {
+    const dir = this._randomHeading(centre, this._w1);
+    out.copy(centre);
+    // square root keeps the spread even across the patch rather than crowded
+    // around the middle of it
+    this._advance(out, dir, Math.sqrt(this.rng.float(0, 1)) * maxArc);
+    return out;
   }
 
   /** A direction `dist` ahead of a hull — where its nose is pointing. */
@@ -950,7 +974,7 @@ export class VectorChallenge {
       : { weapons: def.defaultWeapons || ['pulse', null] };
     const { group, api } = buildShip(def, { accent: color, isPlayer, loadout });
     vectorize(group, color);
-    const s = clamp(26 / Math.max(14, def.len), 0.3, 1.5);
+    const s = clamp(HULL_LEN / Math.max(14, def.len), 0.3, 1.5);
     group.scale.setScalar(s);
     // how much room the hull needs beside a wall, so it is pushed clear of the
     // face rather than parked inside it
@@ -963,9 +987,17 @@ export class VectorChallenge {
 
     const mounts = this._mountsFor(isPlayer, def);
     const u = new THREE.Vector3();
+    // Rivals open the match within reach of the commander rather than anywhere
+    // on the orb: on a world this size, a rival on the far side is a rival you
+    // spend a minute flying to.
+    const anchor = i > 0 && this.pilots[0] ? this.pilots[0].u : null;
+    const spread = this.orbR * 0.45;
     for (let tries = 0; tries < 60; tries++) {
-      this._scatter(u);
-      if (this._clearOfWalls(u, collideR + 6)) break;
+      if (anchor) this._scatterNear(anchor, spread, u);
+      else this._scatter(u);
+      if (!this._clearOfWalls(u, collideR + 6)) continue;
+      if (this.pilots.some((q) => this._arc(q.u, u) < 380)) continue;
+      break;
     }
     return {
       name: isPlayer ? this.commander : this.rng.pick(CALLSIGNS),
@@ -1005,7 +1037,11 @@ export class VectorChallenge {
 
     this._buildPickups();
 
-    // the crystal field for the harvest
+    // the crystal field for the harvest. On a world this size the field is a
+    // patch of it rather than the whole surface — eight crystals scattered over
+    // a planet is not a race, it is a search — and it is centred on where the
+    // pilots start, so the race is on from the first second.
+    this.field = { u: this.pilots[0].u.clone(), r: this.orbR * 0.42 };
     this.crystals = [];
     const cryGeo = new THREE.OctahedronGeometry(5);
     const cryWire = new THREE.EdgesGeometry(cryGeo);
@@ -1014,11 +1050,10 @@ export class VectorChallenge {
     });
     for (let i = 0, seeds = Math.max(8, Math.round(8 * this.density)); i < seeds; i++) {
       const c = {
-        u: new THREE.Vector3(),
+        u: this._scatterNear(this.field.u, this.field.r, new THREE.Vector3()),
         phase: this.rng.float(0, 1) * 10,
         alive: true,
       };
-      this._scatter(c.u);
       const g = new THREE.Group();
       const m = new THREE.Mesh(cryGeo, new THREE.MeshBasicMaterial({
         color: 0x08382e, transparent: true, opacity: 0.7, depthWrite: false,
@@ -1272,13 +1307,19 @@ export class VectorChallenge {
         // pull the trigger, so it lines up whenever the gun is close to ready
         // and only circles while it reloads.
         const lining = p.fireCd < 0.8;
-        if (!lining && d < 190) {
+        if (!lining && d < 190 * this.reach) {
           targetAngle = aim + p.strafeDir * 1.15;
-          wantSpeed = d < 110 ? 60 : 175;
-        } else if (d < 90) {
+          wantSpeed = d < 110 * this.reach ? 60 : 175;
+        } else if (d < 90 * this.reach) {
           wantSpeed = 60;
+        } else {
+          // Out of the knife range it runs the target down at full throttle. On
+          // an orb this wide, a rival ambling along at cruising speed just
+          // watches the fight leave without it.
+          wantSpeed = 250;
         }
-        if (d < 320 && Math.abs(aim) < this._aimTol(d) && p.fireCd <= 0) wantFire = true;
+        // the field is bigger, so the gun's reach is measured in field-widths
+        if (d < 320 * this.reach && Math.abs(aim) < this._aimTol(d) && p.fireCd <= 0) wantFire = true;
       }
     } else {
       // harvest: the crystal is the job; the gun is for the pilot in the way
@@ -1294,7 +1335,7 @@ export class VectorChallenge {
       if (player.alive) {
         const d = this._arc(p.u, player.u);
         const aim = this._bearing(p.u, p.fwd, player.u);
-        if (d < 260 && Math.abs(aim) < this._aimTol(d) && p.fireCd <= 0) wantFire = true;
+        if (d < 260 * this.reach && Math.abs(aim) < this._aimTol(d) && p.fireCd <= 0) wantFire = true;
       }
     }
 
@@ -1310,7 +1351,7 @@ export class VectorChallenge {
 
   /** How far off the nose can be and still land a shot at this range. */
   _aimTol(d) {
-    return Math.max(0.05, Math.min(0.35, Math.atan(16 / Math.max(16, d))));
+    return Math.max(0.05, Math.min(0.35, Math.atan((16 * this.reach) / Math.max(16 * this.reach, d))));
   }
 
   _nearest(p, list) {
@@ -1544,25 +1585,31 @@ export class VectorChallenge {
         }
       }
     }
-    // the field reseeds itself — the field of play is the whole orb, so there
-    // is always somewhere else for the next one
+    // the field reseeds itself — always somewhere else in the same patch, so
+    // the race stays a race
     const empty = this.crystals.filter((c) => !c.alive).length;
     for (let i = 0; i < empty; i++) {
       const c = this.crystals.find((cc) => !cc.alive);
       if (!c) break;
-      this._scatter(c.u);
+      this._scatterNear(this.field.u, this.field.r, c.u);
       this._seat(c.group, c.u);
       c.alive = true;
       c.group.visible = true;
     }
   }
 
-  /** Drop a crystal a short hop away from where a hull came apart. */
+  /** Drop a crystal a short hop from where a hull came apart. */
   _placeCrystalAt(u) {
     const c = this.crystals.find((cc) => !cc.alive);
     if (!c) return;
-    c.u.copy(u);
-    this._advance(c.u, this._randomHeading(u, this._w1), this.rng.float(-1, 1) * 30);
+    // a short hop from where it fell, unless that is outside the field — a
+    // crystal nobody can reach is a crystal nobody can race for
+    if (this._arc(this.field.u, u) < this.field.r) {
+      c.u.copy(u);
+      this._advance(c.u, this._randomHeading(u, this._w1), this.rng.float(-1, 1) * 30);
+    } else {
+      this._scatterNear(this.field.u, this.field.r, c.u);
+    }
     this._seat(c.group, c.u);
     c.alive = true;
     c.group.visible = true;
@@ -1646,15 +1693,16 @@ export class VectorChallenge {
       const p = this.pilots[0];
       if (p) {
         const h = this.groundAt(p.u) + p.y;
-        // over the shoulder, standing on the local vertical: on a small orb
-        // that means the horizon leans with you all the way round
-        const pos = this._pointAt(p.u, h + 52, this._w1)
-          .addScaledVector(p.fwd, -78);
+        // over the shoulder but well up off the deck: standing high on the
+        // local vertical is what buys the long view, and on an orb the horizon
+        // is only ever as far away as the rig is tall
+        const pos = this._pointAt(p.u, h + CAM_UP, this._w1)
+          .addScaledVector(p.fwd, -CAM_BACK);
         const k = 1 - Math.pow(0.0025, dt);
         this.camera.position.lerp(pos, k);
         this.camera.up.copy(p.u);
-        this._ahead(p.u, p.fwd, 44, this._w2);
-        this._pointAt(this._w2, this.groundAt(this._w2) + p.y + 10, this._w3);
+        this._ahead(p.u, p.fwd, CAM_LOOK, this._w2);
+        this._pointAt(this._w2, this.groundAt(this._w2) + p.y + 14, this._w3);
         this.camera.lookAt(this._w3);
       }
     } else {
