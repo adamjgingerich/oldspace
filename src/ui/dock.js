@@ -29,6 +29,7 @@ import { backgroundOf, driveOf } from '../game/character.js';
 import { LUMEN_REFUEL_COST, REPAIR_COST_PER_HP, WORMHOLE_LICENCE_COST } from '../game/game.js';
 import { holeInSystem } from '../game/wormholes.js';
 import { EXPEDITION_MIN_LEVEL } from '../game/expeditions.js';
+import { challengeTier, orbForTier } from '../game/vector.js';
 
 /** Human-readable names for outfit stat keys. */
 const STAT_LABELS = {
@@ -1081,6 +1082,9 @@ export class DockUI {
     const { state, actions } = this.ctx;
     const rec = state.vector || { played: 0, wins: 0, best: 0, champion: null };
     const shipDef = SHIP_BY_ID[state.shipId] || SHIP_BY_ID.wayfarer;
+    // what the rig will set up for this commander, and on which orb
+    const tier = challengeTier(state);
+    const orb = orbForTier(tier);
     this.body.append(el('div', { class: 'panel' }, [
       el('h2', { text: 'The Vector Challenge' }),
       el('p', { class: 'note', text: 'Every port with a bar keeps a holo-sim rig older than half the hulls outside — wire and phosphor, three pilots to a field, the way the old hands ran it before the charts were honest. The sim reads your registry and flies the ship you are sitting in right now.' }),
@@ -1090,12 +1094,16 @@ export class DockUI {
           el('p', { text: `${shipDef.name} (${shipDef.cls}) — flown as it sits in the bay, guns and all.` }),
         ]),
         el('div', { class: 'svc' }, [
+          el('h4', { text: 'The orb' }),
+          el('p', { text: `${orb.name} — ${orb.note}. Fine work earns a tighter rock: bracket ${tier} of 8, and the rig fits its own pilots to match yours.` }),
+        ]),
+        el('div', { class: 'svc' }, [
           el('h4', { text: 'Circuit record' }),
           el('p', { text: `${rec.played || 0} matches · ${rec.wins || 0} wins · best score ${rec.best || 0}${rec.champion ? ` · champion: ${rec.champion}` : ''}` }),
         ]),
       ]),
       el('h3', { text: 'Enter the field' }),
-      el('p', { class: 'note', text: 'A duel settles the old question — last pilot flying. The harvest is ninety seconds over the crystal field, most crystals when the clock runs out. W and S thrust, A and D yaw, SPACE fires. The field runs modern: hills, walls and launch ramps — cross a ramp fast and it throws you clean over the walls — and item pads hand out drive bursts, rapid fire and shields.' }),
+      el('p', { class: 'note', text: 'A duel settles the old question — last pilot flying. The harvest is ninety seconds over the crystal field, most crystals when the clock runs out. W and S thrust, A and D yaw, SPACE fires. The field is a whole orb: there is no edge to fall off and nowhere to run, because flying far enough brings you back to where you started. It runs modern — hills, walls and launch ramps, and cross a ramp fast and it throws you clean over the walls — with item pads for drive bursts, rapid fire and shields. Your guns are the ones in your bay, mount for mount.' }),
       el('div', { style: 'display:flex;gap:10px;flex-wrap:wrap' }, [
         btn('Duel — last pilot flying', () => actions.startVectorChallenge('duel'), 'btn primary'),
         btn('Harvest — the crystal field', () => actions.startVectorChallenge('harvest'), 'btn primary'),

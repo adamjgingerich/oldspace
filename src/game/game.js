@@ -2008,7 +2008,7 @@ export class Game {
   /* ------------------------------------------------------------------ */
 
   /** Open the rig. From a dock tab, `mode` starts a match at once. */
-  openVectorChallenge(mode = null) {
+  openVectorChallenge(mode = null, intensity = null) {
     if (this.mode === 'challenge' || !this.state) return;
     this._preChallengeMode = this.mode;
     this.mode = 'challenge';
@@ -2019,6 +2019,8 @@ export class Game {
       host,
       state: this.state,
       autoMode: mode,
+      // left out, the rig reads the bracket off the commander's own standing
+      intensity,
       onFinish: (result) => this._finishVectorChallenge(result),
       onQuit: () => this.closeVectorChallenge(),
     });
