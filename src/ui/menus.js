@@ -4,8 +4,10 @@ import { el, clear, btn } from './dom.js';
 import { listSlots, latestSlot, deleteSlot } from '../game/saves.js';
 import { SYSTEMS } from '../data/systems.js';
 import { fmtCredits, fmtPlaytime, fmtDate, escapeHtml } from '../core/util.js';
-import { GAME_TITLE_HTML, GAME_SUBTITLE, GAME_TAGLINE } from '../data/branding.js';
+import { GAME_TITLE_HTML, GAME_SUBTITLE } from '../data/branding.js';
+import { randomQuote } from '../data/quotes.js';
 import { BACKGROUNDS, DRIVES, describePerks } from '../game/character.js';
+import { FACTIONS, FACTION_IDS, STARTING_SWEAR_REP } from '../data/factions.js';
 import { binds, codeLabel } from '../core/keybinds.js';
 
 export class Menus {
@@ -67,7 +69,7 @@ export class Menus {
       el('div', { class: 'title-holder' }, [
         el('div', { class: 'logo', html: GAME_TITLE_HTML }),
         el('div', { class: 'sub', text: GAME_SUBTITLE }),
-        el('div', { class: 'tagline', text: GAME_TAGLINE }),
+        el('div', { class: 'tagline', text: randomQuote(), title: 'A new line every time the title screen is drawn.' }),
         menu,
         el('div', { class: 'menu-note', html: `15 adventure slots · saved in your browser · <span class="key">${codeLabel(binds.get('thrust'))}</span> to burn · corner keyboard button rebinds` }),
       ]),
@@ -89,6 +91,7 @@ export class Menus {
     let name = 'Commander';
     let backgroundId = BACKGROUNDS[0].id;
     let driveId = DRIVES[0].id;
+    let factionId = null;
     let step = 0;
 
     const body = el('div');
@@ -174,10 +177,57 @@ export class Menus {
       return grid;
     };
 
+    /**
+     * The colours step: one card per flag, plus the option to sail unsworn.
+     * Everything a card promises — standing, rivals, an open tree — is granted
+     * by startingOath() in game/character.js.
+     */
+    const factionGrid = () => {
+      const grid = el('div', { class: 'pick-grid' });
+      const cards = [];
+      const option = (id) => {
+        const f = id ? FACTIONS[id] : null;
+        const rivals = f?.opposes ? FACTIONS[f.opposes] : null;
+        const homes = f ? f.home.slice(0, 3).map((h) => SYSTEMS[h]?.name).filter(Boolean).join(' · ') : '';
+        const tip = f
+          ? [`Fly the colours of ${f.name}`, '', f.creed, '', `Home ground: ${f.home.map((h) => SYSTEMS[h]?.name).join(', ')}`,
+            `Starts you at +${STARTING_SWEAR_REP} standing with them`, rivals ? `and −15 with ${rivals.name}` : 'and on good terms with every flag',
+            '', 'Their skill tree opens from the first bell, and their stations post their own work to you.'].join('\n')
+          : ['Fly no colours', '', 'An unsworn transponder: every desk will deal with you, and no flag keeps your secrets.',
+            'You see whatever any station is willing to publish, and no tree of any flag opens until you swear.',
+            'You can swear later at any flag\'s station — 40 standing is the asking price — or buy introductions from a broker.'].join('\n');
+        const card = el('div', {
+          class: `card pick faction ${(id || null) === factionId ? 'sel' : ''}`,
+          style: f ? `--fcol: ${f.color}` : '--fcol: #9fb0c6',
+          title: tip,
+        }, [
+          el('h4', {}, [
+            f ? f.name : 'No colours',
+            el('span', { class: 'h4tag', text: f ? `+${STARTING_SWEAR_REP} standing` : 'unsworn' }),
+          ]),
+          el('div', { class: 'cdesc', text: f ? f.creed : 'You keep your own counsel and your own registry. Every flag deals with you; none of them claims you.' }),
+          f ? el('div', { class: 'cstats', text: `Home: ${homes}` }) : el('div', { class: 'cstats', text: 'Opens: every desk in the Reach — briefly' }),
+          el('div', { class: 'cstats', text: rivals ? `Rivals: ${rivals.name}` : (f ? 'Rivals: none — the ports trade with everyone' : 'Later: swear at 40 standing, or buy introductions') }),
+          el('div', {
+            class: 'cstats leans',
+            text: f ? 'Their own desks and skill tree open at once.' : 'Renounce or defect later if you change your mind.',
+          }),
+        ]);
+        card.addEventListener('click', () => {
+          factionId = id;
+          for (const c of cards) c.classList.toggle('sel', c === card);
+        });
+        cards.push(card);
+        return card;
+      };
+      grid.append(option(null));
+      for (const id of FACTION_IDS) grid.append(option(id));
+      return grid;
+    };
+
     const render = () => {
       clear(body);
-      if (step === 0) {
-        const input = el('input', { type: 'text', maxlength: '24', value: name, spellcheck: 'false' });
+      if (step === 0) {        const input = el('input', { type: 'text', maxlength: '24', value: name, spellcheck: 'false' });
         const next = () => {
           name = (input.value || 'Commander').trim().slice(0, 24) || 'Commander';
           step = 1;
@@ -211,14 +261,25 @@ export class Menus {
         );
         return;
       }
+      if (step === 2) {
+        body.append(
+          el('p', { class: 'note', text: 'Whose colours do you fly? Swearing sets your standing with that flag and its rivals, opens their skill tree from the first bell, and decides whose desks post work to you. You are never stuck with it: renounce at any station, defect at a rival\'s desk, or buy clean papers from a broker later.' }),
+          factionGrid(),
+          el('div', { class: 'modal-actions' }, [
+            btn('Back', () => { step = 1; render(); }, 'btn ghost'),
+            btn('Continue', () => { step = 3; render(); }, 'btn primary'),
+          ]),
+        );
+        return;
+      }
       body.append(
         el('p', { class: 'note', text: 'Why do you still fly? One private reason, filed under your own name. Hover a card for the full story.' }),
         pickGrid(DRIVES, driveId, (id) => { driveId = id; }),
         el('div', { class: 'modal-actions' }, [
-          btn('Back', () => { step = 1; render(); }, 'btn ghost'),
+          btn('Back', () => { step = 2; render(); }, 'btn ghost'),
           btn('Begin the log', () => {
             this.closeModal();
-            onStart(name, backgroundId, driveId);
+            onStart(name, backgroundId, driveId, factionId);
           }, 'btn primary'),
         ]),
       );

@@ -4,6 +4,7 @@
 // richer work as the commander's renown grows.
 
 import { SYSTEMS } from '../data/systems.js';
+import { FACTIONS, isFaction } from '../data/factions.js';
 import { COMMODITY_BY_ID } from '../data/commodities.js';
 import { PIRATE_FIRST, PIRATE_EPITHET } from '../data/names.js';
 import { SHIP_BY_ID } from '../data/ships.js';
@@ -128,6 +129,21 @@ const BIG_MARK_HULL = 1100;
 /** Capital marks pay a hull tithe on top of the contract fee. */
 const HULL_TITHE = 0.07;
 
+/** The grain price — the yardstick premium cargo is measured against. */
+const DELIVERY_STANDARD_BASE = 61;
+
+/**
+ * How much of a commodity a delivery asks you to haul. Premium cargo rides as
+ * a small, valuable consignment rather than a hold full of it, so the manifest
+ * value — and therefore the fee — stays in the same band whatever the goods.
+ * One case of the good vintage is a fortune; ten are a fleet.
+ */
+function deliveryQty(rng, c, tier) {
+  const qty = rng.int(4, 8 + tier * 2);
+  const norm = Math.max(1, Math.round((qty * DELIVERY_STANDARD_BASE) / Math.max(1, c.base)));
+  return Math.min(qty, norm);
+}
+
 /** Legendary vault loot — graded so every era of pilot has a relic to chase. */
 const LEGENDARIES = [...WEAPONS, ...OUTFITS].filter((d) => d.legend);
 /** Job types that can pick up a complication, and which complications fit. */
@@ -230,10 +246,248 @@ function reachableFrom(sysId, maxHops = 2) {
   return out;
 }
 
+/* ------------------------------------------------------------------ */
+/* Faction work                                                        */
+/* ------------------------------------------------------------------ */
+
+/** Job types every desk will hand to any captain, whatever colours they fly. */
+const NEUTRAL_TYPES = ['delivery', 'courier', 'survey'];
+
+/**
+ * What each flag's own desks keep for their own captains. Every entry is one of
+ * the ordinary contract types with the flag's own voice on it, so the guide, the
+ * board, completion and pay all behave exactly as they always have.
+ */
+export const FACTION_WORK = {
+  free: [
+    {
+      key: 'lane', type: 'sweep', foe: 'pirate', rep: 5, days: 4,
+      title: 'Keep the {dest} lane open',
+      desc: 'Raiders have been picking at the {dest} approaches and the harbour board is tired of paying for new hulls. Put {kills} of them down and the ports will remember your name.',
+    },
+    {
+      key: 'bond', type: 'courier', rep: 4, days: 3,
+      title: 'Bearer paper to {dest}',
+      desc: 'A sealed case, countersigned at both ends, and a desk at {dest} that opens for nobody but the bearer. No questions are asked on this run, and none are answered.',
+    },
+    {
+      key: 'depot', type: 'delivery', rep: 3, days: 4,
+      title: 'Standing order — {dest}',
+      desc: 'The ports keep each other fed because somebody carries the difference. {qty} × {commodity} is on the depot floor and {dest} is short.',
+    },
+  ],
+  combine: [
+    {
+      key: 'manifest', type: 'delivery', rep: 4, days: 3,
+      title: 'Manifest to {dest}',
+      desc: 'A Combine freight order, filed in triplicate and priced to the minute. {qty} × {commodity}, landed on schedule — the auditors read the arrival stamp, not the story.',
+    },
+    {
+      key: 'tariff', type: 'sweep', foe: 'pirate', rep: 5, days: 4,
+      title: 'Tariff enforcement — {dest}',
+      desc: 'Every hull taken off the {dest} lane is a tariff the Combine never collects. Clear {kills} raiders out of it and the subsidy clears the same day.',
+    },
+    {
+      key: 'ledger', type: 'recovery', rep: 5, days: 5,
+      title: 'Recover the ledger — {dest}',
+      desc: "A bonded courier went down on the {dest} approach with the season's ledgers aboard. Bring back {need} recorder pods and the consortium will owe you a favour it can actually pay.",
+    },
+  ],
+  vigil: [
+    {
+      key: 'warrant', type: 'bounty', foe: 'pirate', rep: 6, days: 5,
+      title: 'Warrant: {name}',
+      desc: '{name} is named on enough counts to fill a drawer and has been seen on the {dest} lanes. The Watch wants the warrant executed, not negotiated. Fly there and end it.',
+    },
+    {
+      key: 'patrol', type: 'sweep', foe: 'pirate', rep: 5, days: 4,
+      title: 'Patrol sweep — {dest}',
+      desc: 'The Watch is a hull short on the {dest} station and the raiders have noticed. Break {kills} of them and the log will show the lane held.',
+    },
+    {
+      key: 'inquiry', type: 'recovery', rep: 5, days: 5,
+      title: 'Board of inquiry — {dest}',
+      desc: 'A hull is missing on the {dest} approach and the board wants the recorder before the insurance men do. Recover {need} pods and bring them home.',
+    },
+  ],
+  reaver: [
+    {
+      key: 'silence', type: 'bounty', foe: 'vigil', rep: 6, days: 5,
+      title: 'Silence {name} of the Vigil',
+      desc: '{name} has been working the {dest} lanes with a warrant book and a very smug look. The Clans want the lane quiet and the example loud.',
+    },
+    {
+      key: 'break', type: 'sweep', foe: 'navy', rep: 6, days: 4,
+      title: 'Break the {dest} patrol',
+      desc: 'The Vigil keeps a picket on the {dest} lane because it thinks that makes the lane theirs. Break {kills} patrols and the Clans will hear of it before the Watch does.',
+    },
+    {
+      key: 'fence', type: 'delivery', rep: 4, days: 4,
+      title: 'Move the haul — {dest}',
+      desc: "Last week's takings need a hull nobody logs. {qty} × {commodity} rides with you, and {dest} pays in coin with no names on it.",
+    },
+  ],
+  kreth: [
+    {
+      key: 'debt', type: 'bounty', foe: 'pirate', rep: 5, days: 5,
+      title: 'A name to collect — {name}',
+      desc: '{name} raised a hand to a House factor on the {dest} run, and the Houses are patient accountants. The debt is payable in full, in person.',
+    },
+    {
+      key: 'honour', type: 'delivery', rep: 4, days: 4,
+      title: 'Honour freight — {dest}',
+      desc: 'A consignment with a seal on it and a name cut into the seal. {qty} × {commodity} goes to {dest}, and the Houses will remember who carried it.',
+    },
+    {
+      key: 'heirloom', type: 'recovery', rep: 5, days: 5,
+      title: 'Recover the House cargo — {dest}',
+      desc: 'A House launch was lost on the {dest} crossing with something aboard that is older than the ship. Bring back {need} recorder pods and the name on that seal is yours to call.',
+    },
+  ],
+};
+
+function fillText(s, vars) {
+  return s.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+}
+
+/**
+ * The board a captain sees, by whose colours they fly. Read by generateBoard to
+ * decide what to post, and by the dock to explain the difference out loud.
+ */
+export function boardPolicy(state, station) {
+  const owner = station.owner;
+  const mine = state.allegiance;
+  if (!isFaction(owner)) {
+    return {
+      scope: 'none',
+      neutralOnly: true,
+      note: 'This berth flies no flag, so no flag posts work here — only civil haulage, couriers and survey work find the desk.',
+    };
+  }
+  if (!mine) {
+    return {
+      scope: 'open',
+      neutralOnly: false,
+      note: `${FACTIONS[owner].name} will deal with an unsworn captain. Swear to a flag and its own desks open to you — while its rivals' desks close.`,
+    };
+  }
+  if (mine === owner) {
+    return {
+      scope: 'own',
+      neutralOnly: false,
+      note: `Your own flag's desks. ${FACTIONS[owner].name} keeps its better work for captains flying its colours.`,
+    };
+  }
+  if (owner === 'free') {
+    return {
+      scope: 'open',
+      neutralOnly: false,
+      note: 'The Free Ports keep no side in anyone\'s war: their docks post the whole board to any captain who pays the berth fee. Their own flag work stays with their own colours.',
+    };
+  }
+  return {
+    scope: 'neutral',
+    neutralOnly: true,
+    note: `${FACTIONS[owner].name} posts only civil work to a captain flying ${FACTIONS[mine]?.name || mine} colours: haulage, couriers and surveys. Nothing on this board aims a gun at your flag's people.`,
+  };
+}
+
+/**
+ * Work from your own flag's desk: three jobs, phrased for that flag, priced a
+ * shade over the open board. Only ever generated at a station your flag holds.
+ */
+export function factionOffers(state, station, rng, tier) {
+  const flag = station.owner;
+  const works = FACTION_WORK[flag];
+  if (!works) return [];
+  const myTier = clamp(tier ?? playerTier(state), 1, 8);
+  const deepReach = reachableFrom(state.systemId, MAX_HOPS[myTier]);
+  const cands = deepReach.length ? deepReach : reachableFrom(state.systemId, 2);
+  if (!cands.length) return [];
+
+  const out = [];
+  for (const spec of works) {
+    const dest = weightedDest(rng, cands, myTier);
+    const dname = SYSTEMS[dest.id].name;
+    const mul = TIER_MULT[myTier] * riskBonus(dest.id) * deepPay(dest.id) * 1.12;
+    const issuer = { stationId: station.id, systemId: state.systemId, faction: flag };
+    const offer = {
+      id: `${station.id}-d${state.day}-${spec.key}-${rng.int(100, 999)}`,
+      type: spec.type,
+      tier: myTier,
+      factionWork: true,
+      issuer,
+      dest: { systemId: dest.id },
+      rep: { faction: flag, amount: spec.rep },
+      deadlineDay: state.day + spec.days + dest.hops * 2,
+    };
+
+    if (spec.type === 'sweep') {
+      const kills = myTier <= 2 ? clamp(rng.int(myTier, myTier + 1), 2, 6) : clamp(rng.int(1 + myTier, 2 + myTier), 2, 6);
+      offer.foe = spec.foe || 'pirate';
+      offer.kills = { need: kills, got: 0 };
+      offer.reward = Math.round((rng.int(600, 1100) + kills * 420) * mul);
+      offer.title = fillText(spec.title, { dest: dname, kills });
+      offer.desc = fillText(spec.desc, { dest: dname, kills });
+    } else if (spec.type === 'bounty') {
+      const kind = spec.foe === 'vigil' ? 'vigil' : 'pirate';
+      const entry = (kind === 'vigil' ? VIGIL_BOUNTY_SHIPS : PIRATE_BOUNTY_SHIPS)[myTier];
+      const shipId = Array.isArray(entry) ? rng.pick(entry) : (entry || 'corsair');
+      const markDef = SHIP_BY_ID[shipId];
+      const bigMark = (markDef?.hull || 0) >= BIG_MARK_HULL;
+      const tithe = Math.round((markDef?.price || 0) * HULL_TITHE);
+      const name = `${rng.pick(PIRATE_FIRST)} ${rng.pick(PIRATE_EPITHET)}`;
+      offer.target = {
+        name, shipId, kind, escorts: 0,
+        hullMult: bigMark ? 1.15 : HULL_MULT[myTier],
+        shieldMult: bigMark ? 1.1 : SHIELD_MULT[myTier],
+        weapons: [...BOUNTY_ARMS[myTier]],
+        harpoonAmmo: BOUNTY_AMMO[myTier],
+      };
+      offer.reward = Math.round(rng.int(1600, 3000) * mul) + tithe;
+      if (kind === 'vigil') offer.repPenalty = { faction: 'vigil', amount: -6 };
+      offer.title = fillText(spec.title, { dest: dname, name });
+      offer.desc = fillText(spec.desc, { dest: dname, name });
+    } else if (spec.type === 'recovery') {
+      const need = 2 + Math.floor(myTier / 2);
+      offer.pods = { need };
+      offer.reward = Math.round((rng.int(900, 1500) + need * 380) * mul);
+      offer.title = fillText(spec.title, { dest: dname, need });
+      offer.desc = fillText(spec.desc, { dest: dname, need });
+    } else if (spec.type === 'courier') {
+      const [commodityId, noun] = rng.pick([['electronics', 'dispatch core'], ['medicine', 'sealed case']]);
+      const qty = rng.int(1, 2);
+      const shortReach = reachableFrom(state.systemId, 1);
+      const cDest = rng.pick(shortReach.length ? shortReach : cands);
+      offer.dest = { systemId: cDest.id };
+      offer.cargo = { id: commodityId, qty };
+      offer.reward = Math.round((rng.int(380, 700) + qty * 60) * TIER_MULT[myTier] * riskBonus(cDest.id) * 1.12);
+      offer.title = fillText(spec.title, { dest: SYSTEMS[cDest.id].name, noun });
+      offer.desc = `${fillText(spec.desc, { dest: SYSTEMS[cDest.id].name, noun })} ${noun[0].toUpperCase()}${noun.slice(1)} in the hold.`;
+      offer.deadlineDay = state.day + 2 + cDest.hops;
+    } else {
+      // delivery: straight cargo, off the producing floor of this very station
+      const legalPool = (SYSTEMS[state.systemId].economy.produces.length
+        ? SYSTEMS[state.systemId].economy.produces
+        : ['grain', 'ore', 'ice']).filter((c) => !COMMODITY_BY_ID[c]?.illegal);
+      const commodityId = rng.pick(legalPool.length ? legalPool : ['grain']);
+      const c = COMMODITY_BY_ID[commodityId];
+      const qty = deliveryQty(rng, c, myTier);
+      offer.cargo = { id: commodityId, qty };
+      offer.reward = Math.round((qty * c.base * 1.45 + rng.float(300, 950)) * mul);
+      offer.title = fillText(spec.title, { dest: dname, qty, commodity: c.name });
+      offer.desc = fillText(spec.desc, { dest: dname, qty, commodity: c.name });
+    }
+    out.push(offer);
+  }
+  return out;
+}
+
 export function generateBoard(state, station) {
   const rng = rngOf(state.worldSeed, 'board', station.id, state.day);
   const sys = SYSTEMS[state.systemId];
   const myTier = playerTier(state);
+  const policy = boardPolicy(state, station);
   // the deep stations of the Outer Reach post harder and fuller boards
   const outer = reachScore(state.systemId) >= 5;
   const reach = reachableFrom(state.systemId, 2);
@@ -241,7 +495,9 @@ export function generateBoard(state, station) {
   if (reach.length === 0) return offers;
 
   // more work on the board while green — rookies always have something honest to haul
-  const count = myTier <= 2 ? rng.int(6, 8) : outer ? rng.int(6, 7) : rng.int(5, 6);
+  let count = myTier <= 2 ? rng.int(6, 8) : outer ? rng.int(6, 7) : rng.int(5, 6);
+  // a desk that will not post its own flag's work to you keeps it short and civil
+  if (policy.scope === 'neutral' || policy.scope === 'none') count = Math.min(count, rng.int(3, 4));
   for (let i = 0; i < count; i++) {
     // risk tier: usually around the commander's renown, sometimes easier or aspirational —
     // out here, the board skews one notch nastier than the pilot
@@ -266,6 +522,8 @@ export function generateBoard(state, station) {
       acc += weight;
       if (roll <= acc) { job = type; break; }
     }
+    // civil desks only: the work any captain is allowed to carry
+    if (policy.neutralOnly && !NEUTRAL_TYPES.includes(job)) job = rng.pick(NEUTRAL_TYPES);
 
     if (job === 'delivery') {
       // ---- delivery ----
@@ -273,7 +531,7 @@ export function generateBoard(state, station) {
         .filter((c) => !COMMODITY_BY_ID[c]?.illegal);
       const commodityId = rng.pick(legalPool.length ? legalPool : ['grain']);
       const c = COMMODITY_BY_ID[commodityId];
-      const qty = rng.int(4, 8 + tier * 2);
+      const qty = deliveryQty(rng, c, tier);
       const urgent = rng.chance(0.12 + tier * 0.06);
       const reward = Math.round((qty * c.base * 1.45 + rng.float(250, 900)) * mult * (urgent ? 1.6 : 1));
       offers.push({
@@ -446,6 +704,9 @@ export function generateBoard(state, station) {
     }
     offers.push(offer);
   }
+
+  // ---- your flag's own desks: work that never leaves the colours ----
+  if (policy.scope === 'own') offers.push(...factionOffers(state, station, rng, myTier));
   return offers;
 }
 

@@ -9,7 +9,7 @@ import { SHIP_BY_ID } from '../data/ships.js';
 import { OUTFIT_BY_ID } from '../data/outfits.js';
 import { WEAPON_BY_ID } from '../data/weapons.js';
 import { COMMODITY_BY_ID } from '../data/commodities.js';
-import { FACTIONS } from '../data/factions.js';
+import { FACTIONS, isFaction, factionLabel } from '../data/factions.js';
 import { buyPrice, sellPrice, marketRows, tradeableAt } from './economy.js';
 import * as missions from './missions.js';
 import * as story from './story.js';
@@ -17,7 +17,8 @@ import * as sidequests from './sidequests.js';
 import { saveToSlot, readSlot } from './saves.js';
 import { planetInfo } from './planetSurvey.js';
 import {
-  addXp, addKarma, joinFaction, renounceFaction, learnSkill, combatMods, economyMods, levelFromXp, doKarmaAct,
+  addXp, addKarma, joinFaction, renounceFaction, defectFaction, brokerDefect, buyStanding, buyAmnesty,
+  learnSkill, combatMods, economyMods, levelFromXp, doKarmaAct,
 } from './skills.js';
 import { shieldProfile } from '../data/shields.js';
 import { applyCharacter } from './character.js';
@@ -138,15 +139,18 @@ export class Game {
   /* Lifecycle                                                          */
   /* ------------------------------------------------------------------ */
 
-  newGame({ commander, backgroundId, driveId, slot }) {
+  newGame({ commander, backgroundId, driveId, factionId = null, slot }) {
     const state = new GameState({ commander });
-    const made = applyCharacter(state, backgroundId, driveId);
+    const made = applyCharacter(state, backgroundId, driveId, factionId);
     const res = saveToSlot(slot, state);
     if (!res.ok) this.ui.toasts.push(res.error, 'bad');
     this.autosaveSlot = slot;
     this.begin(state);
     this.ui.toasts.push(`New log opened. Welcome to the lanes, ${state.commander}.`, 'good');
     this.ui.toasts.push(`${made.background.name} · ${made.drive.name} — your past is loaded; your future is not.`, '');
+    if (made.faction) {
+      this.ui.toasts.push(`You fly the colours of ${made.faction.name}. Their desks and their tree are open to you.`, 'good');
+    }
     this.hint('thrust', 'Hold W to burn, A / D to turn. You keep your momentum — lead your turns, and S kills your drift.');
   }
 
@@ -755,7 +759,7 @@ export class Game {
     if (!st || !u.player.alive) return;
     const owner = st.record.owner;
     const rep = this.state.rep[owner] ?? 0;
-    if (owner !== 'free' && rep <= HOSTILE_REP) {
+    if (isFaction(owner) && owner !== 'free' && rep <= HOSTILE_REP) {
       // even a hunted captain delivers — contract business earns a grudging berth
       const writ = missions.completionsAt(this.state, this.state.systemId, st.record.id).length > 0;
       if (!writ) {
@@ -1546,6 +1550,68 @@ export class Game {
       return;
     }
     this.ui.toasts.push('You hand back the colours. What you learned stays learned; the door closes behind it.', 'warn');
+    this.ui.dock.refreshIfOpen();
+  }
+
+  /** Walk away from one flag straight onto another — the old one writes it down. */
+  actDefectFaction(factionId) {
+    const res = defectFaction(this.state, factionId);
+    if (!res.ok) {
+      this.ui.toasts.push(res.error, 'warn');
+      return;
+    }
+    const old = FACTIONS[res.old];
+    this.ui.toasts.push(
+      `You strike ${old?.name || res.old} from your transponder and swear to ${FACTIONS[factionId].name} instead. Word of it will travel.`,
+      'good',
+    );
+    this._xp(30);
+    this.autosave();
+    this.ui.dock.refreshIfOpen();
+  }
+
+  actBrokerDefect(factionId) {
+    const res = brokerDefect(this.state, factionId);
+    if (!res.ok) {
+      this.ui.toasts.push(res.error, 'warn');
+      return;
+    }
+    audio.coin();
+    this.ui.toasts.push(
+      `Clean papers, new colours: you fly for ${FACTIONS[factionId].name} as of this moment, and the desk here has already forgotten the meeting.`,
+      'good',
+    );
+    this.autosave();
+    this.ui.dock.refreshIfOpen();
+  }
+
+  actBuyStanding(factionId) {
+    const res = buyStanding(this.state, factionId);
+    if (!res.ok) {
+      this.ui.toasts.push(res.error, 'warn');
+      return;
+    }
+    audio.coin();
+    this.ui.toasts.push(
+      `Introductions made: ${FACTIONS[factionId].name} standing +${res.gain} (now ${res.rep}).`,
+      'good',
+    );
+    this.autosave();
+    this.ui.dock.refreshIfOpen();
+  }
+
+  actBuyAmnesty() {
+    const res = buyAmnesty(this.state);
+    if (!res.ok) {
+      this.ui.toasts.push(res.error, 'warn');
+      return;
+    }
+    audio.coin();
+    this.ui.toasts.push(
+      `File shredded: ${FACTIONS[res.faction]?.name || res.faction} standing ${res.from} → ${res.to}. They will still remember; they will just stop looking.`,
+      'good',
+    );
+    this.autosave();
     this.ui.dock.refreshIfOpen();
   }
 

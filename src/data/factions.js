@@ -75,11 +75,6 @@ export function factionHex(id) {
   return FACTIONS[id]?.color || '#9fb0c6';
 }
 
-/** Short display tag for any owner id (chart chips, HUD plates). */
-export function factionShort(id) {
-  return FACTIONS[id]?.short || 'No flag';
-}
-
 export const REP_LABELS = [
   [-60, 'Hunted'],
   [-25, 'Distrusted'],

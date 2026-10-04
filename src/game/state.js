@@ -134,6 +134,7 @@ export class GameState {
     this.background = opts.background || null;
     this.drive = opts.drive || null;
     this.allegiance = opts.allegiance || null; // faction id or null
+    this.broker = {}; // day stamps for the broker desk's introductions and amnesties
     this.karma = opts.karma ?? 0; // -100 (black) .. +100 (beacon)
     this.karmaLog = Array.isArray(opts.karmaLog) ? opts.karmaLog.map((e) => ({ ...e })) : [];
     this.karmaActs = opts.karmaActs ? { ...opts.karmaActs } : {}; // day -> { actId: count }
@@ -291,6 +292,7 @@ export class GameState {
       background: this.background,
       drive: this.drive,
       allegiance: this.allegiance,
+      broker: { ...(this.broker || {}) },
       karma: this.karma,
       karmaLog: this.karmaLog.map((e) => ({ ...e })),
       karmaActs: { ...this.karmaActs },
@@ -369,6 +371,7 @@ export class GameState {
     st.background = obj.background || null;
     st.drive = obj.drive || null;
     st.allegiance = obj.allegiance || null;
+    st.broker = obj.broker && typeof obj.broker === 'object' ? { ...obj.broker } : {};
     st.karma = obj.karma ?? 0;
     st.karmaLog = Array.isArray(obj.karmaLog) ? obj.karmaLog.map((e) => ({ ...e })) : [];
     st.karmaActs = obj.karmaActs && typeof obj.karmaActs === 'object' ? { ...obj.karmaActs } : {};

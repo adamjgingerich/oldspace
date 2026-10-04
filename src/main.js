@@ -4,7 +4,7 @@ import { Engine } from './core/engine.js';
 import { input } from './core/input.js';
 import { audio } from './core/audio.js';
 import { $, el } from './ui/dom.js';
-import { GAME_PAGE_TITLE } from './data/branding.js';
+import { GAME_PAGE_TITLE, GAME_VERSION } from './data/branding.js';
 import { Toasts } from './ui/toasts.js';
 import { Hud } from './ui/hud.js';
 import { Menus } from './ui/menus.js';
@@ -45,6 +45,12 @@ function boot() {
   // one tidy corner tray — the controls can never stack or drift apart
   const tray = el('div', { class: 'corner-tray' });
   $('#app').append(tray);
+  // build stamp: bottom-left, unobtrusive, click-through, on screen in every mode
+  $('#app').append(el('div', {
+    class: 'vstamp',
+    text: `v${GAME_VERSION}`,
+    title: `Build v${GAME_VERSION} — the version climbs by 0.01 with every significant edit.`,
+  }));
   installKeybindButton(tray, $('#overlays'));
   installVolumeControl(tray);
   ui.speed = installSpeedControl(tray, game);
@@ -59,14 +65,14 @@ function boot() {
       hasSave: hasAnySave(),
       onNew: () => {
         menus.openNewGame({
-          onStart: (name, backgroundId, driveId) => {
+          onStart: (name, backgroundId, driveId, factionId) => {
             menus.openSave({
               mode: 'new',
               onPick: (slot) => {
                 menus.closeSave();
                 menus.hideTitle();
                 audio.ensure();
-                game.newGame({ commander: name, backgroundId, driveId, slot });
+                game.newGame({ commander: name, backgroundId, driveId, factionId, slot });
               },
               onClose: () => {},
             });

@@ -7,6 +7,7 @@ import { OUTFIT_BY_ID } from '../data/outfits.js';
 import { WEAPON_BY_ID } from '../data/weapons.js';
 import { COMMODITY_BY_ID } from '../data/commodities.js';
 import { SKILL_BY_ID } from '../data/skills.js';
+import { FACTIONS, STARTING_SWEAR_REP } from '../data/factions.js';
 import { clamp } from '../core/util.js';
 
 export { BACKGROUNDS, BACKGROUND_BY_ID, DRIVES, DRIVE_BY_ID };
@@ -66,16 +67,35 @@ function applyPerks(state, perks = {}) {
   }
 }
 
+/**
+ * Swearing your colours before the first bell. The recruiters already know the
+ * name, your flag's rivals have already heard it, and your flag's own desks —
+ * and its skill tree — are open from the first second of the log.
+ */
+export function startingOath(state, factionId) {
+  const f = FACTIONS[factionId];
+  if (!f) return null;
+  state.allegiance = factionId;
+  state.addRep(factionId, STARTING_SWEAR_REP);
+  if (f.opposes) state.addRep(f.opposes, -15);
+  for (const [id, other] of Object.entries(FACTIONS)) {
+    if (id === factionId || id === f.opposes) continue;
+    if (other.opposes === factionId) state.addRep(id, -8);
+  }
+  return f;
+}
+
 /** Stamp a fresh character onto a new GameState. */
-export function applyCharacter(state, backgroundId, driveId) {
+export function applyCharacter(state, backgroundId, driveId, factionId = null) {
   const bg = BACKGROUND_BY_ID[backgroundId] || BACKGROUNDS[0];
   const drive = DRIVE_BY_ID[driveId] || DRIVES[0];
   state.background = bg.id;
   state.drive = drive.id;
   applyPerks(state, bg.perks);
   applyPerks(state, drive.perks);
+  const faction = factionId ? startingOath(state, factionId) : null;
   state.hints.bg = true;
-  return { background: bg, drive };
+  return { background: bg, drive, faction };
 }
 
 export function backgroundOf(state) {

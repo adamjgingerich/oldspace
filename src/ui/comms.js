@@ -6,7 +6,7 @@
 // funeral — demand the colours, or send the crew home and take the goodwill.
 
 import { el, clear } from './dom.js';
-import { FACTIONS } from '../data/factions.js';
+import { FACTIONS, isFaction, factionLabel } from '../data/factions.js';
 import { HAILS } from '../data/voices.js';
 import { planetInfo } from '../game/planetSurvey.js';
 import { HOSTILE_REP } from '../game/state.js';
@@ -95,7 +95,7 @@ export class CommsUI {
       out.push({
         obj: st, kind: 'station', d,
         name: st.record.name,
-        sub: `${st.record.type} · ${FACTIONS[st.record.owner]?.name || st.record.owner}`,
+        sub: `${st.record.type} · ${factionLabel(st.record.owner)}`,
         state: 'berth',
       });
     }
@@ -253,7 +253,7 @@ export class CommsUI {
         label: 'Request a berth',
         say: `${st.record.name}, this is the ${state.shipName}, requesting approach and a berth.`,
         act: () => {
-          if (owner !== 'free' && rep <= HOSTILE_REP && !writ) {
+          if (isFaction(owner) && owner !== 'free' && rep <= HOSTILE_REP && !writ) {
             return `${flag} control, curtly: “You are flagged as hunted. Come alongside and we will open fire.” Berth refused.`;
           }
           if (rep <= HOSTILE_REP) return 'Control, flatly: “Contract writ on file. One berth, under guard. Touch nothing.”';

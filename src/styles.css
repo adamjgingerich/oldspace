@@ -115,6 +115,37 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   gap: 8px;
 }
 
+/* ==================================================================
+   MARKET — the going rate against the cluster average
+   ================================================================== */
+
+.tbl td.num b { display: block; }
+.tbl .vs {
+  display: block;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.tbl .vs.under { color: #63ffc0; }   /* cheaper than average: buy here */
+.tbl .vs.over { color: #ff9a6a; }    /* dearer than average: sell here */
+.tbl .vs.flat { color: var(--dimmer); }
+
+/* build stamp — bottom-left, small and translucent, never in the way */
+.vstamp {
+  position: absolute;
+  left: 11px;
+  bottom: 7px;
+  z-index: 300;
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: rgba(196, 226, 250, 0.32);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.75);
+}
+
 .fs-btn, .vol-btn, .speed-btn, .keys-btn, .skills-btn {
   position: relative;
   width: 36px;
@@ -290,7 +321,20 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   color: var(--dim);
 }
 
-.tagline { margin-top: 14px; font-size: 13px; color: var(--dim); font-style: italic; }
+.tagline {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--dim);
+  font-style: italic;
+  max-width: min(560px, 84vw);
+  margin-left: auto;
+  margin-right: auto;
+  min-height: 2.5em;   /* room for two lines: the title screen never jumps */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-wrap: balance;
+}
 
 .menu { display: flex; flex-direction: column; gap: 8px; width: min(340px, 78vw); margin: 26px auto 0; }
 
@@ -594,14 +638,17 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
     0 8px 20px rgba(0, 0, 0, 0.45);
 }
 
-.hud-tl { top: 12px; left: 12px; width: 214px; }
+.hud-tl { top: 12px; left: 12px; width: 202px; }
 .hud-tr { top: 56px; right: 12px; width: 244px; }
 .hud-br { bottom: 12px; right: 12px; padding: 8px; }
 .radar-wrap { background: none; box-shadow: none; padding: 0; }
 
 .warpbay { margin: 0 0 14px; }
 .warpbay .btn { width: 100%; }
-.hud-target { top: 96px; left: 50%; transform: translateX(-50%); z-index: 4; }
+/* The target readout sits in the right-hand column with the other panels —
+   same right margin as NAV and RADAR — and is dragged and folded like them
+   (see ui/panels.js). Compact by design: it is a glance, not a screen. */
+.hud-target { top: 220px; right: 12px; width: 300px; z-index: 4; }
 .hud-prompt {
   position: absolute;
   bottom: 108px;
@@ -642,7 +689,7 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 }
 .hud-prompt b { color: var(--amber-hi); }
 
-.rack { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.rack { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 
 .stitle {
   font-family: var(--mono);
@@ -651,11 +698,11 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   text-transform: uppercase;
   color: var(--amber);
   border-bottom: 1px solid var(--panel-line-dim);
-  padding-bottom: 4px;
+  padding-bottom: 3px;
 }
 .stitle small { color: var(--dimmer); letter-spacing: 0.05em; text-transform: none; }
 
-.bar { margin-top: 5px; }
+.bar { margin-top: 2px; }
 .bar .lbl {
   display: flex;
   justify-content: space-between;
@@ -664,12 +711,12 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--dim);
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 .bar .lbl span:last-child { color: var(--bone); }
 
 .fill {
-  height: 7px;
+  height: 6px;
   background: #081018;
   border: none;
   border-radius: 0;
@@ -694,10 +741,10 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   display: flex;
   justify-content: space-between;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 9px;
   letter-spacing: 0.05em;
   color: var(--dim);
-  margin-top: 4px;
+  margin-top: 2px;
 }
 .statline b { color: var(--bone); }
 
@@ -718,13 +765,14 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 
 #radar { display: block; margin: 0 auto; max-width: 100%; }
 
-.targetplate { display: flex; flex-direction: row; align-items: center; gap: 10px; }
-.targetplate .tread { display: flex; flex-direction: column; gap: 3px; min-width: 196px; }
+.targetplate { display: flex; flex-direction: column; }
+.targetplate .trow { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.targetplate .tread { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
 /* the holoview: a live overhead model of the locked hull, framed like a scope */
 .targetplate .tstage {
   position: relative;
-  width: 174px;
-  height: 118px;
+  width: 122px;
+  height: 82px;
   flex: 0 0 auto;
   overflow: hidden;
   background:
@@ -734,16 +782,6 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   box-shadow: inset 0 0 22px rgba(40, 110, 170, 0.35);
 }
 .targetplate .tstage .holo-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.targetplate .tstage .tcap {
-  position: absolute;
-  left: 5px;
-  top: 3px;
-  z-index: 2;
-  font-family: var(--mono);
-  font-size: 8px;
-  letter-spacing: 0.16em;
-  color: rgba(180, 220, 250, 0.72);
-}
 /* corner ticks, scope-style */
 .targetplate .tstage::after {
   content: '';
@@ -755,6 +793,53 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   border-radius: 1px;
 }
 .targetplate .tstage:not(.on) .holo-canvas { opacity: 0; }
+
+/* free-fire ground reads as a warning wherever it is named */
+.line .ff { color: #ff9a6a; letter-spacing: 0.06em; }
+.freefire-note {
+  color: #ffb08a;
+  border-left: 2px solid rgba(255, 154, 106, 0.5);
+  padding-left: 8px;
+}
+
+/* ==================================================================
+   ALLEGIANCE — swearing, defecting, and the broker's desk
+   ================================================================== */
+
+.panel h4.sub {
+  margin: 12px 0 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  border-bottom: 1px solid var(--panel-line-dim);
+  padding-bottom: 3px;
+}
+
+.alleg-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 3px 0;
+}
+.alleg-row .aname { flex: 1 1 auto; font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; }
+.alleg-row .arep { font-family: var(--mono); font-size: 10px; color: var(--bone); white-space: nowrap; }
+.alleg-row .abtns { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* board scope: who will post what, and why */
+.boardpolicy { border-left: 2px solid var(--panel-line-dim); padding-left: 8px; }
+.boardpolicy.own { border-left-color: rgba(140, 220, 255, 0.55); }
+.boardpolicy.neutral { border-left-color: rgba(255, 200, 130, 0.5); }
+.boardpolicy.none { border-left-color: rgba(255, 154, 106, 0.5); color: #ffb08a; }
+.fwork {
+  color: #0b1018;
+  background: var(--amber);
+  padding: 0 4px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
 .targetplate .tname { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: var(--bone); }
 .targetplate .tmeta { font-family: var(--mono); font-size: 10px; color: var(--dim); }
 .targetplate.on { box-shadow: 0 0 0 2px rgba(255, 95, 134, 0.55), inset 2px 2px 0 rgba(255, 200, 220, 0.12), inset -2px -2px 0 rgba(20, 0, 8, 0.7), 0 10px 26px rgba(0, 0, 0, 0.55); }
@@ -1997,7 +2082,7 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   font-size: 8.5px;
   letter-spacing: 0.06em;
   color: var(--dim);
-  margin-top: 4px;
+  margin-top: 2px;
 }
 .snote.warn { color: #ffb08a; }
 

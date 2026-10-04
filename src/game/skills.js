@@ -346,12 +346,29 @@ export function learnSkill(state, skillId) {
 /* ------------------------------------------------------------------ */
 
 export const FACTION_ALLEGIANCE_REP = 40;
+/** What the flag you walk away from thinks of the walk. */
+export const DEFECT_REP_COST = -25;
+/** A free-port broker's rates: introductions, papers, and a quiet amnesty. */
+export const BROKER_STANDING_COST = 8000;
+export const BROKER_STANDING_GAIN = 10;
+export const BROKER_PAPERS_COST = 60000;
+export const BROKER_AMNESTY_COST = 45000;
+/** Days a broker desk makes you wait between each of its services. */
+export const BROKER_COOLDOWN_DAYS = 1;
+export const AMNESTY_COOLDOWN_DAYS = 5;
+
+/**
+ * A broker's amnesty: the desk knows somebody who knows somebody, and a hunted
+ * name edges back off the wanted lists. It never buys goodwill — only distance
+ * from the firing line.
+ */
+export const AMNESTY_FLOOR = -30;
 
 export function canJoinFaction(state, factionId) {
-  if (state.allegiance) return { ok: false, error: 'You are already sworn to a flag. Renounce it first.' };
+  if (state.allegiance === factionId) return { ok: false, error: 'You already fly those colours.' };
   const rep = state.rep[factionId] ?? 0;
   if (rep < FACTION_ALLEGIANCE_REP) {
-    return { ok: false, error: `Standing ${rep}/40 — the recruiters are not convinced yet.` };
+    return { ok: false, error: `Standing ${rep}/${FACTION_ALLEGIANCE_REP} — the recruiters are not convinced yet.` };
   }
   return { ok: true };
 }
@@ -359,8 +376,9 @@ export function canJoinFaction(state, factionId) {
 export function joinFaction(state, factionId) {
   const check = canJoinFaction(state, factionId);
   if (!check.ok) return check;
+  const old = state.allegiance;
   state.allegiance = factionId;
-  return { ok: true };
+  return { ok: true, old };
 }
 
 export function renounceFaction(state) {
@@ -368,6 +386,79 @@ export function renounceFaction(state) {
   const old = state.allegiance;
   state.allegiance = null;
   state.addRep(old, -10);
+  return { ok: true, old };
+}
+
+/**
+ * Defection: swear to a new flag while still flying the old one's colours. The
+ * recruiters will take you, but the flag you leave writes it down.
+ */
+export function defectFaction(state, factionId) {
+  if (!state.allegiance) return joinFaction(state, factionId);
+  if (state.allegiance === factionId) return { ok: false, error: 'You already fly those colours.' };
+  const rep = state.rep[factionId] ?? 0;
+  if (rep < FACTION_ALLEGIANCE_REP) {
+    return { ok: false, error: `${FACTIONS[factionId]?.name || factionId} wants standing ${FACTION_ALLEGIANCE_REP}; you have ${rep}.` };
+  }
+  const old = state.allegiance;
+  state.allegiance = factionId;
+  state.addRep(old, DEFECT_REP_COST);
+  return { ok: true, old };
+}
+
+/** Where the broker desk stands with today's books. */
+export function brokerStatus(state, kind) {
+  const b = state.broker || {};
+  if (kind === 'amnesty') {
+    const until = b.amnestyDay ?? -999;
+    return { ready: state.day >= until, waitDays: Math.max(0, until - state.day) };
+  }
+  const until = b.day ?? -999;
+  return { ready: state.day >= until, waitDays: Math.max(0, until - state.day) };
+}
+
+/** Buy introductions: a word in the right ear, paid for in credits. */
+export function buyStanding(state, factionId) {
+  const st = brokerStatus(state, 'standing');
+  if (!st.ready) return { ok: false, error: `The desk has nothing more to say today — try again in ${st.waitDays} day${st.waitDays === 1 ? '' : 's'}.` };
+  if ((state.credits || 0) < BROKER_STANDING_COST) {
+    return { ok: false, error: `The broker wants ₡${BROKER_STANDING_COST.toLocaleString()} for the introductions.` };
+  }
+  state.addCredits(-BROKER_STANDING_COST);
+  state.addRep(factionId, BROKER_STANDING_GAIN);
+  state.broker = { ...(state.broker || {}), day: state.day + BROKER_COOLDOWN_DAYS };
+  return { ok: true, gain: BROKER_STANDING_GAIN, rep: state.rep[factionId] ?? 0 };
+}
+
+/** Buy an amnesty: the deepest of your hunted names is quietly forgotten a while. */
+export function buyAmnesty(state) {
+  const st = brokerStatus(state, 'amnesty');
+  if (!st.ready) return { ok: false, error: `The papers are still in transit — ${st.waitDays} day${st.waitDays === 1 ? '' : 's'} yet.` };
+  const hunted = Object.entries(state.rep || {})
+    .filter(([, v]) => v < AMNESTY_FLOOR)
+    .sort((a, b) => a[1] - b[1]);
+  if (!hunted.length) return { ok: false, error: 'Nobody has a file on you worth shredding.' };
+  if ((state.credits || 0) < BROKER_AMNESTY_COST) {
+    return { ok: false, error: `The broker wants ₡${BROKER_AMNESTY_COST.toLocaleString()} to lose the file.` };
+  }
+  const [faction, worst] = hunted[0];
+  state.addCredits(-BROKER_AMNESTY_COST);
+  const target = Math.min(AMNESTY_FLOOR, worst);
+  state.addRep(faction, target - worst);
+  state.broker = { ...(state.broker || {}), amnestyDay: state.day + AMNESTY_COOLDOWN_DAYS };
+  return { ok: true, faction, from: worst, to: state.rep[faction] ?? target };
+}
+
+/** Broker-arranged defection: colours changed without the wait for recruiters. */
+export function brokerDefect(state, factionId) {
+  if (state.allegiance === factionId) return { ok: false, error: 'You already fly those colours.' };
+  if ((state.credits || 0) < BROKER_PAPERS_COST) {
+    return { ok: false, error: `The broker wants ₡${BROKER_PAPERS_COST.toLocaleString()} for clean papers.` };
+  }
+  state.addCredits(-BROKER_PAPERS_COST);
+  const old = state.allegiance;
+  state.allegiance = factionId;
+  if (old) state.addRep(old, Math.round(DEFECT_REP_COST * 0.6)); // quieter than a public defection
   return { ok: true, old };
 }
 

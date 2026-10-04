@@ -58,12 +58,47 @@ export function marketRows(state, systemId, station) {
   const rows = [];
   for (const c of Object.values(COMMODITY_BY_ID)) {
     if (!tradeableAt(station, c.id)) continue;
+    const market = Math.round(marketPrice(state, systemId, c.id));
+    const avg = averagePrice(state, c.id);
     rows.push({
       commodity: c,
       buy: buyPrice(state, systemId, c.id),
       sell: sellPrice(state, systemId, c.id),
       held: state.cargo[c.id] || 0,
+      // how this berth's going rate compares with the cluster's: negative is a
+      // bargain here, positive is a rip-off, and 0 means dead average
+      market,
+      avg: Math.round(avg),
+      delta: avg > 0 ? (market - avg) / avg : 0,
     });
   }
   return rows;
+}
+
+/** Memo for averagePrice: prices drift every three days, so the table holds. */
+let _avgCache = { key: null, values: new Map() };
+
+/**
+ * The cluster's going rate for a commodity: the mean market price across every
+ * charted system. Prices are pure functions of the world seed, system and day,
+ * so one average serves every visitor and is cached between renders (it only
+ * moves when the three-day price drift does).
+ */
+export function averagePrice(state, commodityId, day = state.day) {
+  const key = `${state.worldSeed}|${Math.floor(day / 3)}`;
+  if (_avgCache.key !== key) {
+    const values = new Map();
+    for (const c of Object.values(COMMODITY_BY_ID)) {
+      let sum = 0;
+      let n = 0;
+      for (const id of Object.keys(SYSTEMS)) {
+        const p = marketPrice(state, id, c.id, day);
+        if (p > 0) { sum += p; n += 1; }
+      }
+      values.set(c.id, n ? sum / n : 0);
+    }
+    _avgCache.key = key;
+    _avgCache.values = values;
+  }
+  return _avgCache.values.get(commodityId) || 0;
 }

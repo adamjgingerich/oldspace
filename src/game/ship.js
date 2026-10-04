@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { buildShip, factionColor } from '../core/meshes.js';
 import { glowSprite } from '../core/fx.js';
+import { shieldBubbleGeometry, shieldBubbleMaterial } from '../core/materials.js';
 import { clamp, wrapAngle } from '../core/util.js';
 import { SHIP_BY_ID } from '../data/ships.js';
 import { DEFAULT_SHIELD_TYPE, applyShieldProfile, shieldProfile, shieldTypeFor } from '../data/shields.js';
@@ -29,6 +30,18 @@ export const DISABLE_TIME = 9;
  */
 export const PLAYER_DISABLE_TIME = 5;
 export const DISRUPT_IMMUNITY = 8;
+
+/**
+ * The shield shell. How long it takes to blow out once the lattice fails, and
+ * the fraction of capacity that has to come back before it re-forms — a shell
+ * that flickered up on the first trickle of regeneration would read as if the
+ * shield had never gone down at all.
+ */
+export const SHIELD_POP_TIME = 0.45;
+export const SHIELD_BUBBLE_REARM = 0.06;
+/** Lattice failure colours: a shell heats amber, then burns red. */
+const BUBBLE_AMBER = new THREE.Color(0xffa03c);
+const BUBBLE_RED = new THREE.Color(0xff2f2f);
 
 /**
  * Wake styles — every hull design trails the lanes its own way. The style is
@@ -97,6 +110,22 @@ export class Ship {
     this.shieldGlow = glowSprite(this.shipProfile.color, def.len * 2.6);
     this.shieldGlow.material.opacity = 0;
     group.add(this.shieldGlow);
+
+    // shield shell — the bubble itself. Big enough to clear the whole hull
+    // (nose to stern, fins and all), clear enough to read the hull through it.
+    this.shieldBubbleR = Math.max(def.len * 0.6, this.radius * 1.45);
+    this.shieldBubble = new THREE.Mesh(
+      shieldBubbleGeometry(def.len > 90 ? 24 : def.len > 40 ? 18 : 14),
+      shieldBubbleMaterial(this.shipProfile.color),
+    );
+    this.shieldBubble.scale.setScalar(this.shieldBubbleR);
+    this.shieldBubble.visible = false;
+    this.shieldBubble.renderOrder = 4;
+    group.add(this.shieldBubble);
+    this._bubbleColor = new THREE.Color(this.shipProfile.color);
+    this._latticeColor = new THREE.Color(this.shipProfile.color);
+    this._bubbleArmed = true;
+    this._shieldPopT = 0;
 
     // hull glow — a wound sheen that only appears once the plating is opened
     this.hullGlow = glowSprite(0xff7040, def.len * 2.1);
@@ -350,11 +379,15 @@ export class Ship {
     // --- condition sheen: shield, wounds and snare, readable at a glance ---
     const shieldRatio = st.shield > 0 ? clamp(this.shield / st.shield, 0, 1) : 0;
     const now = performance.now() * 0.001;
-    const shieldBase = shieldRatio > 0 ? 0.06 + shieldRatio * 0.15 : 0;
-    const shimmer = shieldRatio > 0 ? 0.025 * Math.sin(now * 2 + this._hostilePhase) : 0;
+    // the flat halo is only a hit flash now: the shell carries the shield's
+    // story, and a bright haze here would fog the hull inside it
+    const shieldBase = shieldRatio > 0 ? 0.022 + shieldRatio * 0.05 : 0;
+    const shimmer = shieldRatio > 0 ? 0.012 * Math.sin(now * 2 + this._hostilePhase) : 0;
     const cur = this.shieldGlow.material.opacity;
-    this.shieldGlow.visible = shieldRatio > 0;
+    this.shieldGlow.visible = shieldRatio > 0 && cur > 0.004;
     this.shieldGlow.material.opacity = Math.max(shieldBase + shimmer, cur - dt * 1.4);
+
+    this._paintShieldBubble(dt, shieldRatio, now);
 
     // opened plating glows, and a wreck glows a lot
     const hullRatio = clamp(this.hull / st.hull, 0, 1);
@@ -392,6 +425,74 @@ export class Ship {
   }
 
   /**
+   * Run the shield shell for this frame.
+   *
+   * The shell is the ship's shield made visible: it rides the lattice colour
+   * while the field is healthy, reddens and starts to crackle as the field is
+   * beaten down, then swells and blows out the instant the lattice fails. It
+   * grows back only once there is a real field to show.
+   */
+  _paintShieldBubble(dt, ratio, now) {
+    const shell = this.shieldBubble;
+    if (!shell) return;
+    if (this._shieldPopT > 0) this._shieldPopT = Math.max(0, this._shieldPopT - dt);
+    const popping = this._shieldPopT > 0;
+
+    if (ratio >= SHIELD_BUBBLE_REARM) this._bubbleArmed = true;
+    else if (!popping) this._bubbleArmed = false;
+    if (!this._bubbleArmed && !popping) {
+      shell.visible = false;
+      return;
+    }
+    shell.visible = true;
+
+    // how far gone the field is, and how bright the last hit was
+    const death = 1 - ratio;
+    const flash = this._shieldFlashT > 0 ? this._shieldFlashT / 0.2 : 0;
+    // reddening starts at half strength and is complete by a fifth
+    const urgency = clamp((0.5 - ratio) / 0.5, 0, 1);
+    const popFrac = popping ? this._shieldPopT / SHIELD_POP_TIME : 0; // 1 → 0
+
+    const u = shell.material.uniforms;
+    u.uTime.value = now;
+    u.uCrackle.value = urgency * urgency * 0.55 + flash * 0.3;
+    // heat the shell in two beats — lattice to amber to red — so it never
+    // passes through the grey a direct cyan-to-red blend would give
+    if (urgency < 0.5) this._bubbleColor.copy(this._latticeColor).lerp(BUBBLE_AMBER, urgency * 2);
+    else this._bubbleColor.copy(BUBBLE_AMBER).lerp(BUBBLE_RED, (urgency - 0.5) * 2);
+    u.uColor.value.copy(this._bubbleColor);
+
+    let alpha = (0.1 + ratio * 0.045) * (1 + flash * 1.6 + death * 0.25);
+    if (popping) alpha *= Math.pow(popFrac, 0.75);
+    u.uAlpha.value = alpha;
+
+    // a failing field strains outward, and a burst throws the shell wide
+    const swell = 1 + death * death * 0.045 + flash * 0.025 + (popping ? (1 - popFrac) * 0.45 : 0);
+    shell.scale.setScalar(this.shieldBubbleR * swell);
+  }
+
+  /** A lattice failing: the shell thrown outward as a ring of light. */
+  _shieldPopFX(fx) {
+    if (!fx) return;
+    const color = this._bubbleColor.getHex();
+    const r = this.shieldBubbleR * 0.9;
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 + Math.random() * 0.35;
+      fx.trailPuff(
+        { x: this.x + Math.cos(a) * r, y: 4 + Math.random() * 8, z: this.z + Math.sin(a) * r },
+        {
+          color,
+          size: this.def.len * (0.18 + Math.random() * 0.14),
+          life: 0.45 + Math.random() * 0.25,
+          alpha: 0.8,
+          vx: Math.cos(a) * 52,
+          vz: Math.sin(a) * 52,
+        },
+      );
+    }
+  }
+
+  /**
    * Apply damage. The lattice character decides how much gets through: a
    * shield absorbs the bulk, `shieldBleed` leaks a little of what it eats,
    * and `shieldHull` is the fraction of the remainder that carries on to the
@@ -408,8 +509,15 @@ export class Ship {
       this.shield -= absorbed;
       remaining -= absorbed;
       shieldHit = absorbed > 0;
-      this.shieldGlow.material.opacity = 0.6;
+      this.shieldGlow.material.opacity = 0.5;
       this._shieldFlashT = 0.2;
+      if (this.shield <= 0) {
+        // the lattice has gone: the shell blows out and the drives are open
+        this._shieldFlashT = 0.28;
+        this._shieldPopT = SHIELD_POP_TIME;
+        this._bubbleColor.copy(BUBBLE_RED);
+        this._shieldPopFX(fx);
+      }
       remaining = remaining * (1 - (this.stats.shieldHull ?? 1)) + absorbed * (this.stats.shieldBleed ?? 0);
     }
     this.shieldRegenDelay = this.stats.shieldDelay ?? 3;

@@ -102,13 +102,13 @@ export class Hud {
     this.tShield = this._bar('shield', 'Shields');
     this.tHull = this._bar('hull', 'Hull');
     this.tSnare = this._bar('snare', 'Snare');
-    this.tStage = el('div', { class: 'tstage' }, [
-      el('span', { class: 'tcap', text: 'TARGET ID' }),
-    ]);
+    this.tStage = el('div', { class: 'tstage' });
     this.tRead = el('div', { class: 'tread' }, [
       this.tName, this.tMeta, this.tState, this.tShield.wrap, this.tHull.wrap, this.tSnare.wrap,
     ]);
-    this.targetPlate = el('div', { class: 'hud-box hud-target targetplate' }, [this.tStage, this.tRead]);
+    this.targetPlate = el('div', { class: 'hud-box hud-target targetplate' }, [
+      el('div', { class: 'trow' }, [this.tStage, this.tRead]),
+    ]);
 
     // ---- prompt ----
     this.prompt = el('div', { class: 'hud-box hud-prompt' });
@@ -180,7 +180,8 @@ export class Hud {
 
     this.credits.textContent = fmtCredits(state.credits);
     this.lineSystem.textContent = '';
-    this.lineSystem.innerHTML = `${u.system.name} · day ${state.day} · ${u.system.links.length} lanes`;
+    this.lineSystem.innerHTML = `${u.system.name} · day ${state.day} · ${u.system.links.length} lanes`
+      + (u.system.freefire ? ' <b class="ff">· FREE-FIRE · no flag, no ledger</b>' : '');
 
     // warp field status: clear to fold space, or the bearing to open space
     if (!u.warpBlock) {

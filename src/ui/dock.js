@@ -4,7 +4,7 @@ import { el, clear, btn } from './dom.js';
 import { buildLog } from './log.js';
 import { ShipViewer } from './shipviewer.js';
 import { SYSTEMS } from '../data/systems.js';
-import { FACTIONS, repLabel } from '../data/factions.js';
+import { FACTIONS, repLabel, factionLabel, isFaction, FACTION_IDS } from '../data/factions.js';
 import { COMMODITY_BY_ID } from '../data/commodities.js';
 import { OUTFITS, OUTFIT_BY_ID } from '../data/outfits.js';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons.js';
@@ -21,6 +21,8 @@ import { rngOf } from '../core/rng.js';
 import { SKILL_TREES } from '../data/skills.js';
 import {
   skillRank, treeRanks, learnBlockReason, xpProgress, karmaLabel, isTreeUnlocked, FACTION_ALLEGIANCE_REP,
+  DEFECT_REP_COST, BROKER_PAPERS_COST, BROKER_STANDING_COST, BROKER_STANDING_GAIN, BROKER_AMNESTY_COST,
+  AMNESTY_FLOOR, brokerStatus, economyMods,
 } from '../game/skills.js';
 import { backgroundOf, driveOf } from '../game/character.js';
 import { LUMEN_REFUEL_COST, REPAIR_COST_PER_HP, WORMHOLE_LICENCE_COST } from '../game/game.js';
@@ -40,6 +42,21 @@ const STAT_LABELS = {
 function twistChip(tw) {
   const label = tw && missions.twistLabel(tw.kind);
   return label ? ` · <span class="twist">${label}</span>` : '';
+}
+
+/**
+ * How this berth's going rate compares with the cluster average, in brackets
+ * beside the price: green below average, amber above, dim when it is dead
+ * average. The exact figures live in the tooltip.
+ */
+function vsAverage(row) {
+  const pct = Math.round(Math.abs(row.delta) * 100);
+  const kind = pct <= 1 ? 'flat' : row.delta < 0 ? 'under' : 'over';
+  const label = kind === 'flat' ? 'average' : `${pct}% ${kind}`;
+  const detail = kind === 'flat'
+    ? `Going rate ₡${fmtNum(row.market)} — the cluster average is ₡${fmtNum(row.avg)}.`
+    : `Going rate ₡${fmtNum(row.market)} against a cluster average of ₡${fmtNum(row.avg)} — ${pct}% ${kind} here.`;
+  return el('small', { class: `vs ${kind}`, text: `(${label})`, title: detail });
 }
 
 /* ---- stat sheets: the shared way ships and parts show their numbers. One
@@ -180,7 +197,7 @@ export class DockUI {
     this._yardCards = null;
     this._yardInfo = null;
     const { state, station, system } = this.ctx;
-    const owner = FACTIONS[station.owner];
+    const owner = FACTIONS[station.owner]; // undefined at an unclaimed berth
     const rep = state.rep[station.owner] ?? 0;
 
     // ---- head ----
@@ -188,9 +205,11 @@ export class DockUI {
     const headChildren = [
       el('div', { class: 'stn' }, [
         station.name,
-        el('small', { text: `${system.name} · ${station.type} · ${owner?.name || station.owner}` }),
+        el('small', { text: `${system.name} · ${station.type} · ${factionLabel(station.owner)}` }),
       ]),
-      el('span', { class: 'chip faction', text: `${repLabel(rep)} (${rep >= 0 ? '+' : ''}${rep})` }),
+      owner
+        ? el('span', { class: 'chip faction', text: `${repLabel(rep)} (${rep >= 0 ? '+' : ''}${rep})` })
+        : el('span', { class: 'chip off', text: 'NO FLAG — nothing here is recorded' }),
       el('div', { class: 'spacer' }),
       el('div', { class: 'purse' }, [fmtCredits(state.credits), el('small', { text: 'ON HAND' })]),
       btn('Undock', () => this.ctx.actions.undock(), 'btn primary'),
@@ -298,7 +317,10 @@ export class DockUI {
           el('b', { text: r.commodity.name }),
           el('small', { text: r.commodity.desc }),
         ]),
-        el('td', { class: 'num', text: fmtNum(r.buy) }),
+        el('td', { class: 'num' }, [
+          el('b', { text: fmtNum(r.buy) }),
+          vsAverage(r),
+        ]),
         el('td', { class: 'num', text: fmtNum(r.sell) }),
         el('td', { class: 'num', text: String(r.held) }),
         el('td', {}, [
@@ -469,7 +491,7 @@ export class DockUI {
     const stats = computeStats(state);
     const player = actions.universe.player;
     const missingHull = Math.max(0, Math.ceil(stats.hull - player.hull));
-    const repairCost = Math.round(missingHull * REPAIR_COST_PER_HP);
+    const repairCost = Math.round(missingHull * REPAIR_COST_PER_HP * economyMods(state).repair);
 
     this.body.append(el('div', { class: 'panel', style: 'margin-bottom:14px' }, [
       el('h3', { text: 'Hull & frame' }),
@@ -863,35 +885,7 @@ export class DockUI {
     ]);
     left.append(dossier);
 
-    const oath = el('div', { class: 'panel', style: 'margin-top:14px' }, [el('h3', { text: 'Allegiance' })]);
-    if (state.allegiance) {
-      const f = FACTIONS[state.allegiance];
-      oath.append(
-        el('div', { class: 'kv' }, [el('span', { text: 'Sworn to' }), el('b', { text: f?.name || state.allegiance })]),
-        el('div', { class: 'kv' }, [el('span', { text: 'Standing' }), el('b', { text: `${state.rep[state.allegiance] ?? 0}` })]),
-        el('p', { class: 'note', text: 'Sworn colours open doors: standing with your flag grows 10% faster. The elites of every discipline still answer only to deeds.' }),
-        el('div', { style: 'margin-top:8px' }, [btn('Renounce the oath', () => actions.actRenounceFaction(), 'btn small danger')]),
-      );
-    } else {
-      oath.append(el('p', { class: 'note', text: 'Swearing marks your transponder with a flag: standing with them grows 10% faster, and their recruiters keep the best desks open. Learned ranks stay if you later renounce.' }));
-      for (const fid of ['vigil', 'combine', 'reaver', 'free', 'kreth']) {
-        const f = FACTIONS[fid];
-        const rep = state.rep[fid] ?? 0;
-        const here = station?.owner === fid;
-        const ready = rep >= FACTION_ALLEGIANCE_REP;
-        const b = btn(ready ? 'Swear the oath' : `${rep}/40 standing`, () => actions.actJoinFaction(fid), `btn small ${ready && here ? 'primary' : ''}`);
-        b.disabled = !(ready && here);
-        if (ready && !here) b.title = `Travel to a ${f.name} station to swear.`;
-        oath.append(
-          el('div', { class: 'kv' }, [
-            el('span', { text: `${f.name}${here ? ' · this station' : ''}` }),
-            el('b', { text: `${rep >= 0 ? '+' : ''}${rep}` }),
-          ]),
-          el('div', { style: 'margin:4px 0 8px' }, [b]),
-        );
-      }
-    }
-    left.append(oath);
+    left.append(this._allegiancePanel());
 
     // ---- right: skill-point summary; the trees live in the Skills tab ----
     const points = state.skillPoints || 0;
@@ -915,6 +909,104 @@ export class DockUI {
     ]);
 
     this.body.append(el('div', { class: 'career-cols' }, [left, right]));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Allegiance: swearing, renouncing, defecting, and the broker desk   */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Every road in and out of a flag, in one panel: swear at a flag's own desk,
+   * renounce, defect straight onto new colours, or buy the broker's paper at a
+   * free port. The broker will also sell standing — the only way to reach a
+   * flag's asking price without working for it.
+   */
+  _allegiancePanel() {
+    const { state, station, actions } = this.ctx;
+    const panel = el('div', { class: 'panel', style: 'margin-top:14px' }, [el('h3', { text: 'Allegiance' })]);
+    const sworn = state.allegiance ? FACTIONS[state.allegiance] : null;
+    const brokerHere = station?.owner === 'free' || !isFaction(station?.owner);
+
+    if (sworn) {
+      panel.append(
+        el('div', { class: 'kv' }, [el('span', { text: 'Sworn to' }), el('b', { style: `color:${sworn.color}`, text: sworn.name })]),
+        el('div', { class: 'kv' }, [el('span', { text: 'Standing' }), el('b', { text: `${state.rep[state.allegiance] ?? 0}` })]),
+        el('p', { class: 'note', text: `Standing with ${sworn.name} grows 10% faster, their stations post their own work to you, and their skill tree is open. Learned ranks stay if you ever leave.` }),
+      );
+    } else {
+      panel.append(el('p', { class: 'note', text: 'Unsworn: every desk deals with you and no flag claims you. Swearing opens a flag\'s own contracts and its skill tree — and closes its rivals\' blades to you.' }));
+    }
+
+    const standing = brokerStatus(state, 'standing');
+    panel.append(el('h4', { class: 'sub', text: sworn ? 'Change colours' : 'Swear the oath' }));
+    for (const fid of FACTION_IDS) {
+      if (fid === state.allegiance) continue;
+      const f = FACTIONS[fid];
+      const rep = state.rep[fid] ?? 0;
+      const here = station?.owner === fid;
+      const ready = rep >= FACTION_ALLEGIANCE_REP;
+      const rivals = sworn && (f.opposes === state.allegiance || sworn.opposes === fid);
+      const label = !sworn
+        ? (ready ? 'Swear the oath' : `${rep}/${FACTION_ALLEGIANCE_REP} standing`)
+        : (rivals ? `Defect — ${f.short}s will take you` : `Defect to ${f.short}s`);
+      const row = el('div', { class: 'alleg-row' }, [
+        el('span', { class: 'aname', style: `color:${f.color}`, text: f.name }),
+        el('b', { class: 'arep', text: `${rep >= 0 ? '+' : ''}${rep}${here ? ' · this desk' : ''}` }),
+      ]);
+      const buttons = [];
+      const swear = btn(label, () => (sworn ? actions.actDefectFaction(fid) : actions.actJoinFaction(fid)), `btn tiny ${ready && here ? 'primary' : ''}`);
+      swear.disabled = !(ready && here);
+      if (!ready) swear.title = `Needs ${FACTION_ALLEGIANCE_REP} standing with ${f.name}.`;
+      else if (!here) swear.title = `Travel to a ${f.name} station to sign on.`;
+      else if (sworn) swear.title = `Swear to ${f.name} now: ${FACTIONS[state.allegiance].name} will hear of it (${DEFECT_REP_COST} standing with them).`;
+      buttons.push(swear);
+      if (brokerHere) {
+        const papers = btn(`Clean papers ₡${BROKER_PAPERS_COST.toLocaleString()}`, () => actions.actBrokerDefect(fid), 'btn tiny');
+        papers.disabled = (state.credits || 0) < BROKER_PAPERS_COST;
+        papers.title = `The broker changes your colours quietly — ${sworn ? `${FACTIONS[state.allegiance].name} only loses a little face` : 'no desk asks who you were'} — no standing requirement.`;
+        buttons.push(papers);
+      }
+      row.append(el('span', { class: 'abtns' }, buttons));
+      panel.append(row);
+    }
+
+    if (brokerHere) {
+      panel.append(
+        el('h4', { class: 'sub', text: 'The broker\'s desk' }),
+        el('p', { class: 'note', text: 'Papers, introductions and amnesties. Free ports keep the desk because nobody there writes anything down.' }),
+      );
+      const intro = el('div', { class: 'alleg-row' }, [
+        el('span', { class: 'aname', text: `Introductions · +${BROKER_STANDING_GAIN} standing` }),
+        el('span', { class: 'abtns' }, FACTION_IDS.filter((f) => f !== state.allegiance).map((fid) => {
+          const b = btn(FACTIONS[fid].short, () => actions.actBuyStanding(fid), 'btn tiny');
+          b.disabled = !standing.ready || (state.credits || 0) < BROKER_STANDING_COST;
+          b.title = standing.ready
+            ? `₡${BROKER_STANDING_COST.toLocaleString()} for a word in the right ear.`
+            : `Nothing more today — ${standing.waitDays} day${standing.waitDays === 1 ? '' : 's'} yet.`;
+          return b;
+        })),
+      ]);
+      panel.append(
+        intro,
+        el('div', { class: 'alleg-row' }, [
+          el('span', { class: 'aname', text: `Amnesty · hunted name → ${AMNESTY_FLOOR}` }),
+          el('span', { class: 'abtns' }, [
+            (() => {
+              const b = btn(`Buy ₡${BROKER_AMNESTY_COST.toLocaleString()}`, () => actions.actBuyAmnesty(), 'btn tiny');
+              const status = brokerStatus(state, 'amnesty');
+              b.disabled = !status.ready || (state.credits || 0) < BROKER_AMNESTY_COST;
+              b.title = status.ready
+                ? 'Shred the worst file on you. They will still remember; they will stop looking.'
+                : `Papers in transit — ${status.waitDays} day${status.waitDays === 1 ? '' : 's'} yet.`;
+              return b;
+            })(),
+          ]),
+        ]),
+      );
+    } else if (sworn) {
+      panel.append(el('p', { class: 'note', text: `Cleaning up your colours quietly, and buying introductions, is the broker's work — the desk keeps to the free ports.` }));
+    }
+    return panel;
   }
 
   _xpBar(prog) {
@@ -1084,9 +1176,11 @@ export class DockUI {
     }
     this.body.append(activeWrap);
 
-    // board
+    // board — and whose work is on it, which depends on the colours you fly
+    const policy = missions.boardPolicy(state, station);
     this.body.append(el('h3', { text: `Board — day ${state.day} · your renown ${missions.tierStars(missions.playerTier(state))}` }));
     this.body.append(el('p', { class: 'note', text: 'Bold work finds you as your renown grows: more stars, tougher marks, fatter pay. One star is honest cargo runs; eight stars is a war.' }));
+    this.body.append(el('p', { class: `note boardpolicy ${policy.scope}`, text: policy.note }));
     const offers = missions.generateBoard(state, station)
       .filter((o) => !state.missions.some((m) => m.id === o.id));
     const boardWrap = el('div', { style: 'margin-top:8px' });
@@ -1097,7 +1191,7 @@ export class DockUI {
       boardWrap.append(el('div', { class: `mission ${o.type}` }, [
         el('div', {
           class: 'mtag',
-          html: `${tag} · ${missions.tierStars(o.tier)}${o.urgent ? ' · <span class="urgent">URGENT</span>' : ''}${twistChip(o.twist)} · by day ${o.deadlineDay}`,
+          html: `${o.factionWork ? `<span class="fwork">${(FACTIONS[o.issuer.faction]?.short || 'FLAG').toUpperCase()} DESK</span> · ` : ''}${tag} · ${missions.tierStars(o.tier)}${o.urgent ? ' · <span class="urgent">URGENT</span>' : ''}${twistChip(o.twist)} · by day ${o.deadlineDay}`,
         }),
         el('h4', { text: o.title }),
         el('p', { text: o.desc }),
@@ -1125,6 +1219,9 @@ export class DockUI {
     const stats = computeStats(state);
     const player = actions.universe.player;
     const refuelCost = (stats.lumenMax - state.lumen) * LUMEN_REFUEL_COST;
+    const missingHull = Math.max(0, Math.ceil(stats.hull - player.hull));
+    const repairCost = Math.round(missingHull * REPAIR_COST_PER_HP * economyMods(state).repair);
+    const hasMechanic = station.services.includes('mechanic');
 
     const status = el('div', { class: 'panel' }, [
       el('h2', { text: state.shipName }),
@@ -1155,9 +1252,12 @@ export class DockUI {
     if (station.services.includes('refuel')) {
       svcGrid.append(el('div', { class: 'svc' }, [
         el('h4', { text: 'Lumen berth' }),
-        el('p', { text: 'Refill the lumen bunkers. Hull work is the mechanic’s trade — see the Mechanic tab.' }),
+        el('p', { text: 'Refill the lumen bunkers, and have the mechanic hammer the plating back to spec.' }),
         el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, [
           this._priceBtn(`Refuel full (${fmtCredits(refuelCost)})`, refuelCost === 0, () => actions.actRefuel()),
+          ...(hasMechanic
+            ? [this._priceBtn(`Repair hull (${fmtCredits(repairCost)})`, repairCost === 0 || repairCost > state.credits, () => actions.actRepair())]
+            : []),
         ]),
       ]));
     }

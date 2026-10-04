@@ -13,6 +13,7 @@ const DEFS = [
   { key: 'tl', sel: '.hud-tl', label: 'STATUS' },
   { key: 'tr', sel: '.hud-tr', label: 'NAV' },
   { key: 'br', sel: '.hud-br', label: 'RADAR' },
+  { key: 'target', sel: '.hud-target', label: 'TARGET' },
 ];
 
 export function installScreenPanels(hud) {
@@ -57,9 +58,8 @@ export function installScreenPanels(hud) {
     if (bands) {
       const { w: W, h: H } = rootBox();
       const rr = root.getBoundingClientRect();
-      // the target plate pops up centred near the top; the prompt sits centred low —
-      // keep these strips clear so neither ever ends up covered by a panel
-      out.push({ x: rr.left + W / 2 - 130, y: rr.top + 88, w: 260, h: 94 });
+      // the prompt sits centred low — keep that strip clear so it never ends up
+      // covered by a panel (the target plate is a panel in its own right now)
       out.push({ x: rr.left + W / 2 - 130, y: rr.top + H - 146, w: 260, h: 48 });
     }
     return out;
