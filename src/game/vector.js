@@ -246,7 +246,7 @@ export class VectorChallenge {
       (this.hud = el('div', { class: 'vec-hud hidden' }, [
         el('span', { class: 'vh-mode' }),
         el('span', { class: 'vh-score' }),
-        el('span', { class: 'vh-lives' }),
+        el('span', { class: 'vh-hull' }),
         el('span', { class: 'vh-clock' }),
         (this.pop = el('span', { class: 'vh-pop' })),
       ])),
@@ -255,7 +255,7 @@ export class VectorChallenge {
     ]);
     this.host.append(this.wrap);
     this._hudScore = this.wrap.querySelector('.vh-score');
-    this._hudLives = this.wrap.querySelector('.vh-lives');
+    this._hudHull = this.wrap.querySelector('.vh-hull');
     this._hudClock = this.wrap.querySelector('.vh-clock');
   }
 
@@ -440,7 +440,6 @@ export class VectorChallenge {
   _w5 = new THREE.Vector3();
   _p2 = new THREE.Vector2();
   _q1 = new THREE.Quaternion();
-  _q2 = new THREE.Quaternion();
   _mat = new THREE.Matrix4();
   _col = new THREE.Color();
   _col2 = new THREE.Color();
@@ -1119,6 +1118,10 @@ export class VectorChallenge {
     window.clearTimeout(this._popTimer);
     this._teardownMatch();
     for (const g of Object.values(this.shotGeos)) g.dispose();
+    this.orbGroup.traverse((n) => {
+      if (n.geometry) n.geometry.dispose();
+    });
+    this.scene.remove(this.orbGroup);
     this.shotPool.forEach((m) => {
       m.material.dispose();
       this.scene.remove(m);
@@ -1583,10 +1586,10 @@ export class VectorChallenge {
     const hull = `HULL ${Math.max(0, Math.ceil(p.hull))}`;
     if (m.mode === 'duel') {
       const left = this.pilots.filter((q) => q.alive).length;
-      this._hudLives.textContent = `${hull} · PILOTS ${left}`;
+      this._hudHull.textContent = `${hull} · PILOTS ${left}`;
       this._hudClock.textContent = '';
     } else {
-      this._hudLives.textContent = p.respawn > 0 ? 'IN THE PIT' : hull;
+      this._hudHull.textContent = p.respawn > 0 ? 'IN THE PIT' : hull;
       this._hudClock.textContent = `TIME ${Math.ceil(m.time)}`;
     }
   }
