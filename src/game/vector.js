@@ -65,6 +65,30 @@ export function courseRadius(orbR) {
   return clamp(orbR * ZONE_FRAC, ZONE_MIN, ZONE_MAX);
 }
 
+/**
+ * The circuit is a fairground, and a fairground has sponsors. These are the
+ * house boards: painted onto canvases at build time — no art, no fonts to load —
+ * and hung over the course as holo-boards, run as a ticker along the bottom of
+ * the glass, and read out over the PA when a heat starts.
+ */
+export const VECTOR_ADS = [
+  { brand: 'QUANTUM KEROSENE', line: 'Burns twice. Smells once.' },
+  { brand: 'BIG KESSLER’S HULL & FENDER', line: 'Dent it. We bang it out.' },
+  { brand: 'VACUUM-TO-GO', line: 'The drive-thru at nine hundred a second.' },
+  { brand: 'SIRIUS SNACKS', line: 'Beef. In space. Allegedly.' },
+  { brand: 'MOTHERSHIP MUTUAL', line: 'Because the lanes do not care.' },
+  { brand: 'REAVER CREDIT UNION', line: 'We hold your interest. Firmly.' },
+  { brand: 'HOLO-SIM RENTALS', line: 'Every port with a bar keeps one.' },
+  { brand: 'BRIGHT PENNY DETAILING', line: 'Your hull, but smug.' },
+  { brand: 'ANVIL & SONS GUNSMITHING', line: 'If it will not fit, hit it harder.' },
+  { brand: 'VESPER GATE SPORTS BOOK', line: 'Odds posted every heat. Terms unkind.' },
+  { brand: 'NOW HIRING RIVAL PILOTS', line: 'Own hull required. Benefits: generous.' },
+  { brand: 'THE VIGIL AUXILIARY', line: 'We are definitely watching this heat.' },
+];
+/** How much of the tank a star puts back — the same in every discipline. */
+const TURBO_TOPUP = 0.22;
+const AD_ACCENTS = [0xff6b7a, 0xffb45c, 0x8fd0ff, 0xc792ff, 0x7dffa8, 0xffe66b];
+
 // ---------------------------------------------------------------------------
 // The chute — the circuit's other discipline. A spiralling tube of wire and
 // phosphor wound through open space, wide enough for four hulls and long enough
@@ -133,8 +157,7 @@ const CHUTE = {
   padHover: 12,    // how high a plate rides off the road
   rivalLook: 880,  // how far up the road a rival spots a pickup and goes for it
   stars: 9,        // stars along the track, the turbo tank's refill
-  starTop: 0.22,   // how much of the tank one star puts back — enough to matter,
-                   // not enough to run away with: the field takes stars too
+  starTop: TURBO_TOPUP, // how much of the tank one star puts back
   air: 215,        // the launch a ramp gives — the orb's ramps use the same
   gravity: 430,    // and the same pull back down
   rivals: 5,       // six fly: the commander and five
@@ -187,7 +210,7 @@ const CAM_REF_ORB = 2100; // the orb these figures were drawn for
 // than a race between two identical ships, and a corner can be taken faster than
 // the hull would otherwise stand. The figures are the lanes' own engine burst,
 // so the same hand works the same way in both seats.
-const TURBO = { duration: 3.4, recharge: 8, rearm: 0.35 };
+const TURBO = { duration: 3.4, recharge: 8, rearm: 0.35, topUp: TURBO_TOPUP };
 const TURBO_SPEED = 330;   // what the governor allows while it burns
 const TURBO_ACCEL = 340;   // and the shove of thrust that gets the hull there
 /** The chute's own ceiling, with the lever wide open and nothing burning. */
@@ -220,12 +243,89 @@ const MODE_INFO = {
   },
 };
 
-const PICKUP_KINDS = ['burst', 'rapid', 'shield'];
-const PICKUP_NAMES = { burst: 'DRIVE BURST', rapid: 'RAPID FIRE', shield: 'SHIELD' };
+const PICKUP_KINDS = ['burst', 'rapid', 'shield', 'star'];
+const PICKUP_NAMES = { burst: 'DRIVE BURST', rapid: 'RAPID FIRE', shield: 'SHIELD', star: 'STAR — TURBO' };
 // the world wants numeric colors, the HUD pop-out wants CSS strings
-const PICKUP_COLORS = { burst: 0xffb45c, rapid: 0x8fd0ff, shield: 0xc792ff };
-const PICKUP_CSS = { burst: '#ffb45c', rapid: '#8fd0ff', shield: '#c792ff' };
+const PICKUP_COLORS = { burst: 0xffb45c, rapid: 0x8fd0ff, shield: 0xc792ff, star: 0xffe66b };
+const PICKUP_CSS = { burst: '#ffb45c', rapid: '#8fd0ff', shield: '#c792ff', star: '#ffe66b' };
 const cssHex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+
+/**
+ * Paint one house board onto a canvas: a panel, two neon rules, a ring of bulbs
+ * and the copy. Canvas text is the whole art department here — no assets, no
+ * fonts to load, and a board can be repainted whenever it has something new to
+ * say (see the jumbotron).
+ */
+function adTexture(ad, accent, w = 512, h = 256) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d');
+  const hex = cssHex(accent);
+  g.fillStyle = 'rgba(4,10,16,0.94)';
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = hex;
+  g.lineWidth = 9;
+  g.strokeRect(5, 5, w - 10, h - 10);
+  g.lineWidth = 2;
+  g.strokeRect(20, 20, w - 40, h - 40);
+  g.fillStyle = hex;
+  for (let i = 0; i < 12; i++) {
+    const x = 34 + (i * (w - 68)) / 11;
+    g.beginPath();
+    g.arc(x, 14, 5, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.arc(x, h - 14, 5, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.textAlign = 'center';
+  g.fillStyle = '#f2fbff';
+  g.font = 'bold 40px system-ui, sans-serif';
+  g.fillText(ad.brand, w / 2, h / 2 - 14, w - 76);
+  g.fillStyle = hex;
+  g.font = '26px system-ui, sans-serif';
+  g.fillText(ad.line, w / 2, h / 2 + 42, w - 76);
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 2;
+  return tex;
+}
+
+/** A house board in the air: a lit plane on a wire frame, facing its viewer. */
+function adBoard(ad, accent, w = 420, h = 210) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({
+    map: adTexture(ad, accent), transparent: true, opacity: 0.96, depthWrite: false,
+  });
+  g.add(new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat));
+  const frame = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(w * 1.08, h * 1.14)),
+    new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }),
+  );
+  g.add(frame);
+  g.userData.face = true;
+  return g;
+}
+
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+/**
+ * Seat a flat board in the world by its own axes: the plane's face (its local
+ * +Z) points along `normal`, and `upHint` says which way up it hangs. Both are
+ * taken as given direction, not as orthonormal ones — the up is squared off
+ * against the normal here so a caller can pass the same vector twice.
+ */
+function faceBoard(obj, pos, normal, upHint) {
+  const z = normal.clone().normalize();
+  const y = upHint.clone().addScaledVector(z, -upHint.dot(z));
+  if (y.lengthSq() < 1e-6) y.copy(Math.abs(z.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : Y_AXIS).addScaledVector(z, -y.dot(z));
+  y.normalize();
+  const x = new THREE.Vector3().crossVectors(y, z).normalize();
+  obj.position.copy(pos);
+  obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+  return obj;
+}
+
 /** A point in the chute's cross-section: `side` across the track, `up` above it. */
 const cornerOf = (centre, frame, side, up) => centre.clone()
   .addScaledVector(frame.side, side)
@@ -421,6 +521,10 @@ export class VectorChallenge {
     this.mounds = [];         // elevation bumps
     this.ramps = [];          // launch ramps
     this.t = 0;
+    this._adI = 0;            // which house read is on the glass
+    this._adT = 0;            // and how long until it is replaced
+    this.ads = [];            // the boards hung for this match
+    this._chase = [];         // the travelling lamps round the course
     this._last = performance.now();
     this._keys = new Set();
     this._done = false;
@@ -457,6 +561,11 @@ export class VectorChallenge {
         (this._hudTurbo = el('span', { class: 'vh-turbo' })),
         (this.pop = el('span', { class: 'vh-pop' })),
       ])),
+      // the house ticker: a sponsor reading across the bottom of the glass, the
+      // way a fairground announces whose money is paying for the lights
+      (this._ticker = el('div', { class: 'vec-ticker hidden' }, [
+        (this._tickerText = el('span', { class: 'vt-line' })),
+      ])),
       (this._board = el('div', { class: 'vec-board hidden' })),
       (this._markers = el('div', { class: 'vec-markers hidden' })),
       (this.gauges = el('div', { class: 'vec-gauges hidden' }, [
@@ -487,8 +596,28 @@ export class VectorChallenge {
     this._popTimer = window.setTimeout(() => this.pop.classList.remove('on'), 1600);
   }
 
+  /** Put a sponsor on the glass, and keep it turning over while the rig is up. */
+  _showTicker() {
+    if (!this._ticker) return;
+    this._ticker.classList.remove('hidden');
+    this._adI = this._adI || 0;
+    this._adT = 0;
+    this._nextAd();
+  }
+
+  _nextAd() {
+    const ad = VECTOR_ADS[this._adI++ % VECTOR_ADS.length];
+    this._tickerText.textContent = `★ ${ad.brand} — ${ad.line}`;
+    // restart the slide rather than letting the copy swap in place
+    this._tickerText.classList.remove('vt-in');
+    void this._tickerText.offsetWidth;
+    this._tickerText.classList.add('vt-in');
+    this._adT = 7.5;
+  }
+
   _showLobby() {
     clear(this.lobby);
+    this._showTicker();
     const shipDef = SHIP_BY_ID[this.shipId] || SHIP_BY_ID.wayfarer;
     const wins = this.rec.wins || 0;
     this.lobby.append(el('div', { class: 'vec-panel' }, [
@@ -525,8 +654,9 @@ export class VectorChallenge {
         'W/S work the power lever · A/D yaw · SPACE fire · SHIFT burns the turbo reserve · ESC step out. ',
         'The rig lays its course on one patch of the orb, so the ground you can see is the ground you are flying over; leave it and the field turns you back. ',
         'It carries hills, walls and launch ramps; cross a ramp fast and the field throws you over the walls. ',
-        'Item pads hand out drive bursts, rapid fire and shields. ',
-        'In the chute there is no ground at all: six pilots race a winding tube of wire that breathes and lifts as it goes, with gates to pass, ramps to jump, squeezes where the road pulls in and splits where it opens out around a divider — two ways through, and no way back across once the nose has passed. W and S work the power lever: hold a speed through a squeeze, feather it over a ramp, open it right up on the straights. SHIFT burns the turbo tank, the bar at the bottom of the screen shows what is in it, and stars strung along the road top it back up — the field flies the same hulls you do, so the tank and the stars are the whole margin. And a hit up the chute costs a rival its thrust rather than its hull. ',
+        'Item pads hand out drive bursts, rapid fire, shields and stars, and the turbo tank works in every discipline: SHIFT lights it, the bar at the foot of the glass shows what is in it, and a star tops it up in one go. ',
+        'In the chute there is no ground at all: six pilots race a winding tube of wire that breathes and lifts as it goes, with gates to pass, ramps to jump, squeezes where the road pulls in and splits where it opens out around a divider — two ways through, and no way back across once the nose has passed. W and S work the power lever: hold a speed through a squeeze, feather it over a ramp, open it right up on the straights, and the stars strung along the road keep the tank fed — the field flies the same hulls you do, so the tank and the stars are the whole margin. And a hit up the chute costs a rival its thrust rather than its hull. ',
+        'The house comes with the rig: sponsor boards hung over the course, a jumbotron reading the running order, and the sponsors along the bottom of the glass. ',
         'You fly the fit in your bay, mount for mount, and the bracket fits its own pilots to match.',
       ]),
       btn('Step out', () => this.quit(), 'btn ghost'),
@@ -795,6 +925,188 @@ export class VectorChallenge {
   /** Where something standing `height` above the surface sits in the world. */
   _pointAt(u, height, out) {
     return out.copy(u).multiplyScalar(this.orbR + height);
+  }
+
+  /**
+   * The house boards. Every heat is a fairground: holo-boards hung off the
+   * course, a jumbotron over the middle of it reading the running order, and a
+   * chase light going round the circuit for as long as the heat lasts. None of
+   * it is in the way — a board on the orb floats well outside the zone walls,
+   * and one in the chute sits past the rails — and it is all built from the same
+   * ads the ticker reads out, so the house and the glass agree.
+   */
+  _buildAds(mode) {
+    this.ads = [];
+    this._chase = [];
+    const bank = this.rng.shuffle(VECTOR_ADS.map((ad, i) => ({ ad, accent: AD_ACCENTS[i % AD_ACCENTS.length] })));
+    const chute = mode === 'chute' && this.chute;
+    const count = chute ? Math.max(4, Math.round(this.chute.length / 1500)) : 6;
+    for (let i = 0; i < count; i++) {
+      const { ad, accent } = bank[i % bank.length];
+      const g = adBoard(ad, accent, chute ? 300 : 380, chute ? 150 : 190);
+      let pos;
+      let up;
+      if (chute) {
+        // a board on the chute stands off the rails and turns its lit face back
+        // across the road, so a pilot reads it on the way past
+        const s = 520 + (i * (this.chute.length - 1040)) / Math.max(1, count - 1);
+        const centre = this._chutePoint(s, this._c1).clone();
+        const f = this._chuteFrame(s, this._cFrame);
+        const side = i % 2 ? 1 : -1;
+        pos = centre
+          .addScaledVector(f.side, side * (this._chuteHalf(s) + 170))
+          .addScaledVector(f.up, 90);
+        up = f.up.clone();
+        faceBoard(g, pos, this._c2.copy(f.side).multiplyScalar(-side), up);
+      } else {
+        // and one over the orb hangs above the field, facing down at it
+        const tangent = this._randomHeading(this.zone.u, this._c5);
+        const a = (i / count) * Math.PI * 2 + 0.6;
+        const u = this._c6.copy(this.zone.u).multiplyScalar(Math.cos(a)).addScaledVector(tangent, Math.sin(a)).normalize();
+        pos = u.clone().multiplyScalar(this.orbR + 130);
+        up = u.clone();
+        faceBoard(g, pos, this._c3.copy(u).multiplyScalar(-1), this._c2.copy(tangent));
+      }
+      g.userData.bob = { pos, up, phase: i * 1.3, sway: g.quaternion.clone() };
+      this.scene.add(g);
+      this.terrain.push(g);
+      this.ads.push(g);
+    }
+
+    // the jumbotron: a screen over the middle of the course, repainted a few
+    // times a second with the running order
+    const jc = document.createElement('canvas');
+    jc.width = 512;
+    jc.height = 256;
+    this._jumboCtx = jc.getContext('2d');
+    this._jumboTex = new THREE.CanvasTexture(jc);
+    this._jumboPaint = 0;
+    const jg = new THREE.Group();
+    const jw = chute ? 620 : 780;
+    const jh = chute ? 310 : 390;
+    jg.add(new THREE.Mesh(
+      new THREE.PlaneGeometry(jw, jh),
+      new THREE.MeshBasicMaterial({ map: this._jumboTex, transparent: true, opacity: 0.97, depthWrite: false }),
+    ));
+    jg.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(jw * 1.06, jh * 1.1)),
+      new THREE.LineBasicMaterial({ color: 0xffe66b, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }),
+    ));
+    if (chute) {
+      const s = this.chute.length * 0.5;
+      const centre = this._chutePoint(s, this._c1).clone();
+      const f = this._chuteFrame(s, this._cFrame);
+      this._jumboUp = f.up.clone();
+      // high enough that even a full ramp launch passes under it
+      this._jumboBase = centre.clone().addScaledVector(f.up, 400);
+      // the screen stands across the tube and looks back down the road, so the
+      // running order is something a racer reads on the way in
+      faceBoard(jg, this._jumboBase.clone(), this._c2.copy(f.t).multiplyScalar(-1), this._jumboUp);
+    } else {
+      this._jumboUp = this.zone.u.clone();
+      this._jumboBase = this._jumboUp.clone().multiplyScalar(this.orbR + this.zone.r * 0.7);
+      faceBoard(jg, this._jumboBase.clone(), this._jumboUp.clone().multiplyScalar(-1), this._randomHeading(this.zone.u, this._c5));
+    }
+    this.scene.add(jg);
+    this.terrain.push(jg);
+    this._jumbo = jg;
+    this._paintJumbo();
+
+    // chase lights: the fairground's idea of a lap
+    const lamps = chute ? 10 : 12;
+    for (let i = 0; i < lamps; i++) {
+      const spr = glowSprite(0xffe66b, chute ? 26 : 44);
+      this.scene.add(spr);
+      this.terrain.push(spr);
+      this._chase.push({ spr, i, of: lamps });
+    }
+    this._adMode = mode;
+  }
+
+  /** Bob the boards, run the lamps and keep the jumbotron current. */
+  _updateAds(dt) {
+    const t = this.t;
+    for (const g of this.ads || []) {
+      const b = g.userData.bob;
+      if (!b) continue;
+      g.position.copy(b.pos).addScaledVector(b.up, Math.sin(t * 0.9 + b.phase) * 14);
+      g.quaternion.copy(b.sway)
+        .multiply(this._q1.setFromAxisAngle(b.up || Y_AXIS, Math.sin(t * 0.25 + b.phase) * 0.3));
+    }
+    if (this._jumbo && this._jumboBase) {
+      this._jumbo.position.copy(this._jumboBase).addScaledVector(this._jumboUp, Math.sin(t * 0.7) * 18);
+    }
+    for (const lamp of this._chase || []) {
+      const k = (lamp.i / lamp.of + t * 0.09) % 1;
+      if (this.chute) {
+        const s = k * this.chute.length;
+        this._seatChute(lamp.spr, s, 0, 62 + Math.sin(t * 3 + lamp.i) * 10);
+      } else {
+        const tangent = this._randomHeading(this.zone.u, this._c5);
+        const a = k * Math.PI * 2;
+        this._c6.copy(this.zone.u).multiplyScalar(Math.cos(a)).addScaledVector(tangent, Math.sin(a)).normalize();
+        lamp.spr.position.copy(this._c6).multiplyScalar(this.orbR + 26);
+      }
+      lamp.spr.material.opacity = 0.35 + 0.35 * Math.sin(t * 4 + lamp.i * 1.7);
+    }
+    this._jumboPaint = (this._jumboPaint || 0) - dt;
+    if (this._jumboPaint <= 0 && this._jumboCtx) {
+      this._jumboPaint = 0.4;
+      this._paintJumbo();
+    }
+  }
+
+  /** What the jumbotron says: the discipline, the sponsor, and who is leading. */
+  _paintJumbo() {
+    const g = this._jumboCtx;
+    if (!g) return;
+    const w = 512;
+    const h = 256;
+    const ad = VECTOR_ADS[Math.abs(this._adI || 0) % VECTOR_ADS.length];
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = 'rgba(3,9,15,0.96)';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#ffe66b';
+    g.lineWidth = 8;
+    g.strokeRect(4, 4, w - 8, h - 8);
+    g.fillStyle = '#ffe66b';
+    g.fillRect(0, 0, w, 6);
+    g.fillRect(0, h - 6, w, 6);
+    g.textAlign = 'left';
+    g.fillStyle = '#ffe66b';
+    g.font = 'bold 32px system-ui, sans-serif';
+    g.fillText(this.chute ? 'CHUTE RUN · THE SPIRAL' : `${(this.match?.mode || 'duel').toUpperCase()} · ${this.orb.name}`, 26, 48);
+    g.fillStyle = '#8fd0ff';
+    g.font = '20px system-ui, sans-serif';
+    g.fillText(`${ad.brand} — ${ad.line}`, 26, 78, w - 52);
+    g.font = '26px system-ui, sans-serif';
+    this._standings().slice(0, 4).forEach((row, i) => {
+      g.fillStyle = i === 0 ? '#7dffa8' : '#dfe9f2';
+      g.fillText(`${i + 1}   ${row}`, 26, 124 + i * 32);
+    });
+    g.textAlign = 'right';
+    g.fillStyle = '#c792ff';
+    g.font = '20px system-ui, sans-serif';
+    g.fillText(`heat ${(this.rec?.played || 0) + 1}`, w - 26, 48);
+    this._jumboTex.needsUpdate = true;
+  }
+
+  /** Who is in front, in whatever terms this discipline counts. */
+  _standings() {
+    const live = this.pilots.filter((p) => p && p.alive !== false);
+    if (this.chute) {
+      return live
+        .slice()
+        .sort((a, b) => (a.finishAt ?? Infinity) - (b.finishAt ?? Infinity) || b.s - a.s)
+        .map((p) => p.name);
+    }
+    if (this.match?.mode === 'harvest') {
+      return live.slice().sort((a, b) => b.score - a.score).map((p) => `${p.name}  ${Math.round(p.score)}`);
+    }
+    return live
+      .slice()
+      .sort((a, b) => Number(b.alive) - Number(a.alive) || b.hull - a.hull)
+      .map((p) => `${p.name}  ${Math.max(0, Math.round((p.hull / Math.max(1, p.hullMax)) * 100))}%`);
   }
 
   /**
@@ -1195,8 +1507,6 @@ export class VectorChallenge {
     this.pickups = [];
     const padGeo = new THREE.OctahedronGeometry(7);
     const padEdges = new THREE.EdgesGeometry(padGeo);
-    const padFill = new THREE.MeshBasicMaterial({ color: 0x171305, transparent: true, opacity: 0.8, depthWrite: false });
-    const padWire = new THREE.LineBasicMaterial({ color: PAD_COLOR, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending });
     // Pads are laid on the course as well, and kept clear of the barriers so a
     // pilot can always reach one without having to thread a wall
     const taken = [];
@@ -1210,14 +1520,22 @@ export class VectorChallenge {
       }
       taken.push(u.clone());
       const [t1, t2] = this._frameAt(u, this.rng.float(0, 1) * Math.PI);
+      const kind = PICKUP_KINDS[i % PICKUP_KINDS.length];
       const g = new THREE.Group();
+      // a pad wears its own colour, so a star reads as a star from across the
+      // field rather than as another anonymous octahedron
+      const padFill = new THREE.MeshBasicMaterial({ color: 0x171305, transparent: true, opacity: 0.8, depthWrite: false });
+      const padWire = new THREE.LineBasicMaterial({
+        color: PICKUP_COLORS[kind], transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending,
+      });
       const m = new THREE.Mesh(padGeo, padFill);
       m.add(new THREE.LineSegments(padEdges, padWire));
+      if (kind === 'star') m.scale.setScalar(1.25);
       g.add(m);
       this._seat(g, u, t1);
       this.scene.add(g);
       this.terrain.push(g);
-      this.pickups.push({ u, t1, t2, group: g, mesh: m, alive: true, respawn: 0, kind: PICKUP_KINDS[i % PICKUP_KINDS.length], phase: i * 1.7 });
+      this.pickups.push({ u, t1, t2, group: g, mesh: m, wire: padWire, alive: true, respawn: 0, kind, phase: i * 1.7 });
     }
   }
 
@@ -1229,6 +1547,8 @@ export class VectorChallenge {
     pad.t2 = t2;
     pad.group.position.copy(pad.u).multiplyScalar(this.orbR);
     pad.kind = this.rng.pick(PICKUP_KINDS);
+    pad.wire.color.setHex(PICKUP_COLORS[pad.kind]);
+    pad.mesh.scale.setScalar(pad.kind === 'star' ? 1.25 : 1);
   }
 
   _grabPickup(p, pad) {
@@ -1241,11 +1561,19 @@ export class VectorChallenge {
       p.boost = 3;
     } else if (pad.kind === 'rapid') {
       p.rapid = 5;
+    } else if (pad.kind === 'star') {
+      // the turbo tank can be refilled on the field, not only by waiting
+      p.turboCharge = Math.min(1, p.turboCharge + TURBO.topUp);
     } else {
       p.shieldT = 4;
       p.invuln = Math.max(p.invuln, 4);
     }
-    if (p.isPlayer) this._pop(PICKUP_NAMES[pad.kind], PICKUP_CSS[pad.kind]);
+    if (p.isPlayer) {
+      this._pop(
+        pad.kind === 'star' ? `STAR — TURBO ${Math.round(p.turboCharge * 100)}%` : PICKUP_NAMES[pad.kind],
+        PICKUP_CSS[pad.kind],
+      );
+    }
   }
 
   _updatePickups(dt) {
@@ -1442,9 +1770,20 @@ export class VectorChallenge {
     this.over.classList.add('hidden');
     this.hud.classList.remove('hidden');
     this._buildRivalBoard();
+    this._buildAds(mode);
+    this._showTicker();
     this.hud.querySelector('.vh-mode').textContent = `${MODE_INFO[mode].name.toUpperCase()} · ${this.orb.name} · ${MODE_INFO[mode].line}`;
     audio.dock();
     this._announce(mode === 'duel' ? `DUEL — LAST PILOT FLYING ON ${this.orb.name}` : `HARVEST — ${this.orb.name} IS SEEDED`);
+    this._sponsorCall();
+  }
+
+  /** Every heat has a backer: say who is paying for the lights. */
+  _sponsorCall() {
+    const ad = VECTOR_ADS[this.rng.int(0, VECTOR_ADS.length - 1)];
+    window.setTimeout(() => {
+      if (this.match && !this.match.over) this._pop(`★ ${ad.brand} — ${ad.line}`, '#ffe66b');
+    }, 1200);
   }
 
   _announce(text) {
@@ -1489,6 +1828,11 @@ export class VectorChallenge {
     this._board.classList.add('hidden');
     this._markers.classList.add('hidden');
     this.gauges.classList.add('hidden');
+    this.ads = [];
+    this._chase = [];
+    this._jumbo = null;
+    this._jumboCtx = null;
+    this._jumboTex = null;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1570,7 +1914,13 @@ export class VectorChallenge {
     const dt = Math.min(0.05, (now - this._last) / 1000);
     this._last = now;
     this.t += dt;
-    if (this.match && !this.match.over) this._update(dt);
+    // the house keeps talking whether or not the heat is on
+    this._adT = (this._adT || 0) - dt;
+    if (this._adT <= 0 && this._ticker && !this._ticker.classList.contains('hidden')) this._nextAd();
+    if (this.match && !this.match.over) {
+      this._update(dt);
+      this._updateAds(dt);
+    }
     this._render(dt);
   };
 
@@ -2821,9 +3171,13 @@ export class VectorChallenge {
     this.over.classList.add('hidden');
     this.hud.classList.remove('hidden');
     this._buildRivalBoard();
+    this._buildAds('chute');
+    this._showTicker();
     this.hud.querySelector('.vh-mode').textContent = `${MODE_INFO.chute.name.toUpperCase()} · THE SPIRAL · ${MODE_INFO.chute.line}`;
     audio.dock();
-    this._announce(`CHUTE RUN — ${this._chuteRead().toUpperCase()}`);  }
+    this._announce(`CHUTE RUN — ${this._chuteRead().toUpperCase()}`);
+    this._sponsorCall();
+  }
 
   /**
    * A hull that goes into a gap loses the race rather than the match: back to

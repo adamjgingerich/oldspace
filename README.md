@@ -100,12 +100,16 @@ when you want to cross a system in a hurry. Your choice is remembered.
   one of them — where a gun costs a rival its thrust rather than its hull), on a
   wire-and-phosphor orb, in your own hull with the guns you actually carry. The
   rig lays a course of walls, hills and launch ramps on one patch of the world,
-  marks its edges on the ground, and shows you where the other pilots are.
-  In the chute `W`/`S` work a power lever rather than a throttle switch, so a
-  pilot can hold a speed as well as build one; `Shift` burns the turbo tank and
-  the bar under the track shows what is left in it, and the stars strung along
-  the road are what fills it back up. The rest of the field flies the same
+  marks its edges on the ground, and shows you where the other pilots are —
+  with item pads for drive bursts, rapid fire, shields and stars.
+  `Shift` burns the turbo tank in every discipline: the bar at the foot of the
+  glass shows what is in the tank, it refills as you fly, and a star tops it up
+  in one go. In the chute `W`/`S` work a power lever rather than a throttle
+  switch, so a pilot can hold a speed as well as build one, and the stars strung
+  along the road are what keeps a tank fed. The rest of the field flies the same
   hulls, so the tank and the stars are where a race is won.
+  The house comes with the rig: sponsor boards hung over the course, a
+  jumbotron reading the running order, and a ticker along the foot of the glass.
   Winners take the purse; the desk pays consolation.
 - **The law** — four factions (Free Ports, Helion Combine, The Vigil, Reaver
   Clans) remember what you do. Wrong a faction past −60 and their ports

@@ -2398,7 +2398,7 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 .vec-gauges {
   position: absolute;
   left: 18px;
-  bottom: 26px;
+  bottom: 50px;
   z-index: 1;
   width: 220px;
   display: grid;
@@ -2428,6 +2428,34 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 .vg-row.turbo i { background: #8fd0ff; box-shadow: 0 0 10px rgba(143, 208, 255, 0.55); }
 .vg-row i:empty { box-shadow: none; }
 .vg-note { color: #6fa892; letter-spacing: 0.12em; }
+
+/* The house ticker: a sponsor reading across the foot of the glass, the way a
+   fairground announces whose money is paying for the lights. */
+.vec-ticker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 7px 14px 9px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-align: center;
+  color: #241005;
+  background: linear-gradient(90deg, #ff9a3c, #ffe66b 45%, #ff6b7a);
+  box-shadow: 0 -6px 22px rgba(255, 154, 60, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+.vt-line { display: inline-block; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45); }
+.vt-line.vt-in { animation: vt-in 0.45s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+@keyframes vt-in {
+  from { opacity: 0; transform: translateY(140%); }
+  60% { opacity: 1; }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 /* The rival board: who else is flying, their hull and how far off they are.
    An orb is wide enough to lose a fight in by looking the wrong way. */

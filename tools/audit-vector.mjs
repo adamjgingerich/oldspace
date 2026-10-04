@@ -11,7 +11,7 @@
 // measured against a real Object3D seated the way the sim seats the mesh, so a
 // collision frame that has drifted from what is drawn cannot pass.
 import * as THREE from 'three';
-import { VectorChallenge, simWeapon, ZONE_COUNTS, courseRadius, CHUTE_SPEC } from '../src/game/vector.js';
+import { VectorChallenge, simWeapon, ZONE_COUNTS, courseRadius, CHUTE_SPEC, VECTOR_ADS } from '../src/game/vector.js';
 import { WEAPONS, WEAPON_BY_ID } from '../src/data/weapons.js';
 
 const CHUTE_PAD_KINDS_OK = ['burst', 'rapid', 'ward', 'star'];
@@ -35,7 +35,18 @@ function makeOrb(orbR = R, seed = 1) {
   const v = Object.create(VectorChallenge.prototype);
   let s = seed;
   const next = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-  v.rng = { float: (a, b) => a + next() * (b - a), pick: (arr) => arr[Math.floor(next() * arr.length)] };
+  v.rng = {
+    float: (a, b) => a + next() * (b - a),
+    pick: (arr) => arr[Math.floor(next() * arr.length)],
+    shuffle: (arr) => {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(next() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    },
+  };
   v.orbR = orbR;
   v.reach = orbR / 820;
   v.t = 0;
@@ -1066,6 +1077,242 @@ function makeRacer(c, i, isPlayer = false) {
     for (let i = 0; i < 60 * (CHUTE_SPEC.padRespawn + 1); i++) { g.t += 1 / 60; g._chutePadsStep(1 / 60); }
     if (!pad.alive) fail('a taken plate never comes back');
   }
+}
+
+/* ---- turbo in the orb disciplines, and the star that refills the tank ---- */
+{
+  const sim = makeOrb(3200, 7);
+  sim.zone = { u: V3().set(0, 1, 0), r: courseRadius(3200) };
+  sim._keys = new Set();
+
+  // the same governor the orb's own _update applies, so the peaks below are the
+  // speeds a pilot would actually see
+  const dt = 1 / 60;
+  const fly = (keys, seconds) => {
+    const p = {
+      isPlayer: true, u: sim.zone.u.clone(), fwd: new THREE.Vector3(1, 0, 0),
+      speed: 0, turbo: 0, turboCharge: 1, boost: 0,
+    };
+    p.fwd.addScaledVector(p.u, -p.fwd.dot(p.u)).normalize();
+    sim._keys = new Set(keys);
+    let peak = 0;
+    for (let i = 0; i < 60 * seconds; i++) {
+      sim._playerStep(p, dt);
+      p.speed = Math.min(p.speed, p.boost > 0 || p.turbo ? CHUTE_SPEC.turboSpeed : CHUTE_TOP_SPEED_SPEC);
+      peak = Math.max(peak, p.speed);
+    }
+    return { p, peak };
+  };
+  const plain = fly(['KeyW'], 4);
+  const lit = fly(['KeyW', 'ShiftLeft'], 4);
+  if (plain.peak > CHUTE_TOP_SPEED_SPEC * 1.001) {
+    fail(`an orb hull passed the governor at ${Math.round(plain.peak)} u/s without turbo`);
+  }
+  if (lit.peak < CHUTE_SPEC.turboSpeed * 0.98) {
+    fail(`an orb hull only reached ${Math.round(lit.peak)} u/s with the tank lit`);
+  }
+  if (lit.peak < plain.peak * 1.15) {
+    fail(`turbo on the orb buys ${(lit.peak / plain.peak).toFixed(2)}x speed — the tank is a display`);
+  }
+  if (lit.p.turboCharge >= 1) fail('the orb turbo tank never empties while it is burning');
+
+  // the orb lays stars on the field too, so a tank can be earned back mid-fight
+  sim.walls = [];
+  sim.scene = { add() {} };
+  sim.terrain = [];
+  sim.pickups = [];
+  sim._pop = () => {};
+  addShots(sim, 4);
+  sim._buildPickups();
+  if (sim.pickups.length !== ZONE_COUNTS.pads) {
+    fail(`the orb laid ${sim.pickups.length} pads, not the ${ZONE_COUNTS.pads} it counts`);
+  }
+  const stars = sim.pickups.filter((q) => q.kind === 'star');
+  const KIND_COLORS = { burst: 0xffb45c, rapid: 0x8fd0ff, shield: 0xc792ff, star: 0xffe66b };
+  if (!stars.length) fail('the orb field carries no stars to refill a tank with');
+  if (stars.some((q) => q.mesh.scale.x <= 1)) fail('a star on the field is the same size as every other pad');
+  for (const q of sim.pickups) {
+    if (q.group.position.length() - sim.orbR > 1e-6) fail('a pad floats off the surface of the orb');
+  }
+
+  const star = stars[0];
+  const taker = { isPlayer: true, turboCharge: 0.1, hull: 100, invuln: 0 };
+  sim._grabPickup(taker, star);
+  if (Math.abs(taker.turboCharge - (0.1 + CHUTE_SPEC.starTop)) > 1e-6) {
+    fail(`a star on the orb put ${taker.turboCharge.toFixed(2)} in the tank, not ${(0.1 + CHUTE_SPEC.starTop).toFixed(2)}`);
+  }
+  if (star.alive) fail('a star on the orb stays on the field after it is taken');
+  const shield = sim.pickups.find((q) => q.kind === 'shield');
+  const other = { isPlayer: true, turboCharge: 0.1, hull: 100, invuln: 0 };
+  sim._grabPickup(other, shield);
+  if (other.turboCharge !== 0.1) fail('a shield pad filled the turbo tank');
+  // and a fresh pad comes back wearing a kind of its own, colour and all
+  sim._movePad(star);
+  if (star.wire.color.getHex() !== KIND_COLORS[star.kind]) {
+    fail(`a respawned ${star.kind} pad wears another kind's colour`);
+  }
+}
+
+/* ---- the house: boards in the air, a jumbotron and the ticker ---- */
+{
+  // every one of these is painted on a canvas, so give the rig something to
+  // paint on and let the boards be built exactly as the game builds them
+  const ctx2d = () => new Proxy({}, {
+    get: (t, k) => {
+      if (k === 'createRadialGradient' || k === 'createLinearGradient') return () => ({ addColorStop() {} });
+      if (k === 'measureText') return () => ({ width: 12 });
+      if (typeof k === 'string' && k in t) return t[k];
+      return () => {};
+    },
+    set: (t, k, v) => { t[k] = v; return true; },
+  });
+  globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: ctx2d }) };
+  const stubEl = () => {
+    const s = new Set(['hidden']);
+    return {
+      textContent: '',
+      offsetWidth: 100,
+      classList: { add: (c) => s.add(c), remove: (c) => s.delete(c), contains: (c) => s.has(c), has: (c) => s.has(c) },
+    };
+  };
+
+  // the copy has to be copy: a brand with no line, or two of the same brand,
+  // reads as a bug on the glass rather than as the house
+  const brands = new Set();
+  for (const ad of VECTOR_ADS) {
+    if (!ad.brand || !ad.line) fail('a house board is missing its brand or its line');
+    if (brands.has(ad.brand)) fail(`the house runs "${ad.brand}" twice`);
+    brands.add(ad.brand);
+    if (ad.brand.length > 32 || ad.line.length > 46) {
+      fail(`the board for ${ad.brand} carries more copy than a board can hold`);
+    }
+  }
+  if (VECTOR_ADS.length < 8) fail(`the house only has ${VECTOR_ADS.length} reads to run`);
+
+  // how far a board has to stand off the road, and which way the road lies from
+  // it, measured against the road itself
+  const nearRoad = (c, pos) => {
+    let clear = Infinity;
+    let at = null;
+    for (let i = 0; i <= 400; i++) {
+      const s = (i / 400) * c.chute.length;
+      const p = c._chutePoint(s, c._c6);
+      const gap = pos.distanceTo(p) - c._chuteHalf(s);
+      if (gap < clear) { clear = gap; at = p.clone(); }
+    }
+    return { clear, toRoad: at.sub(pos).normalize() };
+  };
+  const faceNormal = (g) => new THREE.Vector3(0, 0, 1).applyQuaternion(g.quaternion);
+
+  const c = makeChute(2, 31);
+  c.scene = new THREE.Object3D();
+  c.terrain = [];
+  c.orbR = 1800;
+  c.zone = { u: V3().set(0, 1, 0), r: courseRadius(1800) };
+  c._pop = () => {};
+  c.pilots = [makeRacer(c, 0, true), makeRacer(c, 1), makeRacer(c, 2)];
+  c.match = { mode: 'chute', time: 0, over: false };
+  c._ticker = stubEl();
+  c._tickerText = stubEl();
+
+  c._buildAds('chute');
+  if (c.ads.length < 4) fail(`the chute only carries ${c.ads.length} house boards`);
+  for (const g of c.ads) {
+    const b = g.userData.bob;
+    if (!b) fail('a house board has nothing to hang from');
+    else {
+      const near = nearRoad(c, b.pos);
+      if (near.clear < 20) fail(`a house board stands ${near.clear.toFixed(1)} units off the road — a hull flies through it`);
+      // a lit face turned away from the road is a board nobody ever reads
+      if (faceNormal(g).dot(near.toRoad) < 0.3) fail('a house board on the chute has its face turned away from the road');
+    }
+  }
+  if (!c._jumbo || !c._jumboCtx) fail('the chute has no jumbotron to read the running order off');
+  else {
+    const near = nearRoad(c, c._jumboBase);
+    if (near.clear < 20) fail(`the jumbotron stands ${near.clear.toFixed(1)} units off the road`);
+    // and it hangs clear of the highest a ramp can throw a hull
+    if (near.clear < CHUTE_SPEC.air + 40) {
+      fail(`the jumbotron hangs ${near.clear.toFixed(1)} units over the road — a ramp launch flies through it`);
+    }
+    // a scoreboard over the road has to look along it: turned across the tube it
+    // is edge-on to everyone flying in, and nobody reads it
+    const along = c._chuteFrame(c.chute.length * 0.5, c._cFrame).t.clone();
+    if (Math.abs(faceNormal(c._jumbo).dot(along)) < 0.9) fail('the jumbotron is edge-on to the road');
+  }
+  if (c._chase.length < 8) fail(`the fairground only runs ${c._chase.length} chase lamps`);
+  if (c._chase.some((l) => l.spr.parent !== c.scene)) fail('a chase lamp was never hung in the scene');
+
+  // the lamps go round, the boards sway, the jumbotron keeps up with the race
+  c.t = 0;
+  const was = c._chase.map((l) => l.spr.position.clone());
+  c._updateAds(0.5);
+  if (!c._chase.some((l, i) => l.spr.position.distanceTo(was[i]) > 1)) fail('the chase lamps never move');
+  c._jumboPaint = 0;
+  c._updateAds(0.05);
+  if (c._jumboPaint <= 0) fail('the jumbotron never comes up for a repaint');
+  c.t = 0.6;
+  c._updateAds(0.5);
+  const swayed = c.ads.filter((g) => !g.quaternion.equals(g.userData.bob.sway)).length;
+  if (!swayed) fail('no house board ever sways');
+
+  // the ticker: a sponsor across the foot of the glass, turning over on its own
+  c._showTicker();
+  if (c._ticker.classList.contains('hidden')) fail('the ticker never comes up on the glass');
+  if (c._adT !== 7.5) fail(`the ticker turns over every ${c._adT}s`);
+  const seen = new Set();
+  for (let i = 0; i < VECTOR_ADS.length; i++) {
+    const text = c._tickerText.textContent;
+    const brand = text.replace(/^★ /, '').split(' — ')[0];
+    if (!brands.has(brand)) fail(`the ticker printed "${text}"`);
+    seen.add(brand);
+    if (!c._tickerText.classList.contains('vt-in')) fail('a new ticker read does not get its slide');
+    c._nextAd();
+  }
+  if (seen.size !== VECTOR_ADS.length) {
+    fail(`the ticker only turned over ${seen.size} of the ${VECTOR_ADS.length} house reads`);
+  }
+  // a ticker read must name the sponsor and say something in its voice
+  if (!/^★ .+ — .+\.$/.test(c._tickerText.textContent)) {
+    fail(`a ticker read is not a sponsor and a line: "${c._tickerText.textContent}"`);
+  }
+
+  // and the orb hangs its own boards outside the walls, with the screen over it
+  const o = makeOrb(3200, 13);
+  o.orb = { name: 'TEST ORB', r: 3200 };
+  o.zone = { u: V3().set(0, 1, 0), r: courseRadius(3200) };
+  o.scene = new THREE.Object3D();
+  o.terrain = [];
+  o.match = { mode: 'duel', time: 0, over: false };
+  o._pop = () => {};
+  o.pilots = [{
+    isPlayer: true, name: 'CMDR', color: 0x6effa8, alive: true, hull: 100, hullMax: 100,
+    score: 0, u: o.zone.u.clone(), group: new THREE.Object3D(),
+  }];
+  o._buildAds('duel');
+  if (o.ads.length < 6) fail(`the orb only carries ${o.ads.length} house boards`);
+  for (const g of o.ads) {
+    const b = g.userData.bob;
+    const d = b.pos.length() - o.orbR;
+    if (d < 100) fail(`a house board on the orb hangs ${d.toFixed(0)} units over the field of play`);
+    // and it faces down at the field rather than being an invisible back
+    const inward = b.pos.clone().negate().normalize();
+    if (faceNormal(g).dot(inward) < 0.3) fail('a house board on the orb has its face turned away from the field');
+  }
+  if (!o._jumbo) fail('the orb has no jumbotron');
+  else if (o._jumbo.position.length() < o.orbR + o.zone.r * 0.5) {
+    fail('the jumbotron hangs inside the orb course');
+  } else if (faceNormal(o._jumbo).dot(o.zone.u.clone().multiplyScalar(-1)) < 0.9) {
+    fail('the orb jumbotron does not face the field');
+  }
+  if (o._chase.length < 8) fail(`the orb only runs ${o._chase.length} chase lamps`);
+  o.t = 1;
+  o._updateAds(0.5);
+  if (o._chase.some((l) => Math.abs(l.spr.position.length() - (o.orbR + 26)) > 1)) {
+    fail('an orb chase lamp came off its ring');
+  }
+
+  delete globalThis.document;
 }
 
 console.log(bad === 0 ? 'vector orb: all checks passed' : `vector orb: ${bad} problem(s)`);
