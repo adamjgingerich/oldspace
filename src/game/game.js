@@ -2048,7 +2048,8 @@ export class Game {
     } else if (result.place === 1) {
       this.ui.toasts.push(`Vector Challenge — first on the field. +₡${result.payout.toLocaleString()} · +${result.xp} XP.`, 'good');
     } else {
-      this.ui.toasts.push(`Vector Challenge — you took ${['', 'first', 'second', 'third'][result.place] || result.place} place. Consolation ₡${result.payout.toLocaleString()}.`, '');
+      const ordinal = ['', 'first', 'second', 'third', 'fourth', 'fifth'][result.place] || `${result.place}th`;
+      this.ui.toasts.push(`Vector Challenge — you took ${ordinal} place. Consolation ₡${result.payout.toLocaleString()}.`, '');
     }
     // meetup contracts settle on a win in the system where the bracket runs
     if (result.place === 1 && !result.forfeit) {

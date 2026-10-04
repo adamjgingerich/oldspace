@@ -7,6 +7,8 @@
 // Two cards on the machine:
 //   Duel     — three pilots, last one flying takes the purse.
 //   Harvest  — two minutes on the crystal field, most crystals wins.
+//   Chute Run — four pilots down a spiralling tube of wire: gates, ramps, gaps
+//               and a gun that costs a rival its thrust rather than its hull.
 //
 // The field is a planet. Not a plate with a horizon painted on it — a whole
 // orb: hulls sit on the surface, nose along a great circle, and fly right
@@ -61,6 +63,53 @@ export const ZONE_COUNTS = { pyramids: 30, bars: 16, mounds: 10, ramps: 6, pads:
 export function courseRadius(orbR) {
   return clamp(orbR * ZONE_FRAC, ZONE_MIN, ZONE_MAX);
 }
+
+// ---------------------------------------------------------------------------
+// The chute — the circuit's other discipline. A spiralling tube of wire and
+// phosphor wound through open space, wide enough for four hulls and long enough
+// to be a race rather than a sprint. Nothing out here is shot down: a bolt up
+// the chute costs a rival the thrust it needed for the next ramp, and the
+// ramps are where a race is won. Everything about the chute is measured from
+// its own centre line, so a longer track is a longer race rather than a bigger
+// empty one — and every one of these figures is checked by the vector audit.
+// ---------------------------------------------------------------------------
+const CHUTE = {
+  baseR: 700,      // radius of the spiral at the first gate
+  openR: 1500,     // and at the last — the chute unwinds as it climbs
+  turns: 1.6,      // how many times it winds around its own axis
+  rise: 0.14,      // how far it climbs per unit of track
+  halfW: 46,       // how wide the chute is either side of the centre line
+  halfH: 30,       // and how tall
+  hullSide: 15,    // half a hull, for working out where the wall is
+  turn: 74,        // units a second a pilot can slide across the chute
+  ringEvery: 70,   // a wireframe rib every this many units
+  gateEvery: 1300, // a gate to pass every this many units
+  gateFirst: 900,  // the first gate, after the run-up
+  length: 8400,    // the base length of a race
+  perTier: 700,    // plus a little more for every bracket
+  rampLen: 240,    // how long a launch ramp is
+  rampRise: 26,    // and how high it lifts a hull
+  rampMin: 150,    // the speed a hull needs before the ramp will throw it
+  rampFirst: 1200, // the first ramp
+  rampEvery: 1300, // and one every this many units after that
+  gapBase: 132,    // the gap after a ramp…
+  gapPerTier: 9,   // …and how much wider it gets per bracket
+  air: 215,        // the launch a ramp gives — the orb's ramps use the same
+  gravity: 430,    // and the same pull back down
+  rivals: 3,       // four fly: the commander and three
+  daze: 1.5,       // seconds of drive a hit costs
+  dazeCut: 0.4,    // and how much of the top speed goes with it
+  spoilGuard: 2.6, // and how long a hull is left alone after being spoiled
+  hitSpan: 26,     // how close a bolt has to pass to a hull to count
+  gridGap: 42,     // how far apart the grid starts, hull to hull
+  camBack: 98,
+  camUp: 22,
+  camLook: 150,
+  callTime: 300,   // the rig calls the race after this long
+};
+const CHUTE_COLORS = [0xff6b7a, 0xffb45c, 0x8fd0ff, 0xc792ff];
+/** The chute's figures, for the audit to measure a track against. */
+export const CHUTE_SPEC = CHUTE;
 // Past this much of the course radius the field takes the helm. It only ever
 // turns a stray hull back toward the middle of the course — it never stops one,
 // and there is no wall to be pinned on, so nobody can get stuck on it. Without
@@ -112,6 +161,10 @@ const MODE_INFO = {
     name: 'Harvest',
     line: 'Two minutes over the crystal field. Most crystals when the clock runs out.',
   },
+  chute: {
+    name: 'Chute Run',
+    line: 'Four pilots down the spiral. Gates to pass, ramps to take — and a gun to spoil someone else\'s line.',
+  },
 };
 
 const PICKUP_KINDS = ['burst', 'rapid', 'shield'];
@@ -120,6 +173,10 @@ const PICKUP_NAMES = { burst: 'DRIVE BURST', rapid: 'RAPID FIRE', shield: 'SHIEL
 const PICKUP_COLORS = { burst: 0xffb45c, rapid: 0x8fd0ff, shield: 0xc792ff };
 const PICKUP_CSS = { burst: '#ffb45c', rapid: '#8fd0ff', shield: '#c792ff' };
 const cssHex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+/** A point in the chute's cross-section: `side` across the track, `up` above it. */
+const cornerOf = (centre, frame, side, up) => centre.clone()
+  .addScaledVector(frame.side, side)
+  .addScaledVector(frame.up, up);
 
 // The rig's own drawer of guns, bracket by bracket. Every one of them is a real
 // weapon off the same charts the shipyards use, so a bracket-four rival is
@@ -286,6 +343,10 @@ export class VectorChallenge {
     // Firing and circling ranges are tuned on an 820 orb; on a bigger world they
     // have to reach further, or the sim fights in the same little patch of it.
     this.reach = this.orbR / 820;
+    // the chute is measured in its own units, so the guns fly at their chart
+    // range out there rather than an orb's idea of it
+    this.simReach = this.reach;
+    this.chute = null; // the race track, while one is being flown
     // and the rig rides higher on a bigger world, so the extra ground is ground
     // a pilot can see rather than a horizon further away
     const cam = Math.sqrt(this.orbR / CAM_REF_ORB);
@@ -389,12 +450,14 @@ export class VectorChallenge {
       el('div', { class: 'vec-mode-btns' }, [
         btn('Duel — three pilots, last one flying', () => this.startMatch('duel'), 'btn primary'),
         btn('Harvest — two minutes on the crystal field', () => this.startMatch('harvest'), 'btn primary'),
+        btn('Chute Run — four pilots down the spiral', () => this.startMatch('chute'), 'btn primary'),
       ]),
       el('p', { class: 'vec-keys' }, [
         'W/S thrust · A/D yaw · SPACE fire · SHIFT burns the turbo reserve · ESC step out. ',
         'The rig lays its course on one patch of the orb, so the ground you can see is the ground you are flying over; leave it and the field turns you back. ',
         'It carries hills, walls and launch ramps; cross a ramp fast and the field throws you over the walls. ',
         'Item pads hand out drive bursts, rapid fire and shields. ',
+        'In the chute there is no ground at all: it is a spiral of wire through open space with gates to pass and ramps to jump, and a hit up the chute costs a rival its thrust rather than its hull. ',
         'You fly the fit in your bay, mount for mount, and the bracket fits its own pilots to match.',
       ]),
       btn('Step out', () => this.quit(), 'btn ghost'),
@@ -415,9 +478,9 @@ export class VectorChallenge {
       el('p', { class: 'note', text: result.note }),
       el('div', { class: 'vec-lobby-grid' }, [
         el('div', { class: 'vec-stat' }, [
-          el('span', { class: 'vs-label', text: 'Score' }),
-          el('span', { class: 'vs-value', text: String(result.score) }),
-          el('span', { class: 'vs-note', text: `circuit best: ${Math.max(r.best || 0, result.score)}` }),
+          el('span', { class: 'vs-label', text: result.mode === 'chute' ? 'Time' : 'Score' }),
+          el('span', { class: 'vs-value', text: result.mode === 'chute' ? `${(result.timeSec || 0).toFixed(1)}s` : String(result.score) }),
+          el('span', { class: 'vs-note', text: result.mode === 'chute' ? `${this.chute ? this.chute.gates.length : 0} gates, four flying` : `circuit best: ${Math.max(r.best || 0, result.score)}` }),
         ]),
         el('div', { class: 'vec-stat' }, [
           el('span', { class: 'vs-label', text: 'Payout' }),
@@ -508,17 +571,21 @@ export class VectorChallenge {
     }
   }
 
-  _spawnBurst(u, height, color, size = 1) {
+  /** A burst of light at a world position — the sim's only explosion. */
+  _burstAt(pos, color, size = 1) {
     const b = this.burstPool.find((p) => p.t <= 0) || this.burstPool[0];
     b.t = 0.45;
     b.max = 0.45;
     b.spr.material.color.setHex(color);
     b.spr.material.opacity = 0.9;
     b.spr.visible = true;
-    this._pointAt(u, height, this._w1);
-    b.spr.position.copy(this._w1);
+    b.spr.position.copy(pos);
     b.spr.scale.setScalar(26 * size);
     audio.boom(0.35 * size);
+  }
+
+  _spawnBurst(u, height, color, size = 1) {
+    this._burstAt(this._pointAt(u, height, this._w1), color, size);
   }
 
   /* ------------------------------------------------------------------ */
@@ -540,6 +607,15 @@ export class VectorChallenge {
   _w3 = new THREE.Vector3();
   _w4 = new THREE.Vector3();
   _w5 = new THREE.Vector3();
+  // the chute's own scratch: two points, a spare, and the frame it flies in
+  _c1 = new THREE.Vector3();
+  _c2 = new THREE.Vector3();
+  _c3 = new THREE.Vector3();
+  _c4 = new THREE.Vector3();
+  _c5 = new THREE.Vector3();
+  _c6 = new THREE.Vector3();
+  _cFrame = { t: new THREE.Vector3(), side: new THREE.Vector3(), up: new THREE.Vector3() };
+  _cUp = new THREE.Vector3(0, 1, 0);
   _p2 = new THREE.Vector2();
   _q1 = new THREE.Quaternion();
   _mat = new THREE.Matrix4();
@@ -1149,17 +1225,17 @@ export class VectorChallenge {
       const fitted = this.state.weapons || def.defaultWeapons || [];
       for (let i = 0; i < cap; i++) {
         const w = WEAPON_BY_ID[fitted[i]];
-        if (w) list.push(simWeapon(w, this.reach));
+        if (w) list.push(simWeapon(w, this.simReach));
       }
     } else {
       const bracket = AI_WEAPONS[clamp(Math.floor((this.tier - 1) / 2), 0, AI_WEAPONS.length - 1)];
       const mounts = this.tier <= 2 ? 1 : 2;
       for (let i = 0; i < mounts; i++) {
         const w = WEAPON_BY_ID[this.rng.pick(bracket)];
-        if (w) list.push(simWeapon(w, this.reach));
+        if (w) list.push(simWeapon(w, this.simReach));
       }
     }
-    return list.length ? list : [simWeapon(WEAPON_BY_ID.pulse, this.reach)];
+    return list.length ? list : [simWeapon(WEAPON_BY_ID.pulse, this.simReach)];
   }
 
   _makePilot(i, isPlayer) {
@@ -1230,7 +1306,12 @@ export class VectorChallenge {
   startMatch(mode) {
     this._lastMode = mode;
     this._teardownMatch();
+    if (mode === 'chute') {
+      this._startChute();
+      return;
+    }
     this.match = { mode, time: mode === 'harvest' ? HARVEST_TIME : 0, over: false };
+    this.simReach = this.reach;
     // Where the course lies on this orb, and how much of the world it takes up.
     // It is picked before anything else is built, because everything is built on
     // it, and the pilots start on it.
@@ -1321,6 +1402,10 @@ export class VectorChallenge {
         if (n.geometry) n.geometry.dispose();
       });
     }
+    for (const s of this.shots) s.mesh.visible = false;
+    this.shots = [];
+    this.chute = null;
+    this.orbGroup.visible = true;
     this.pilots = [];
     this.crystals = [];
     this.pickups = [];
@@ -1418,6 +1503,10 @@ export class VectorChallenge {
 
   _update(dt) {
     const m = this.match;
+    if (this.chute) {
+      this._chuteUpdate(dt);
+      return;
+    }
     for (const p of this.pilots) {
       if (!p.alive) continue;
       if (p.respawn > 0) {
@@ -1687,6 +1776,7 @@ export class VectorChallenge {
   }
 
   _loose(p, w, mount) {
+    if (this.chute) return this._chuteLoose(p, w, mount);
     const mesh = this.shotPool.find((m) => !m.visible);
     if (!mesh) return false;
     const jitter = this.rng.float(-1, 1) * w.spread;
@@ -1926,16 +2016,26 @@ export class VectorChallenge {
   _updateHud() {
     const m = this.match;
     const p = this.pilots[0];
-    // a duel has no score to count — what a pilot won on is the eliminations
-    this._hudScore.textContent = m.mode === 'duel' ? `ELIMS ${p.elims}` : `CRYSTALS ${p.score}`;
-    const hull = `HULL ${Math.max(0, Math.ceil(p.hull))}`;
-    if (m.mode === 'duel') {
-      const left = this.pilots.filter((q) => q.alive).length;
-      this._hudHull.textContent = `${hull} · PILOTS ${left}`;
-      this._hudClock.textContent = '';
+    if (this.chute) {
+      const gate = this.chute.gates.filter((g) => g <= p.s).length;
+      const home = this.chute.gates.length;
+      this._hudScore.textContent = `POS ${this._chutePlace(p)}/${this.pilots.length}`;
+      this._hudHull.textContent = p.daze > 0
+        ? `SPOILED · GATE ${gate}/${home}`
+        : `GATE ${gate}/${home}`;
+      this._hudClock.textContent = `TIME ${m.time.toFixed(1)}s`;
     } else {
-      this._hudHull.textContent = p.respawn > 0 ? 'IN THE PIT' : hull;
-      this._hudClock.textContent = `TIME ${Math.ceil(m.time)}`;
+      // a duel has no score to count — what a pilot won on is the eliminations
+      this._hudScore.textContent = m.mode === 'duel' ? `ELIMS ${p.elims}` : `CRYSTALS ${p.score}`;
+      const hull = `HULL ${Math.max(0, Math.ceil(p.hull))}`;
+      if (m.mode === 'duel') {
+        const left = this.pilots.filter((q) => q.alive).length;
+        this._hudHull.textContent = `${hull} · PILOTS ${left}`;
+        this._hudClock.textContent = '';
+      } else {
+        this._hudHull.textContent = p.respawn > 0 ? 'IN THE PIT' : hull;
+        this._hudClock.textContent = `TIME ${Math.ceil(m.time)}`;
+      }
     }
     // what is left in the turbo reserve, so a pilot knows what there is to spend
     if (p.turbo) {
@@ -1989,35 +2089,480 @@ export class VectorChallenge {
     this._markers.classList.remove('hidden');
   }
 
-  _updateRivals() {
-    if (!this._rivalRows.length) return;
+  /** Put a rival's chip on the glass, or pin it to the edge when it is off it. */
+  _placeMarker(r, seen, nx, ny) {
+    r.mark.classList.toggle('hidden', !seen);
+    if (!seen) return;
     const w = window.innerWidth;
     const h = window.innerHeight;
-    const me = this.pilots[0];
     const inset = 40;
+    const x = clamp((nx * 0.5 + 0.5) * w, inset, w - inset);
+    const y = clamp((-ny * 0.5 + 0.5) * h, inset, h - inset);
+    r.mark.classList.toggle('edge', nx < -1 || nx > 1 || ny < -1 || ny > 1);
+    r.mark.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  }
+
+  _updateRivals() {
+    if (!this._rivalRows.length) return;
+    const me = this.pilots[0];
     for (const r of this._rivalRows) {
       const q = r.q;
+      // the marker rides the rival while the rig can see it, and pins to the
+      // edge of the glass when the rival is off to one side. A hull behind the
+      // camera gets no marker at all rather than a marker that lies.
+      const ndc = this._mv.copy(q.group.position).project(this.camera);
+      r.row.classList.toggle('hit', this.t < q.flashUntil);
+
+      if (this.chute) {
+        // a race: what matters is the gap, not what is left of anyone's hull
+        const home = q.finishAt != null;
+        const lead = Math.round(q.s - me.s);
+        r.row.classList.remove('down');
+        r.bar.style.width = `${Math.round(clamp(q.s / this.chute.length, 0, 1) * 100)}%`;
+        r.bar.style.background = q.daze > 0 ? '#ff9a6b' : '#6effa8';
+        r.range.textContent = home ? 'HOME' : `${lead > 0 ? '+' : ''}${lead}`;
+        r.markRange.textContent = r.range.textContent;
+        this._placeMarker(r, !home && ndc.z <= 1, ndc.x, ndc.y);
+        continue;
+      }
+
       const flying = q.alive && q.respawn <= 0;
       const frac = flying ? clamp(q.hull / q.hullMax, 0, 1) : 0;
       r.row.classList.toggle('down', !flying);
-      r.row.classList.toggle('hit', this.t < q.flashUntil);
       r.bar.style.width = `${Math.round(frac * 100)}%`;
       r.bar.style.background = frac > 0.5 ? '#6effa8' : frac > 0.22 ? '#ffd166' : '#ff6b7a';
       const d = this._arc(me.u, q.u);
       const range = d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`;
       r.range.textContent = flying ? range : 'DOWN';
       r.markRange.textContent = range;
-      // the marker rides the rival while the rig can see it, and pins to the
-      // edge of the glass when the rival is off to one side. A hull behind the
-      // camera gets no marker at all rather than a marker that lies.
-      const ndc = this._mv.copy(q.group.position).project(this.camera);
-      const seen = flying && ndc.z <= 1;
-      r.mark.classList.toggle('hidden', !seen);
-      if (!seen) continue;
-      const x = clamp((ndc.x * 0.5 + 0.5) * w, inset, w - inset);
-      const y = clamp((-ndc.y * 0.5 + 0.5) * h, inset, h - inset);
-      r.mark.classList.toggle('edge', ndc.x < -1 || ndc.x > 1 || ndc.y < -1 || ndc.y > 1);
-      r.mark.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+      this._placeMarker(r, flying && ndc.z <= 1, ndc.x, ndc.y);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* The chute — the race                                              */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * A point on the chute's centre line, `s` units along the track. It winds
+   * around its own axis and opens as it climbs, so the far end of the course is
+   * always somewhere else in space.
+   */
+  _chutePoint(s, out) {
+    const t = clamp(s / this.chute.length, 0, 1);
+    const r = CHUTE.baseR + (CHUTE.openR - CHUTE.baseR) * t;
+    const ang = t * CHUTE.turns * Math.PI * 2 + this.chute.phase;
+    return out.set(Math.cos(ang) * r, s * CHUTE.rise, Math.sin(ang) * r);
+  }
+
+  /**
+   * The chute's frame at `s`: the way the track runs, and which way is across
+   * it and up. Side is horizontal, which is the axis a pilot steers along, and
+   * up is square to it — so the chute's climb and its spiral are felt as the
+   * track banking rather than as a hull sliding out of the tube.
+   */
+  _chuteFrame(s, out) {
+    this._chutePoint(s - 6, this._c1);
+    this._chutePoint(s + 6, this._c2);
+    out.t.copy(this._c2).sub(this._c1);
+    if (out.t.lengthSq() < 1e-9) out.t.set(0, 0, 1);
+    out.t.normalize();
+    out.side.crossVectors(out.t, this._cUp);
+    if (out.side.lengthSq() < 1e-6) out.side.set(1, 0, 0);
+    out.side.normalize();
+    out.up.crossVectors(out.side, out.t).normalize();
+    return out;
+  }
+
+  /** Where a racer sits in the world: along the track, across it, and above it. */
+  _chuteWorld(p, out, extraUp = 0) {
+    const f = this._chuteFrame(p.s, this._cFrame);
+    this._chutePoint(p.s, out);
+    return out.addScaledVector(f.side, p.lat).addScaledVector(f.up, p.air + extraUp);
+  }
+
+  /** Stand a hull in the chute: nose along the track, roof on the chute's up. */
+  _seatChute(obj, s, lat, air, bank = 0) {
+    const f = this._chuteFrame(s, this._cFrame);
+    this._chutePoint(s, this._c1);
+    obj.position.copy(this._c1).addScaledVector(f.side, lat).addScaledVector(f.up, air);
+    const nose = this._c3.copy(f.t).addScaledVector(f.side, bank).normalize();
+    const up = this._c4.crossVectors(f.side, nose).normalize();
+    const side = this._c5.crossVectors(up, nose).normalize();
+    obj.quaternion.setFromRotationMatrix(this._mat.makeBasis(side, up, nose));
+  }
+
+  /** The deck under a racer: a ramp lifts the floor, and the gaps have none. */
+  _chuteDeck(s) {
+    for (const r of this.chute.ramps) {
+      if (s >= r.from && s <= r.to) return CHUTE.rampRise * clamp((s - r.from) / CHUTE.rampLen, 0, 1);
+    }
+    return 0;
+  }
+
+  _inGap(s) {
+    return this.chute.gaps.some((g) => s >= g.from && s < g.to);
+  }
+
+  /** Who is ahead of whom: finishers by their time, everyone else by distance. */
+  _chutePlace(p) {
+    let ahead = 0;
+    for (const q of this.pilots) {
+      if (q === p) continue;
+      if (q.finishAt != null) {
+        if (p.finishAt == null || q.finishAt < p.finishAt) ahead += 1;
+      } else if (p.finishAt == null && q.s > p.s) {
+        ahead += 1;
+      }
+    }
+    return ahead + 1;
+  }
+
+  /** How fast a racer's drive will take it right now. */
+  _chuteCap(p) {
+    const top = p.turbo ? TURBO_SPEED : 250;
+    return p.daze > 0 ? top * CHUTE.dazeCut : top;
+  }
+
+  /**
+   * The track itself, in wire and phosphor: a rib every ringEvery units with
+   * four rails down the corners, a gate to pass, and a ramp with a hole after
+   * it. Ribs and rails are left out across a gap, because a hole in the course
+   * has to be a hole a pilot can see.
+   */
+  _buildChute() {
+    const length = Math.round(CHUTE.length + CHUTE.perTier * this.tier);
+    const gapLen = Math.round(CHUTE.gapBase + CHUTE.gapPerTier * this.tier);
+    this.chute = { length, phase: this.rng.float(0, Math.PI * 2), gates: [], ramps: [], gaps: [] };
+    for (let s = CHUTE.gateFirst; s < length; s += CHUTE.gateEvery) this.chute.gates.push(Math.round(s));
+    this.chute.gates.push(length); // the line
+    for (let s = CHUTE.rampFirst; s + CHUTE.rampLen + gapLen <= length - 200; s += CHUTE.rampEvery) {
+      this.chute.ramps.push({ from: Math.round(s), to: Math.round(s + CHUTE.rampLen) });
+      this.chute.gaps.push({ from: Math.round(s + CHUTE.rampLen), to: Math.round(s + CHUTE.rampLen + gapLen) });
+    }
+
+    const wire = [];
+    const stamp = (a, b) => wire.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    const corners = (s, lift) => {
+      const f = this._chuteFrame(s, this._cFrame);
+      const c = this._chutePoint(s, this._c1).clone();
+      const w = CHUTE.halfW;
+      const h = CHUTE.halfH + lift;
+      return [
+        cornerOf(c, f, -w, -h),
+        cornerOf(c, f, w, -h),
+        cornerOf(c, f, w, h),
+        cornerOf(c, f, -w, h),
+      ];
+    };
+    let prev = null;
+    for (let s = 0; s <= length; s += CHUTE.ringEvery) {
+      if (this._inGap(s)) { prev = null; continue; }
+      const c = corners(s, 0);
+      stamp(c[0], c[1]);
+      stamp(c[1], c[2]);
+      stamp(c[2], c[3]);
+      stamp(c[3], c[0]);
+      if (prev) for (let i = 0; i < 4; i++) stamp(prev[i], c[i]);
+      prev = c;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(wire), 3));
+    const track = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      color: 0x2cff9a, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    this.scene.add(track);
+    this.terrain.push(track);
+
+    // the gates: the line itself, and one to be sent back to after a gap
+    const gateWire = [];
+    const gstamp = (a, b) => gateWire.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    for (const g of this.chute.gates) {
+      const last = g === length;
+      const c = corners(g, 0);
+      for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 0]]) gstamp(c[i], c[j]);
+      if (last) {
+        const d = corners(g - 8, 0);
+        for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 0]]) gstamp(d[i], d[j]);
+      }
+    }
+    const gateGeo = new THREE.BufferGeometry();
+    gateGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(gateWire), 3));
+    const gates = new THREE.LineSegments(gateGeo, new THREE.LineBasicMaterial({
+      color: 0xffe66b, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    this.scene.add(gates);
+    this.terrain.push(gates);
+  }
+
+  /** One hull on the grid, in the chute's own terms. */
+  _makeChutePilot(i) {
+    const isPlayer = i === 0;
+    const def = SHIP_BY_ID[this._pilotShipId(i)] || SHIP_BY_ID.wayfarer;
+    const color = isPlayer ? PLAYER_COLOR : CHUTE_COLORS[(i - 1) % CHUTE_COLORS.length];
+    const loadout = isPlayer
+      ? {
+        weapons: this.state.weapons || def.defaultWeapons,
+        outfits: this.state.outfits || {},
+        mountCap: computeStats(this.state).mounts,
+        showEmpty: true,
+      }
+      : { weapons: def.defaultWeapons || ['pulse', null] };
+    const { group, api } = buildShip(def, { accent: color, isPlayer, loadout });
+    vectorize(group, color);
+    group.scale.setScalar(clamp(HULL_LEN / Math.max(14, def.len), 0.3, 1.5));
+    this.scene.add(group);
+
+    const shieldGlow = glowSprite(0x9fd8ff, 30);
+    shieldGlow.visible = false;
+    group.add(shieldGlow);
+
+    const mounts = this._mountsFor(isPlayer, def);
+    const p = {
+      name: isPlayer ? this.commander : this._callsigns[(i - 1) % this._callsigns.length],
+      isPlayer, color, def, group, api, shieldGlow,
+      mounts,
+      mountCd: mounts.map(() => this.rng.float(0, 0.5)),
+      // the grid: the commander on the line with the others strung out behind
+      s: -CHUTE.gridGap * i,
+      lat: (i % 2 ? 1 : -1) * 15,
+      air: 0, vy: 0, speed: 0,
+      alive: true, hull: HULL, hullMax: HULL,
+      score: 0, elims: 0, fireCd: this.rng.float(0, 1),
+      wallT: -99, flashUntil: -1, wobble: this.rng.float(0, 1) * 10,
+      turbo: 0, turboCharge: 1, daze: 0, spoilGuard: 0, finishAt: null,
+    };
+    this._seatChute(group, p.s, p.lat, p.air, 0);
+    return p;
+  }
+
+  _startChute() {
+    this.match = { mode: 'chute', time: 0, over: false };
+    this.simReach = 1;
+    this._buildChute();
+    this.orbGroup.visible = false;
+    this.pilots = [];
+    this._callsigns = this.rng.shuffle(CALLSIGNS);
+    for (let i = 0; i <= CHUTE.rivals; i++) this.pilots.push(this._makeChutePilot(i));
+    for (const sm of this.shotPool) sm.visible = false;
+    this.shots.length = 0;
+    this._place = 1;
+
+    this.lobby.classList.add('hidden');
+    this.over.classList.add('hidden');
+    this.hud.classList.remove('hidden');
+    this._buildRivalBoard();
+    this.hud.querySelector('.vh-mode').textContent = `${MODE_INFO.chute.name.toUpperCase()} · THE SPIRAL · ${MODE_INFO.chute.line}`;
+    audio.dock();
+    this._announce(`CHUTE RUN — ${this.chute.gates.length} GATES, ${this.pilots.length} FLYING`);
+  }
+
+  /**
+   * A hull that goes into a gap loses the race rather than the match: back to
+   * the last gate it passed, at gate speed, with the time that cost it.
+   */
+  _chuteFall(p) {
+    const passed = this.chute.gates.filter((g) => g <= p.s);
+    const gate = passed.length ? passed[passed.length - 1] : 0;
+    p.s = gate;
+    p.lat = 0;
+    p.air = 0;
+    p.vy = 0;
+    p.speed = 70;
+    p.daze = 0;
+    this._burstAt(this._chuteWorld(p, this._c6, 8), 0xff6b7a, 1.1);
+    if (p.isPlayer) this._pop('IN THE RIFT — BACK TO THE LAST GATE', '#ff9a6b');
+  }
+
+  /** Ramps, gravity and holes: the whole of the chute floor, in one place. */
+  _chuteDeckStep(p, prev, dt) {
+    const deck = this._chuteDeck(p.s);
+    // A ramp that ends under a hull throws it from the lip — and only if it came
+    // in fast, because the gap after a ramp is wider than a slow hull can cross.
+    // This has to be read off the crossing itself: by the time a hull is over
+    // the lip the deck under it is already the hole it is flying across.
+    for (const r of this.chute.ramps) {
+      if (prev < r.to && p.s >= r.to && p.speed > CHUTE.rampMin) {
+        p.air = Math.max(p.air, CHUTE.rampRise);
+        p.vy = CHUTE.air;
+      }
+    }
+    const inGap = this._inGap(p.s);
+    if (p.air > deck + 0.01 || p.vy > 0) {
+      p.vy -= CHUTE.gravity * dt;
+      p.air += p.vy * dt;
+      if (p.air <= deck && !inGap) { p.air = deck; p.vy = 0; }
+    } else {
+      p.air = deck;
+      p.vy = 0;
+    }
+    // a hull with no floor under it and nothing pushing it up is in the rift
+    if (inGap && p.air <= 0.001 && p.vy <= 0) this._chuteFall(p);
+  }
+
+  _chutePlayer(p, dt) {
+    let steer = 0;
+    if (this._keys.has('KeyA') || this._keys.has('ArrowLeft')) steer -= 1; // to port
+    if (this._keys.has('KeyD') || this._keys.has('ArrowRight')) steer += 1; // to starboard
+    p.lat += steer * CHUTE.turn * dt;
+    this._spendTurbo(p, this._keys.has('ShiftLeft') || this._keys.has('ShiftRight'), dt);
+    const accel = p.turbo ? TURBO_ACCEL : 240;
+    if (this._keys.has('KeyW') || this._keys.has('ArrowUp')) p.speed += accel * dt;
+    if (this._keys.has('KeyS') || this._keys.has('ArrowDown')) p.speed -= 200 * dt;
+    p.speed *= Math.max(0, 1 - 0.35 * dt);
+    p.speed = clamp(p.speed, 0, this._chuteCap(p));
+    if (this._keys.has('Space')) this._fire(p);
+  }
+
+  /**
+   * A rival's race: hold a line, spend the reserve on the straights, and put a
+   * bolt into whoever is just far enough ahead to be worth spoiling.
+   */
+  _chuteAi(p, dt) {
+    p.wobble += dt;
+    const line = Math.sin((p.s + p.wobble * 90) / 320) * CHUTE.halfW * 0.5;
+    p.lat += clamp(line - p.lat, -CHUTE.turn * 0.85 * dt, CHUTE.turn * 0.85 * dt);
+    const cap = this._chuteCap(p);
+    this._spendTurbo(p, !p.daze && p.speed > 190, dt);
+    p.speed += clamp(cap - p.speed, -140 * dt, 210 * dt);
+
+    let ahead = null;
+    for (const q of this.pilots) {
+      if (q === p || q.finishAt != null || q.spoilGuard > 0) continue;
+      const lead = q.s - p.s;
+      if (lead > 0 && lead < 700 && Math.abs(q.lat - p.lat) < CHUTE.hitSpan) {
+        if (!ahead || lead < ahead.s - p.s) ahead = q;
+      }
+    }
+    if (ahead && p.fireCd <= 0) {
+      if (this._fire(p)) p.fireCd = (p.rapid > 0 ? 0.4 : 1.1) + this.rng.float(0, 0.7);
+    }
+  }
+
+  /** A bolt up the chute: it carries the gun's reach and spoils what it hits. */
+  _chuteLoose(p, w, mount) {
+    const mesh = this.shotPool.find((m) => !m.visible);
+    if (!mesh) return false;
+    mesh.visible = true;
+    mesh.geometry = this.shotGeos[w.kind] || this.shotGeos.laser;
+    this._col.setHex(w.color);
+    if (!p.isPlayer) this._col.lerp(this._col2.setHex(p.color), 0.45);
+    mesh.material.color.copy(this._col);
+    this.shots.push({
+      s: p.s + 18 + mount * 2,
+      lat: p.lat + (mount % 2 ? 7 : -7),
+      air: p.air,
+      vel: w.speed,
+      life: w.life,
+      owner: p,
+      mesh,
+    });
+    audio.laser(w.kind === 'beam', 0.5);
+    return true;
+  }
+
+  /** Nothing is shot down out here: a hit takes a rival's drive, not its hull. */
+  _chuteHit(victim, shooter) {
+    // and a hull that has just been spoiled gets a moment: three rivals who can
+    // chain-stun one pilot would make the race a firing squad, not a race
+    if (victim.spoilGuard > 0) return;
+    victim.spoilGuard = CHUTE.spoilGuard;
+    victim.daze = Math.max(victim.daze, CHUTE.daze);
+    this._burstAt(this._chuteWorld(victim, this._c6, 6), victim.color, 0.9);
+    audio.hit();
+    if (shooter?.isPlayer) victim.flashUntil = this.t + 0.35;
+    if (victim.isPlayer) this._pop('DRIVE SPOILED', '#ff9a6b');
+  }
+
+  _chuteStepShots(dt) {
+    for (let i = this.shots.length - 1; i >= 0; i--) {
+      const sh = this.shots[i];
+      sh.life -= dt;
+      sh.s += sh.vel * dt;
+      let dead = sh.life <= 0 || sh.s > this.chute.length + 40;
+      if (!dead) {
+        for (const q of this.pilots) {
+          if (q === sh.owner || !q.alive || q.finishAt != null) continue;
+          if (Math.abs(q.s - sh.s) < CHUTE.hitSpan && Math.abs(q.lat - sh.lat) < CHUTE.hitSpan) {
+            this._chuteHit(q, sh.owner);
+            dead = true;
+            break;
+          }
+        }
+      }
+      if (dead) {
+        sh.mesh.visible = false;
+        this.shots.splice(i, 1);
+        continue;
+      }
+      this._seatChute(sh.mesh, sh.s, sh.lat, sh.air, 0);
+    }
+  }
+
+  /**
+   * One frame of the race, with nothing in it that needs a screen: the audit
+   * flies this exact function headlessly, so a chute that cannot be finished
+   * cannot pass either.
+   */
+  _chuteStep(dt) {
+    const m = this.match;
+    const lim = CHUTE.halfW - CHUTE.hullSide;
+    for (const p of this.pilots) {
+      if (p.finishAt != null) {
+        // home: the hull coasts on past the line and stops
+        p.speed *= Math.max(0, 1 - 1.4 * dt);
+      } else {
+        p.daze = Math.max(0, p.daze - dt);
+        p.spoilGuard = Math.max(0, p.spoilGuard - dt);
+        p.fireCd = Math.max(0, p.fireCd - dt);
+        for (let i = 0; i < p.mountCd.length; i++) p.mountCd[i] = Math.max(0, p.mountCd[i] - dt);
+        if (p.isPlayer) this._chutePlayer(p, dt);
+        else this._chuteAi(p, dt);
+      }
+      const prev = p.s;
+      if (p.finishAt == null) p.s += p.speed * dt;
+      this._chuteDeckStep(p, prev, dt);
+      // the walls are the width of the chute, and they let a hull slide: there
+      // is nothing to stick to and nowhere to be pinned
+      if (p.lat > lim || p.lat < -lim) {
+        p.lat = clamp(p.lat, -lim, lim);
+        p.wallT = this.t;
+        p.speed *= 0.985;
+      }
+      if (p.finishAt == null && p.s >= this.chute.length) {
+        p.finishAt = m.time;
+        p.s = this.chute.length;
+        if (p.isPlayer) {
+          m.playerHome = true;
+        } else {
+          this._pop(`${p.name} IS HOME`, cssHex(p.color));
+        }
+      }
+      this._seatChute(p.group, p.s, p.lat, p.air, 0);
+      if (p.api) {
+        p.api.pulse(this.t);
+        p.api.setThrottle(clamp(p.speed / 200, 0.08, 1));
+      }
+    }
+    this._chuteStepShots(dt);
+  }
+
+  _chuteUpdate(dt) {
+    const m = this.match;
+    m.time += dt;
+    this._chuteStep(dt);
+    this._stepBursts(dt);
+    if (m.playerHome) {
+      this._announce(`THE LINE — ${m.time.toFixed(1)}s`);
+      m.over = true;
+      this._finishMatch();
+      return;
+    }
+    this._updateHud();
+    // the rig calls it, so a race nobody can finish is still a result
+    if (m.time > CHUTE.callTime) {
+      m.over = true;
+      this._finishMatch();
     }
   }
 
@@ -2035,16 +2580,32 @@ export class VectorChallenge {
     // field finishes behind everyone still flying it.
     const place = m.mode === 'duel'
       ? (m.forfeit ? 1 + this.pilots.filter((q) => !q.isPlayer && q.alive).length : this._place)
-      : this._harvestPlace();
-    const score = m.mode === 'duel' ? p.elims : p.score;
+      : m.mode === 'chute'
+        ? (m.forfeit ? this.pilots.length : this._chutePlace(p))
+        : this._harvestPlace();
+    const score = m.mode === 'duel' ? p.elims : m.mode === 'chute' ? 0 : p.score;
     const { payout, xp } = this._payout(m.mode, place, score, m.forfeit);
-    const result = { mode: m.mode, place, score, payout, xp, forfeit: !!m.forfeit, note: '' };
+    const result = {
+      mode: m.mode,
+      place,
+      score,
+      payout,
+      xp,
+      forfeit: !!m.forfeit,
+      note: '',
+      timeSec: m.mode === 'chute' ? m.time : null,
+    };
+    const ordinal = ['', 'first', 'second', 'third', 'fourth', 'fifth'][place] || `${place}th`;
     result.note = m.forfeit
       ? 'You stepped out before the field was settled. The circuit pays nothing for a walk.'
       : m.mode === 'duel'
         ? `Eliminations: ${p.elims}. ${place === 1 ? 'Both rivals down — the purse is yours.' : 'The field keeps flying without you.'}`
-        : `${p.score} crystal${p.score === 1 ? '' : 's'} hauled. ${place === 1 ? 'The clock agrees: yours.' : 'Someone else read the field better.'}`;
-    result.note += ` Flown on ${this.orb.name}, bracket ${this.tier}.`;
+        : m.mode === 'chute'
+          ? `Home in ${m.time.toFixed(1)}s — ${ordinal} of ${this.pilots.length}. ${place === 1 ? 'The line is yours.' : 'Someone else read the chute better.'}`
+          : `${p.score} crystal${p.score === 1 ? '' : 's'} hauled. ${place === 1 ? 'The clock agrees: yours.' : 'Someone else read the field better.'}`;
+    result.note += m.mode === 'chute'
+      ? ` Flown down the spiral, bracket ${this.tier}.`
+      : ` Flown on ${this.orb.name}, bracket ${this.tier}.`;
     this._showResults(result);
     this.onFinish?.(result);
   }
@@ -2056,6 +2617,12 @@ export class VectorChallenge {
 
   _payout(mode, place, score, forfeit) {
     if (forfeit) return { payout: 0, xp: 0 };
+    if (mode === 'chute') {
+      // a race pays for the place, and the bracket raises the stake
+      const credits = (place === 1 ? 1500 : 420) + (this.tier - 1) * 120;
+      const xpr = (place === 1 ? 120 : 45) + this.tier * 6;
+      return { payout: Math.min(4000, Math.round(credits)), xp: Math.min(250, Math.round(xpr)) };
+    }
     if (mode === 'duel') {
       const credits = Math.round((place === 1 ? 1200 : 250) + score * 450);
       return { payout: Math.min(4000, credits), xp: Math.min(250, 30 + score * 50) };
@@ -2071,7 +2638,16 @@ export class VectorChallenge {
   _render(dt) {
     if (this.match && !this.match.over) {
       const p = this.pilots[0];
-      if (p) {
+      if (p && this.chute) {
+        // in the chute the rig rides the track itself, banked with the spiral
+        const f = this._chuteFrame(p.s, this._cFrame);
+        this._chutePoint(p.s - CHUTE.camBack, this._c1);
+        this._c1.addScaledVector(f.side, p.lat).addScaledVector(f.up, p.air + CHUTE.camUp);
+        this.camera.position.lerp(this._c1, 1 - Math.pow(0.0025, dt));
+        this.camera.up.copy(f.up);
+        this._chutePoint(p.s + CHUTE.camLook, this._c2);
+        this.camera.lookAt(this._c2);
+      } else if (p) {
         const h = this.groundAt(p.u) + p.y;
         // over the shoulder but well up off the deck: standing high on the
         // local vertical is what buys the long view, and on an orb the horizon
@@ -2085,6 +2661,17 @@ export class VectorChallenge {
         this._pointAt(this._w2, this.groundAt(this._w2) + p.y + CAM_AIM_H, this._w3);
         this.camera.lookAt(this._w3);
       }
+    } else if (this.chute) {
+      // between races the rig shows the spiral, slow and stately
+      const a = this.t * 0.12;
+      this._chutePoint(this.chute.length * 0.5, this._c1);
+      this.camera.up.set(0, 1, 0);
+      this.camera.position.set(
+        this._c1.x + Math.sin(a) * 900,
+        this._c1.y + 420,
+        this._c1.z + Math.cos(a) * 900,
+      );
+      this.camera.lookAt(this._c1);
     } else {
       // between matches the rig shows the whole orb, slow and stately
       const a = this.t * 0.12;

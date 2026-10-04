@@ -93,11 +93,13 @@ when you want to cross a system in a hurry. Your choice is remembered.
   at 70%.
 - **The Vector Challenge** — every port with a bar keeps a holo-sim rig older
   than half the hulls outside. Press `R` to fly a *duel* (three pilots, last one
-  flying) or a *harvest* (two minutes on the crystal field) on a wire-and-
-  phosphor orb, in your own hull with the guns you actually carry. The rig lays
-  a course of walls, hills and launch ramps on one patch of the world, marks its
-  edges on the ground, and shows you where the other pilots are. Winners take
-  the purse; the desk pays consolation.
+  flying), a *harvest* (two minutes on the crystal field) or a *chute run* (four
+  pilots down a spiralling tube of wire through open space: gates to pass, ramps
+  to jump, and a gun that costs a rival its thrust rather than its hull), on a
+  wire-and-phosphor orb, in your own hull with the guns you actually carry. The
+  rig lays a course of walls, hills and launch ramps on one patch of the world,
+  marks its edges on the ground, and shows you where the other pilots are.
+  Winners take the purse; the desk pays consolation.
 - **The law** — four factions (Free Ports, Helion Combine, The Vigil, Reaver
   Clans) remember what you do. Wrong a faction past −60 and their ports
   refuse you — though contract business still earns a grudging berth.

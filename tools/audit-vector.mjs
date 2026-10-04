@@ -11,7 +11,7 @@
 // measured against a real Object3D seated the way the sim seats the mesh, so a
 // collision frame that has drifted from what is drawn cannot pass.
 import * as THREE from 'three';
-import { VectorChallenge, simWeapon, ZONE_COUNTS, courseRadius } from '../src/game/vector.js';
+import { VectorChallenge, simWeapon, ZONE_COUNTS, courseRadius, CHUTE_SPEC } from '../src/game/vector.js';
 import { WEAPONS, WEAPON_BY_ID } from '../src/data/weapons.js';
 
 // The tightest orb on the circuit, and the widest. Chord-versus-arc error grows
@@ -43,6 +43,9 @@ function makeOrb(orbR = R, seed = 1) {
   v.crystals = [];
   v._flyers = [];
   v._mv = V3();
+  for (const k of ['_c1', '_c2', '_c3', '_c4', '_c5', '_c6']) v[k] = V3();
+  v._cFrame = { t: V3(), side: V3(), up: V3() };
+  v._cUp = new THREE.Vector3(0, 1, 0);
   for (const k of ['_s1', '_s2', '_s3', '_s4', '_s5', '_s6', '_w1', '_w2', '_w3', '_w4', '_w5']) v[k] = V3();
   v._p2 = new THREE.Vector2();
   v._q1 = new THREE.Quaternion();
@@ -118,6 +121,45 @@ function makeWalls(v, count = 12) {
 
 const v = makeOrb();
 const f = (n, d = 4) => Number(n).toFixed(d);
+
+/** An instance with a chute built on it, and nothing that needs a screen. */
+function makeChute(tier = 1, seed = 3) {
+  const c = makeOrb(1800, seed);
+  c.tier = tier;
+  c.scene = { add() {} };
+  c.terrain = [];
+  c.shots = [];
+  c.pilots = [];
+  c.simReach = 1;
+  c.t = 0;
+  c.match = { mode: 'chute', time: 0, over: false };
+  c._pop = () => {};
+  c._announce = () => {};
+  c._finishMatch = () => {};
+  c._keys = new Set();
+  addShots(c, 12);
+  c._buildChute();
+  return c;
+}
+
+/** A racer in the chute's own terms: a lane along the track, and across it. */
+function makeRacer(c, i, isPlayer = false) {
+  return {
+    name: isPlayer ? 'CMDR' : `RACER ${i}`,
+    isPlayer,
+    color: 0xff6b7a,
+    group: new THREE.Object3D(),
+    api: { pulse() {}, setThrottle() {} },
+    mounts: [simWeapon(WEAPON_BY_ID.pulse, 1)],
+    mountCd: [0],
+    s: -CHUTE_SPEC.gridGap * i,
+    lat: 0, air: 0, vy: 0, speed: 0,
+    alive: true, hull: 100, hullMax: 100,
+    score: 0, elims: 0, fireCd: 0,
+    wallT: -99, flashUntil: -1, wobble: i * 1.7,
+    turbo: 0, turboCharge: 1, daze: 0, spoilGuard: 0, finishAt: null,
+  };
+}
 
 /* ---- walking the surface ---- */
 {
@@ -596,6 +638,113 @@ const f = (n, d = 4) => Number(n).toFixed(d);
   const other = { u: n._ahead(self.u, n._randomHeading(self.u, V3()), n._arc(self.u, n._scatter(V3())), V3()) };
   if (n._nearest(self, [self, other]) !== other) fail('a seeker picks its own launcher as the nearest hull');
   if (n._nearest(self, [self]) !== null) fail('a seeker with only its launcher to chase picks something');
+}
+
+/* ---- the chute, as _buildChute actually lays it out ---- */
+{
+  const c = makeChute(1, 3);
+
+  // the spiral has to be a spiral: a course that comes back near itself is a
+  // course a racer can cut across
+  const pts = [];
+  for (let s = 0; s <= c.chute.length; s += 40) pts.push({ s, p: c._chutePoint(s, V3()) });
+  let close = 0;
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      if (Math.abs(pts[i].s - pts[j].s) < CHUTE_SPEC.halfW * 6) continue;
+      if (pts[i].p.distanceTo(pts[j].p) < CHUTE_SPEC.halfW * 2 + 20) close++;
+    }
+  }
+  if (close) fail(`${close} pairs of the chute come close enough to cut across`);
+  if (pts[pts.length - 1].p.y <= pts[0].p.y) fail('the chute does not climb');
+
+  // gates in order, and the line is the last of them
+  for (let i = 1; i < c.chute.gates.length; i++) {
+    if (c.chute.gates[i] <= c.chute.gates[i - 1]) fail('the chute gates are out of order');
+    if (c.chute.gates[i] - c.chute.gates[i - 1] < 400) fail('two gates are closer together than a race');
+  }
+  if (c.chute.gates[c.chute.gates.length - 1] !== c.chute.length) fail('the last gate is not the line');
+  if (c.chute.gates[0] > 1200) fail('the first gate is further than a run-up');
+
+  // every ramp has a gap after it, and the gaps are a test rather than a wall:
+  // a hull at full drive clears one, and a hull crawling into it does not
+  const flight = (CHUTE_SPEC.air + Math.sqrt(CHUTE_SPEC.air ** 2 + 2 * CHUTE_SPEC.gravity * CHUTE_SPEC.rampRise)) / CHUTE_SPEC.gravity;
+  if (!c.chute.ramps.length) fail('the chute has no ramps to jump');
+  for (const tier of [1, 8]) {
+    const t = makeChute(tier, 5);
+    for (const r of t.chute.ramps) {
+      const gap = t.chute.gaps.find((g) => g.from === r.to);
+      if (!gap) { fail(`the ramp at ${r.from} has no gap after it`); continue; }
+      const len = gap.to - gap.from;
+      if (len > 250 * flight) fail(`the gap at ${gap.from} on bracket ${tier} needs more than full drive to clear`);
+      if (len < 120 * flight) fail(`the gap at ${gap.from} on bracket ${tier} is no obstacle at all`);
+    }
+    if (t.chute.gaps.some((g, i) => i && g.from !== t.chute.ramps[i].to)) fail('the chute gaps and ramps disagree');
+  }
+
+  // a hit in the chute takes a rival's drive, not its hull
+  {
+    const g = makeChute(2, 9);
+    const shooter = makeRacer(g, 0, true);
+    const victim = makeRacer(g, 1);
+    victim.speed = 250;
+    shooter.speed = 250;
+    const capClean = g._chuteCap(victim);
+    g._chuteHit(victim, shooter);
+    if (victim.daze <= 0) fail('a hit in the chute costs a rival nothing');
+    if (victim.hull !== victim.hullMax) fail('a hit in the chute took a rival’s hull rather than its drive');
+    if (g._chuteCap(victim) >= capClean) fail('a spoiled hull is as quick as a clean one');
+    if (g._chutePlace(victim) !== 1 && g._chutePlace(victim) !== 2) fail('the chute cannot work out who is ahead');
+    // and it cannot be chain-stunned: the bolt after the bolt does nothing
+    victim.daze = 0;
+    g._chuteHit(victim, shooter);
+    if (victim.daze !== 0) fail('a hull was spoiled twice in a row with no guard');
+  }
+
+  // and the whole thing flies: four racers, the real stepping function, from a
+  // standing start to the line — nobody stuck, nobody outside the walls
+  {
+    const r = makeChute(1, 7);
+    r.pilots = [0, 1, 2, 3].map((i) => makeRacer(r, i, i === 0));
+    r._keys.add('KeyW'); // the commander holds the drive down and lives with it
+    const dt = 1 / 60;
+    let offTrack = 0;
+    let nan = 0;
+    let steps = 0;
+    const wall = CHUTE_SPEC.halfW - CHUTE_SPEC.hullSide;
+    while (steps < 60 * 200 && r.pilots.some((p) => p.finishAt == null)) {
+      steps += 1;
+      r.match.time += dt;
+      r.t += dt;
+      r._chuteStep(dt);
+      for (const p of r.pilots) {
+        if (!Number.isFinite(p.s) || !Number.isFinite(p.lat) || !Number.isFinite(p.air)) nan++;
+        if (Math.abs(p.lat) > wall + 0.5) offTrack++;
+        if (p.air < -1) nan++;
+      }
+    }
+    const home = r.pilots.filter((p) => p.finishAt != null).length;
+    if (nan) fail(`the chute produced ${nan} frames of nonsense — a NaN lane, or a hull under the deck`);
+    if (offTrack) fail(`${offTrack} frames put a racer outside the chute walls`);
+    if (home !== r.pilots.length) fail(`${home} of ${r.pilots.length} racers finished inside 200 seconds`);
+    if (r.match.playerHome !== true) fail('the commander never reached the line');
+  }
+
+  // the guns work in the chute too: a bolt up the lane reaches the hull ahead
+  {
+    const g = makeChute(2, 11);
+    const hunter = makeRacer(g, 0);
+    const prey = makeRacer(g, 1);
+    hunter.s = 100;
+    prey.s = 400;
+    hunter.lat = 8;
+    prey.lat = 8;
+    g.pilots = [hunter, prey];
+    if (!g._chuteLoose(hunter, hunter.mounts[0], 0)) fail('a gun in the chute fired nothing');
+    for (let i = 0; i < 180 && g.shots.length; i++) g._chuteStepShots(1 / 60);
+    if (prey.daze <= 0) fail('a bolt fired up the chute never reached the hull ahead of it');
+    if (prey.hull !== prey.hullMax) fail('a bolt in the chute took hull rather than drive');
+  }
 }
 
 console.log(bad === 0 ? 'vector orb: all checks passed' : `vector orb: ${bad} problem(s)`);
