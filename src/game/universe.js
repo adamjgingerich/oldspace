@@ -1210,7 +1210,7 @@ export class Universe {
   }
 
   fireShip(ship, slot, target) {
-    this.combat.fire(ship, slot, target);
+    return this.combat.fire(ship, slot, target);
   }
 
   leadPoint(shooter, target, speed) {

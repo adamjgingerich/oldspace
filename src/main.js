@@ -223,6 +223,14 @@ function boot() {
       },
       gosys(id) {
         if (!game.universe) return;
+        // jumping while berthed would leave the helm still believing it is
+        // docked, with a station that belongs to the system just left — step
+        // outside first so later docks are not silently swallowed
+        if (game.mode === 'docked') {
+          game.mode = 'flight';
+          game.station = null;
+          ui.dock.close();
+        }
         game.state.systemId = id;
         game.universe.load(id);
         toasts.push(`Jumped to ${id} (debug)`, 'warn');
