@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import {
-  SYSTEMS, SYSTEM_RADIUS,
+  SYSTEMS,
 } from '../data/systems.js';
 import {
   buildStar, buildStarLight, buildStation, buildPlanet, buildAsteroidField,

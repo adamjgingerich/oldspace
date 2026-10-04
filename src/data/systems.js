@@ -1442,11 +1442,8 @@ export const SYSTEMS = {
   },
 };
 
-export const SYSTEM_IDS = Object.keys(SYSTEMS);
-
 /** Nominal rim of a system — where ships drop out of warp. */
 export const RIM_RADIUS = 3300;
-export const SYSTEM_RADIUS = 3800;
 
 /** Deterministic bearing of the lane between two systems (warp entry, guidance). */
 export function laneAngle(fromId, toId) {

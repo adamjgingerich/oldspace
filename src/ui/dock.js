@@ -21,7 +21,7 @@ import { RUMORS } from '../data/names.js';
 import { rngOf } from '../core/rng.js';
 import { SKILL_TREES } from '../data/skills.js';
 import {
-  skillRank, treeRanks, learnBlockReason, xpProgress, karmaLabel, isTreeUnlocked, FACTION_ALLEGIANCE_REP,
+  skillRank, treeRanks, learnBlockReason, xpProgress, karmaLabel, FACTION_ALLEGIANCE_REP,
   DEFECT_REP_COST, BROKER_PAPERS_COST, BROKER_STANDING_COST, BROKER_STANDING_GAIN, BROKER_AMNESTY_COST,
   AMNESTY_FLOOR, brokerStatus, economyMods,
 } from '../game/skills.js';
@@ -1103,7 +1103,7 @@ export class DockUI {
         ]),
       ]),
       el('h3', { text: 'Enter the field' }),
-      el('p', { class: 'note', text: 'A duel settles the old question — last pilot flying. The harvest is ninety seconds over the crystal field, most crystals when the clock runs out. W and S thrust, A and D yaw, SPACE fires, SHIFT burns the turbo reserve. The rig lays its course on one patch of the orb and the whole match is flown over it: hills, wall slabs and launch ramps — cross a ramp fast and it throws you clean over the walls — with item pads for drive bursts, rapid fire and shields. There is no edge to fall off, and the ground closes behind you, so there is nowhere to run. Your guns are the ones in your bay, mount for mount.' }),
+      el('p', { class: 'note', text: 'A duel settles the old question — last pilot flying. The harvest is two minutes over the crystal field, most crystals when the clock runs out. W and S thrust, A and D yaw, SPACE fires, SHIFT burns the turbo reserve. The rig lays its course on one patch of the orb and the whole match is flown over it: hills, wall slabs and launch ramps — cross a ramp fast and it throws you clean over the walls — with item pads for drive bursts, rapid fire and shields. There is no edge to fall off, and the ground closes behind you, so there is nowhere to run. Your guns are the ones in your bay, mount for mount.' }),
       el('div', { style: 'display:flex;gap:10px;flex-wrap:wrap' }, [
         btn('Duel — last pilot flying', () => actions.startVectorChallenge('duel'), 'btn primary'),
         btn('Harvest — the crystal field', () => actions.startVectorChallenge('harvest'), 'btn primary'),

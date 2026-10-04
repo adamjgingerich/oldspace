@@ -1,7 +1,7 @@
 // Title screen, the 15-slot adventure browser, pause menu, help, dialogs.
 
 import { el, clear, btn } from './dom.js';
-import { listSlots, latestSlot, deleteSlot } from '../game/saves.js';
+import { listSlots, deleteSlot } from '../game/saves.js';
 import { SYSTEMS } from '../data/systems.js';
 import { fmtCredits, fmtPlaytime, fmtDate, escapeHtml } from '../core/util.js';
 import { GAME_TITLE_HTML, GAME_SUBTITLE } from '../data/branding.js';

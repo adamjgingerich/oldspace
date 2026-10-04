@@ -11,12 +11,14 @@
 // measured against a real Object3D seated the way the sim seats the mesh, so a
 // collision frame that has drifted from what is drawn cannot pass.
 import * as THREE from 'three';
-import { VectorChallenge, simWeapon, ZONE_COUNTS } from '../src/game/vector.js';
+import { VectorChallenge, simWeapon, ZONE_COUNTS, courseRadius } from '../src/game/vector.js';
 import { WEAPONS, WEAPON_BY_ID } from '../src/data/weapons.js';
 
-// The tightest orb on the circuit. Chord-versus-arc error grows as the world
-// gets smaller, so this is the worst case the sim can actually be asked to fly.
-const R = 1200;
+// The tightest orb on the circuit, and the widest. Chord-versus-arc error grows
+// as the world gets smaller, so the first is the worst case the sim can be asked
+// to fly; the second is where a course has the most room to be lost in.
+const R = 1800;
+const COURSE_ORBS = [1800, 3200];
 const V3 = () => new THREE.Vector3();
 
 let bad = 0;
@@ -39,6 +41,8 @@ function makeOrb(orbR = R, seed = 1) {
   v.ramps = [];
   v.pickups = [];
   v.crystals = [];
+  v._flyers = [];
+  v._mv = V3();
   for (const k of ['_s1', '_s2', '_s3', '_s4', '_s5', '_s6', '_w1', '_w2', '_w3', '_w4', '_w5']) v[k] = V3();
   v._p2 = new THREE.Vector2();
   v._q1 = new THREE.Quaternion();
@@ -314,6 +318,20 @@ const f = (n, d = 4) => Number(n).toFixed(d);
   if (low < 12) fail(`the weakest gun in the sim does ${f(low, 1)} dps — a pea-shooter`);
   if (high > 30) fail(`the strongest gun in the sim does ${f(high, 1)} dps — a duel that ends itself`);
   if (heavy) fail(`${heavy} weapons can take more than half a hull in one hit`);
+
+  // A wider orb is fought at wider ranges — the sim fires at 320 field-widths
+  // and leads by more — so the guns have to come with it. Scaling one side and
+  // not the other is a field where rivals shoot from outside their own range.
+  for (const orbR of COURSE_ORBS) {
+    const reach = orbR / 820;
+    const short = WEAPONS.filter((w) => simWeapon(w, reach).range < 320 * reach);
+    if (short.length) {
+      fail(`${short.length} guns cannot reach the ${Math.round(320 * reach)} units the sim fires at on the ${orbR} orb`);
+    }
+  }
+  if (courseRadius(3200) <= courseRadius(1800) * 1.4) {
+    fail(`a wider orb does not lay out a wider course: ${Math.round(courseRadius(3200))} against ${Math.round(courseRadius(1800))}`);
+  }
 }
 
 /* ---- shots ---- */
@@ -420,12 +438,13 @@ const f = (n, d = 4) => Number(n).toFixed(d);
 {
   // the tightest and the widest orb: the course has the least room on one and
   // has to still read as a course on the other
-  for (const orbR of [1200, 2100]) {
+  const density = {};
+  for (const orbR of COURSE_ORBS) {
     const c = makeOrb(orbR, 7);
     c.scene = { add() {} };
     c.terrain = [];
     c.orbR = orbR;
-    c.zone = { u: c._scatter(V3()), r: Math.min(1500, Math.max(700, orbR * 0.72)) };
+    c.zone = { u: c._scatter(V3()), r: courseRadius(orbR) };
     c._buildTerrain();
 
     const solids = [
@@ -459,8 +478,124 @@ const f = (n, d = 4) => Number(n).toFixed(d);
     if (touching) fail(`${touching} pairs of course pieces overlap on the ${orbR} orb`);
     if (narrow) fail(`${narrow} pairs of course pieces on the ${orbR} orb leave no room for a hull between them`);
     // a wide orb wants open ground between pieces; a pebble is meant to be tight
-    if (orbR === 2100 && crowded > 4) fail(`the wide orb is ${crowded} pieces too crowded`);
+    density[orbR] = crowded;
   }
+  // the widest orb has to be the open one — that is the whole point of flying a
+  // wide one — so it can never be more crowded than the tight one
+  if (density[COURSE_ORBS[1]] > density[COURSE_ORBS[0]]) {
+    fail(`the wide ${COURSE_ORBS[1]} orb is more crowded (${density[COURSE_ORBS[1]]} pairs) than the tight ${COURSE_ORBS[0]} one (${density[COURSE_ORBS[0]]})`);
+  }
+}
+
+/* ---- the projection, drawn on the ground ---- */
+{
+  // The ring a pilot can see has to be the boundary the helm actually uses, or
+  // the field nags a pilot for crossing a line nobody could see.
+  for (const orbR of COURSE_ORBS) {
+    const c = makeOrb(orbR, 11);
+    c.scene = { add() {} };
+    c.terrain = [];
+    c.orbR = orbR;
+    c.zone = { u: c._scatter(V3()), r: courseRadius(orbR) };
+    c._buildCourseEdges();
+    if (c.terrain.length !== 2) fail(`the ${orbR} orb draws ${c.terrain.length} course rings, not 2`);
+    for (const [i, ring] of c.terrain.entries()) {
+      const pos = ring.geometry.attributes.position;
+      const want = i === 0 ? c.zone.r : Math.min(c.zone.r * 1.35, orbR * Math.PI * 0.9);
+      let offArc = 0;
+      let offSurface = 0;
+      for (let k = 0; k < pos.count; k++) {
+        const u = V3().fromBufferAttribute(pos, k);
+        const height = u.length() - orbR;
+        u.normalize();
+        if (Math.abs(c._arc(c.zone.u, u) - want) > want * 0.01 + 1) offArc++;
+        if (Math.abs(height - 5) > 0.5) offSurface++;
+      }
+      if (offArc) fail(`${offArc} points of ring ${i} on the ${orbR} orb are not on the course boundary`);
+      if (offSurface) fail(`${offSurface} points of ring ${i} on the ${orbR} orb are not on the surface`);
+    }
+  }
+}
+
+/* ---- the rival board and the markers on the glass ---- */
+{
+  // the sim reads the glass' size to pin a marker to its edge
+  globalThis.window = { innerWidth: 1280, innerHeight: 720 };
+  const cam = new THREE.PerspectiveCamera(60, 16 / 9, 1, 30000);
+  cam.updateProjectionMatrix();
+  cam.updateMatrixWorld();
+  const stub = () => {
+    const set = new Set();
+    return {
+      style: {},
+      textContent: '',
+      classList: {
+        toggle: (c, on) => { if (on) set.add(c); else set.delete(c); },
+        has: (c) => set.has(c),
+      },
+    };
+  };
+  const board = (rivalU, alive = true) => {
+    const b = makeOrb(3200, 5);
+    b.camera = cam;
+    const me = { isPlayer: true, u: b._scatter(V3()) };
+    const q = {
+      isPlayer: false, name: 'MIRA', color: 0xff6b7a, alive, respawn: 0,
+      hull: alive ? 40 : 0, hullMax: 100, flashUntil: -1, u: rivalU,
+      group: new THREE.Object3D(),
+    };
+    b.pilots = [me, q];
+    b.t = 10;
+    const row = stub();
+    const mark = stub();
+    const bar = stub();
+    const range = stub();
+    const markRange = stub();
+    b._rivalRows = [{ q, row, bar, range, mark, markRange }];
+    return { b, q, row, bar, range, mark, markRange };
+  };
+  // A marker that leaves the glass is a marker nobody reads, so wherever the
+  // rival is, the chip is pinned inside the frame.
+  const inFront = board(new THREE.Vector3(0, 0, -500).normalize());
+  inFront.q.group.position.set(0, 0, -500);
+  inFront.b._updateRivals();
+  if (inFront.mark.classList.has('hidden')) fail('a rival dead ahead gets no marker');
+  const t1 = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(inFront.mark.style.transform || '');
+  if (!t1) fail('a live marker was never placed on the glass');
+  else {
+    const [x, y] = [Number(t1[1]), Number(t1[2])];
+    if (x < 40 || x > 1280 - 40 || y < 40 || y > 720 - 40) fail(`a marker sits off the glass at ${x},${y}`);
+  }
+  if (inFront.range.textContent.length === 0) fail('the board shows no range to a live rival');
+  if (!inFront.bar.style.width) fail('the board shows no hull for a live rival');
+
+  // wide of the frame: pinned to the edge rather than drawn outside it
+  const aside = board(new THREE.Vector3(1, 0, 0));
+  aside.q.group.position.set(60000, 0, -500);
+  aside.b._updateRivals();
+  const t2 = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(aside.mark.style.transform || '');
+  if (!t2) fail('a rival wide of the frame got no marker');
+  else if (Number(t2[1]) > 1280 - 40 + 0.5) fail('a marker wide of the frame is drawn outside it');
+  if (!aside.mark.classList.has('edge')) fail('a rival wide of the frame is not marked as off the glass');
+
+  // behind the camera, and a hull that is out: no marker at all rather than one
+  // that points the wrong way
+  const behind = board(new THREE.Vector3(0, 0, 1));
+  behind.q.group.position.set(0, 0, 500);
+  behind.b._updateRivals();
+  if (!behind.mark.classList.has('hidden')) fail('a rival behind the camera still gets a marker');
+  const out = board(new THREE.Vector3(0, 0, -500), false);
+  out.q.group.position.set(0, 0, -500);
+  out.b._updateRivals();
+  if (!out.mark.classList.has('hidden')) fail('a hull that is out still gets a marker');
+  if (out.range.textContent !== 'DOWN') fail(`a hull that is out reads "${out.range.textContent}" on the board`);
+
+  // a seeker must never chase the hull that threw it
+  const n = makeOrb();
+  const self = { u: n._scatter(V3()) };
+  const other = { u: n._ahead(self.u, n._randomHeading(self.u, V3()), n._arc(self.u, n._scatter(V3())), V3()) };
+  if (n._nearest(self, [self, other]) !== other) fail('a seeker picks its own launcher as the nearest hull');
+  if (n._nearest(self, [self]) !== null) fail('a seeker with only its launcher to chase picks something');
 }
 
 console.log(bad === 0 ? 'vector orb: all checks passed' : `vector orb: ${bad} problem(s)`);

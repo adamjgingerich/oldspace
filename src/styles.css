@@ -2385,7 +2385,8 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   text-shadow: 0 0 10px rgba(44, 255, 154, 0.7);
   pointer-events: none;
 }
-.vec-hud.hidden, .vec-lobby.hidden, .vec-over.hidden { display: none; }
+.vec-hud.hidden, .vec-lobby.hidden, .vec-over.hidden,
+.vec-board.hidden, .vec-markers.hidden, .vec-marker.hidden { display: none; }
 .vec-lobby, .vec-over {
   position: absolute;
   inset: 0;
@@ -2456,6 +2457,69 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   text-shadow: 0 0 12px rgba(255, 241, 168, 0.8);
 }
 .vh-pop.on { opacity: 1; transform: translateY(0); }
+
+/* The rival board: who else is flying, their hull and how far off they are.
+   An orb is wide enough to lose a fight in by looking the wrong way. */
+.vec-board {
+  position: absolute;
+  top: 46px;
+  right: 16px;
+  z-index: 1;
+  display: grid;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+.vb-row {
+  display: grid;
+  grid-template-columns: 7px 54px 64px 46px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid rgba(44, 255, 154, 0.22);
+  background: rgba(3, 12, 10, 0.55);
+  color: #9fd8c0;
+  transition: border-color 0.12s, background 0.12s;
+}
+.vb-row.hit { border-color: #fff1a8; background: rgba(58, 44, 6, 0.6); }
+.vb-row.down { opacity: 0.35; }
+.vb-dot { width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 0 7px currentColor; }
+.vb-name { color: #c8ffe8; }
+.vb-bar { height: 6px; background: rgba(44, 255, 154, 0.14); overflow: hidden; }
+.vb-bar i { display: block; height: 100%; width: 100%; background: #6effa8; }
+.vb-range { text-align: right; color: #6fa892; }
+
+/* Markers on the glass — pinned to the edge of it when a rival is off to one side */
+.vec-markers {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.vec-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 108px;
+  height: 18px;
+  margin: -9px 0 0 -54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  text-shadow: 0 0 8px #000, 0 0 3px #000;
+}
+.vec-marker::before { content: '◇'; color: #c8ffe8; opacity: 0.75; }
+.vec-marker .vm-range { color: #9fd8c0; }
+.vec-marker.edge::before { color: #ffb45c; }
+.vec-marker.edge .vm-range { display: none; }
 
 /* A change of colours — last on the contract board, folded by default */
 .defect-fold { margin-top: 18px; }

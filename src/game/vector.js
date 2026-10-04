@@ -6,7 +6,7 @@
 //
 // Two cards on the machine:
 //   Duel     — three pilots, last one flying takes the purse.
-//   Harvest  — ninety seconds on the crystal field, most crystals wins.
+//   Harvest  — two minutes on the crystal field, most crystals wins.
 //
 // The field is a planet. Not a plate with a horizon painted on it — a whole
 // orb: hulls sit on the surface, nose along a great circle, and fly right
@@ -38,23 +38,29 @@ import { el, btn, clear } from '../ui/dom.js';
 // The circuit's orbs, widest first. Bracket intensity picks one: the tighter
 // the orb, the more of the field is in someone's way. They are big worlds on
 // purpose — a wide orb and a high chase rig are what let a pilot see a rival
-// coming, and a fight you can see coming is a fight you can fly.
+// coming, and a fight you can see coming is a fight you can fly. Every distance
+// in the sim that is not a hull's own size is measured against the orb, so a
+// wider world is a longer race and a longer chase rather than a bigger empty
+// one (see `reach`).
 const ORBS = [
-  { name: 'THE PLAIN', r: 2100, note: 'a wide one — long runs, clear shots' },
-  { name: 'BASIN', r: 1750, note: 'steady ground and room to turn' },
-  { name: 'MARBLE', r: 1450, note: 'no long shots left on this one' },
-  { name: 'PEBBLE', r: 1200, note: 'tight — the horizon is always in the way' },
+  { name: 'THE PLAIN', r: 3200, note: 'a wide one — long runs, clear shots' },
+  { name: 'BASIN', r: 2700, note: 'steady ground and room to turn' },
+  { name: 'MARBLE', r: 2200, note: 'no long shots left on this one' },
+  { name: 'PEBBLE', r: 1800, note: 'tight — the horizon is always in the way' },
 ];
 // The course is a patch of the orb, not the whole of it. Every barrier, mound,
-// ramp, pad and crystal sits inside this patch, and the counts do not move from
-// orb to orb — so the same course is packed into less ground on a tighter orb,
-// which is what a pebble is. The rest of the world is deliberately open: the
-// furniture you cannot see is furniture you cannot use, and a course scattered
-// over a whole planet is just empty ground with the odd pyramid in it.
+// ramp, pad and crystal sits inside this patch. The rest of the world is
+// deliberately open: the furniture you cannot see is furniture you cannot use,
+// and a course scattered over a whole planet is just empty ground with the odd
+// pyramid in it.
 const ZONE_FRAC = 0.72;
-const ZONE_MIN = 700;
-const ZONE_MAX = 1500;
-export const ZONE_COUNTS = { pyramids: 24, bars: 12, mounds: 8, ramps: 4, pads: 10, crystals: 20 };
+const ZONE_MIN = 900;
+const ZONE_MAX = 2400;
+export const ZONE_COUNTS = { pyramids: 30, bars: 16, mounds: 10, ramps: 6, pads: 14, crystals: 26 };
+/** How much of an orb a match's course covers — the one rule for its size. */
+export function courseRadius(orbR) {
+  return clamp(orbR * ZONE_FRAC, ZONE_MIN, ZONE_MAX);
+}
 // Past this much of the course radius the field takes the helm. It only ever
 // turns a stray hull back toward the middle of the course — it never stops one,
 // and there is no wall to be pinned on, so nobody can get stuck on it. Without
@@ -69,11 +75,14 @@ const RECALL_GAIN = 1.6; // and how much harder it pulls further out than that
 const COURSE_CLEAR = 44;
 // How far behind and above the hull the rig rides, and how far ahead it aims.
 // Height and the aim point are what buy the long view — the height sets how far
-// away the horizon is, and looking further ahead puts more of it on screen.
+// away the horizon is, and looking further ahead puts more of it on screen. The
+// rig scales with the world it is flying over (see CAM_REF_ORB), so a wider orb
+// reads as more ground rather than as a smaller ship.
 const CAM_BACK = 135;
 const CAM_UP = 165;
 const CAM_LOOK = 120;
 const CAM_AIM_H = 16;   // how high off the surface the rig aims
+const CAM_REF_ORB = 2100; // the orb these figures were drawn for
 // The turbo reserve. Every hull carries one and it is the pilot's to spend: hold
 // SHIFT and the drive pushes past its governor for as long as the tank lasts,
 // then it comes back. A chase is then something a pilot can win or lose rather
@@ -91,7 +100,7 @@ const PLAYER_COLOR = 0x6effa8;
 const AI_COLORS = [0xff6b7a, 0xffb45c, 0x8fd0ff, 0xc792ff];
 const CRYSTAL_COLOR = 0x5cffd8;
 const PAD_COLOR = 0xffe66b;
-const HARVEST_TIME = 90;      // seconds per harvest match
+const HARVEST_TIME = 120;     // seconds per harvest match
 const CALLSIGNS = ['MIRA', 'KESTREL', 'OCHRE', 'SABLE', 'JUNO', 'PIKE', 'TALON', 'VIGO'];
 
 const MODE_INFO = {
@@ -101,7 +110,7 @@ const MODE_INFO = {
   },
   harvest: {
     name: 'Harvest',
-    line: 'Ninety seconds over the crystal field. Most crystals when the clock runs out.',
+    line: 'Two minutes over the crystal field. Most crystals when the clock runs out.',
   },
 };
 
@@ -110,6 +119,7 @@ const PICKUP_NAMES = { burst: 'DRIVE BURST', rapid: 'RAPID FIRE', shield: 'SHIEL
 // the world wants numeric colors, the HUD pop-out wants CSS strings
 const PICKUP_COLORS = { burst: 0xffb45c, rapid: 0x8fd0ff, shield: 0xc792ff };
 const PICKUP_CSS = { burst: '#ffb45c', rapid: '#8fd0ff', shield: '#c792ff' };
+const cssHex = (n) => `#${n.toString(16).padStart(6, '0')}`;
 
 // The rig's own drawer of guns, bracket by bracket. Every one of them is a real
 // weapon off the same charts the shipyards use, so a bracket-four rival is
@@ -145,20 +155,23 @@ const BEAM_SPEED = 1150;
 /**
  * A weapon as the sim flies it. Same damage, same cadence, same reach as the
  * real thing; the only translation is that a wireframe hull has 100 points of
- * structure and a real one has shields.
- */
-/**
- * A weapon as the sim flies it. Same damage, same cadence, same reach as the
- * real thing; the only translation is that a wireframe hull has 100 points of
  * structure and a real one has shields, and that the charts' damage-per-second
  * spread is pulled in toward the middle of itself (see SIM_DPS_REF).
+ *
+ * `reach` is the orb the match is flown on, as a multiple of the world these
+ * figures were drawn on. Everything the sim does at range — where a rival
+ * decides to shoot, how tight a lead it flies, how far a bolt carries — is
+ * measured against the world, so the guns are too: without it a wide orb's
+ * rivals shoot from outside their own weapons' range and the field reads as a
+ * place where nothing can be hit.
  */
-export function simWeapon(def) {
+export function simWeapon(def, reach = 1) {
   const beam = def.kind === 'beam';
   const speed = def.speed || BEAM_SPEED;
   const cd = Math.max(0.08, def.cooldown || 0.3);
   const chart = (def.dmg || 6) / cd;
   const dps = SIM_DMG * SIM_DPS_REF * Math.pow(chart / SIM_DPS_REF, SIM_DPS_CURVE);
+  const range = (def.range || 700) * reach;
   return {
     id: def.id,
     name: def.name,
@@ -166,8 +179,8 @@ export function simWeapon(def) {
     dmg: Math.min(dps * cd, SIM_HIT_CAP),
     speed,
     cd,
-    range: def.range || 700,
-    life: (def.range || 700) / speed,
+    range,
+    life: range / speed,
     spread: beam ? 0 : (def.spread || 0),
     turn: def.turn || 0,
     // the gun's own colour off the chart, so a rack of mixed weapons reads as
@@ -176,7 +189,9 @@ export function simWeapon(def) {
   };
 }
 
-const roundAng = (a) => {  let b = a;
+/** Fold an angle into -π..π, so a turn takes the short way round. */
+const roundAng = (a) => {
+  let b = a;
   while (b > Math.PI) b -= Math.PI * 2;
   while (b < -Math.PI) b += Math.PI * 2;
   return b;
@@ -271,12 +286,22 @@ export class VectorChallenge {
     // Firing and circling ranges are tuned on an 820 orb; on a bigger world they
     // have to reach further, or the sim fights in the same little patch of it.
     this.reach = this.orbR / 820;
+    // and the rig rides higher on a bigger world, so the extra ground is ground
+    // a pilot can see rather than a horizon further away
+    const cam = Math.sqrt(this.orbR / CAM_REF_ORB);
+    this.camBack = CAM_BACK * cam;
+    this.camUp = CAM_UP * cam;
+    this.camLook = CAM_LOOK * cam;
 
     this.match = null;
     this.pilots = [];
     this.shots = [];
     this.crystals = [];
     this.pickups = [];
+    this._rivalRows = [];     // the board's rival readouts, rebuilt per match
+    this._flyers = [];        // hulls in the air this frame, gathered once
+    this._callsigns = [...CALLSIGNS];
+    this._mv = new THREE.Vector3();
     this.terrain = [];        // three.js objects rebuilt per match
     this.walls = [];          // solid barriers
     this.mounds = [];         // elevation bumps
@@ -318,6 +343,8 @@ export class VectorChallenge {
         (this._hudTurbo = el('span', { class: 'vh-turbo' })),
         (this.pop = el('span', { class: 'vh-pop' })),
       ])),
+      (this._board = el('div', { class: 'vec-board hidden' })),
+      (this._markers = el('div', { class: 'vec-markers hidden' })),
       (this.lobby = el('div', { class: 'vec-lobby hidden' })),
       (this.over = el('div', { class: 'vec-over hidden' })),
     ]);
@@ -361,7 +388,7 @@ export class VectorChallenge {
       ]),
       el('div', { class: 'vec-mode-btns' }, [
         btn('Duel — three pilots, last one flying', () => this.startMatch('duel'), 'btn primary'),
-        btn('Harvest — ninety seconds on the crystal field', () => this.startMatch('harvest'), 'btn primary'),
+        btn('Harvest — two minutes on the crystal field', () => this.startMatch('harvest'), 'btn primary'),
       ]),
       el('p', { class: 'vec-keys' }, [
         'W/S thrust · A/D yaw · SPACE fire · SHIFT burns the turbo reserve · ESC step out. ',
@@ -373,6 +400,8 @@ export class VectorChallenge {
       btn('Step out', () => this.quit(), 'btn ghost'),
     ]));
     this.hud.classList.add('hidden');
+    this._board.classList.add('hidden');
+    this._markers.classList.add('hidden');
     this.lobby.classList.remove('hidden');
     this.over.classList.add('hidden');
   }
@@ -402,6 +431,8 @@ export class VectorChallenge {
       ]),
     ]));
     this.hud.classList.add('hidden');
+    this._board.classList.add('hidden');
+    this._markers.classList.add('hidden');
     this.lobby.classList.add('hidden');
     this.over.classList.remove('hidden');
   }
@@ -795,6 +826,41 @@ export class VectorChallenge {
     }
   }
 
+  /**
+   * The projection, drawn on the ground: a phosphor ring where the course ends
+   * and a dimmer amber one at the line where the field takes the helm. Without
+   * them the only way to learn where the course stops is to be told, mid-fight,
+   * that you have already left it — which is the difference between a field with
+   * edges and a field that nags.
+   */
+  _buildCourseEdges() {
+    const ring = (arcDist, color, opacity) => {
+      const up = this.zone.u;
+      const fwd = new THREE.Vector3(0, 1, 0).cross(up);
+      if (fwd.lengthSq() < 1e-6) fwd.set(1, 0, 0);
+      fwd.normalize();
+      const pts = [];
+      const steps = 96;
+      for (let i = 0; i <= steps; i++) {
+        const dir = this._headingAt(up, fwd, (i / steps) * Math.PI * 2, new THREE.Vector3());
+        const u = this._ahead(up, dir, arcDist, new THREE.Vector3());
+        pts.push(this._pointAt(u, 5, new THREE.Vector3()));
+      }
+      return new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({
+          color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false,
+        }),
+      );
+    };
+    const edge = ring(this.zone.r, 0x38ffa0, 0.4);
+    const helm = ring(Math.min(this.zone.r * ZONE_RECALL, this.orbR * Math.PI * 0.9), 0xffb45c, 0.14);
+    for (const r of [edge, helm]) {
+      this.scene.add(r);
+      this.terrain.push(r); // teardown disposes everything in here
+    }
+  }
+
   /** True when a hull of radius `r` standing here touches no barrier at all. */
   _clearOfWalls(u, r) {
     const l = this._p2;
@@ -1083,17 +1149,17 @@ export class VectorChallenge {
       const fitted = this.state.weapons || def.defaultWeapons || [];
       for (let i = 0; i < cap; i++) {
         const w = WEAPON_BY_ID[fitted[i]];
-        if (w) list.push(simWeapon(w));
+        if (w) list.push(simWeapon(w, this.reach));
       }
     } else {
       const bracket = AI_WEAPONS[clamp(Math.floor((this.tier - 1) / 2), 0, AI_WEAPONS.length - 1)];
       const mounts = this.tier <= 2 ? 1 : 2;
       for (let i = 0; i < mounts; i++) {
         const w = WEAPON_BY_ID[this.rng.pick(bracket)];
-        if (w) list.push(simWeapon(w));
+        if (w) list.push(simWeapon(w, this.reach));
       }
     }
-    return list.length ? list : [simWeapon(WEAPON_BY_ID.pulse)];
+    return list.length ? list : [simWeapon(WEAPON_BY_ID.pulse, this.reach)];
   }
 
   _makePilot(i, isPlayer) {
@@ -1135,7 +1201,7 @@ export class VectorChallenge {
       break;
     }
     return {
-      name: isPlayer ? this.commander : this.rng.pick(CALLSIGNS),
+      name: isPlayer ? this.commander : this._callsigns[(i - 1) % this._callsigns.length],
       isPlayer, color, def, group, api, shieldGlow, collideR,
       mounts,
       mountCd: mounts.map(() => this.rng.float(0, 0.6)),
@@ -1154,6 +1220,7 @@ export class VectorChallenge {
       strafeDir: this.rng.float(0, 1) < 0.5 ? 1 : -1,
       wallT: -99, // when this hull last touched a barrier
       recall: 0,  // set once the field has taken the helm off the course
+      flashUntil: -1, // last time this hull was hit by the commander
       wobble: this.rng.float(0, 1) * 10,
       boost: 0, rapid: 0, shieldT: 0,
       turbo: 0, turboCharge: 1,
@@ -1167,10 +1234,14 @@ export class VectorChallenge {
     // Where the course lies on this orb, and how much of the world it takes up.
     // It is picked before anything else is built, because everything is built on
     // it, and the pilots start on it.
-    this.zone = { u: new THREE.Vector3(), r: clamp(this.orbR * ZONE_FRAC, ZONE_MIN, ZONE_MAX) };
+    this.zone = { u: new THREE.Vector3(), r: courseRadius(this.orbR) };
     this._scatter(this.zone.u);
     // terrain first — the pilots need the barriers to spawn clear of
     this._buildTerrain();
+    this._buildCourseEdges();
+    // call signs off the board without repeating: two pilots flying under one
+    // name are two pilots a commander cannot tell apart
+    this._callsigns = this.rng.shuffle(CALLSIGNS);
     this.pilots = [this._makePilot(0, true)];
     for (let i = 1; i <= 2; i++) this.pilots.push(this._makePilot(i, false));
     for (const sm of this.shotPool) sm.visible = false;
@@ -1217,6 +1288,7 @@ export class VectorChallenge {
     this.lobby.classList.add('hidden');
     this.over.classList.add('hidden');
     this.hud.classList.remove('hidden');
+    this._buildRivalBoard();
     this.hud.querySelector('.vh-mode').textContent = `${MODE_INFO[mode].name.toUpperCase()} · ${this.orb.name} · ${MODE_INFO[mode].line}`;
     audio.dock();
     this._announce(mode === 'duel' ? `DUEL — LAST PILOT FLYING ON ${this.orb.name}` : `HARVEST — ${this.orb.name} IS SEEDED`);
@@ -1256,6 +1328,9 @@ export class VectorChallenge {
     this.walls = [];
     this.mounds = [];
     this.ramps = [];
+    this._rivalRows = [];
+    this._board.classList.add('hidden');
+    this._markers.classList.add('hidden');
   }
 
   /* ------------------------------------------------------------------ */
@@ -1558,10 +1633,12 @@ export class VectorChallenge {
     return Math.max(0.05, Math.min(0.35, Math.atan((16 * this.reach) / Math.max(16 * this.reach, d))));
   }
 
+  /** The nearest hull other than `p` itself — a seeker skips what threw it. */
   _nearest(p, list) {
     let best = null;
     let bd = Infinity;
     for (const q of list) {
+      if (q === p) continue;
       const d = this._arc(p.u, q.u);
       if (d < bd) { bd = d; best = q; }
     }
@@ -1648,12 +1725,19 @@ export class VectorChallenge {
 
   _stepShots(dt) {
     const l = this._p2;
+    // The hulls a seeker may lean onto, gathered once for the frame instead of
+    // once per bolt in the air — this runs for every shot, every frame.
+    const flyers = this._flyers;
+    flyers.length = 0;
+    for (const q of this.pilots) {
+      if (q.alive && q.respawn <= 0) flyers.push(q);
+    }
     for (let i = this.shots.length - 1; i >= 0; i--) {
       const s = this.shots[i];
       s.life -= dt;
       // seekers lean onto the nearest hull that is not the one that threw them
       if (s.turn) {
-        const target = this._nearest(s.owner, this.pilots.filter((q) => q !== s.owner && q.alive && q.respawn <= 0));
+        const target = this._nearest(s.owner, flyers);
         if (target) {
           const want = this._bearing(s.u, s.dir, target.u);
           this._turn(s.dir, s.u, clamp(want, -s.turn * dt, s.turn * dt));
@@ -1704,6 +1788,9 @@ export class VectorChallenge {
     if (!victim.alive) return;
     this._spawnBurst(victim.u, victim.y + 6, victim.color, 0.8);
     audio.hit();
+    // the board pulses for a hit the commander landed, so a pass that connected
+    // reads as a hit rather than as a rival that happened to be there
+    if (shooter?.isPlayer && !victim.isPlayer) victim.flashUntil = this.t + 0.35;
     // a disruptor does not chew structure; it takes the rigging away
     if (kind === 'disruptor') {
       victim.boost = 0;
@@ -1839,7 +1926,8 @@ export class VectorChallenge {
   _updateHud() {
     const m = this.match;
     const p = this.pilots[0];
-    this._hudScore.textContent = `SCORE ${p.score}`;
+    // a duel has no score to count — what a pilot won on is the eliminations
+    this._hudScore.textContent = m.mode === 'duel' ? `ELIMS ${p.elims}` : `CRYSTALS ${p.score}`;
     const hull = `HULL ${Math.max(0, Math.ceil(p.hull))}`;
     if (m.mode === 'duel') {
       const left = this.pilots.filter((q) => q.alive).length;
@@ -1859,6 +1947,77 @@ export class VectorChallenge {
     } else {
       this._hudTurbo.textContent = 'TURBO READY · SHIFT';
       this._hudTurbo.style.color = '';
+    }
+    this._updateRivals();
+  }
+
+  /**
+   * Who else is flying, what is left of their hull and how far off they are —
+   * plus a marker on the glass for each of them. An orb is a world you can lose
+   * a fight on by looking the wrong way, so the rig tells a pilot where the
+   * others are instead of leaving them to guess.
+   */
+  _buildRivalBoard() {
+    clear(this._board);
+    clear(this._markers);
+    this._rivalRows = [];
+    for (const q of this.pilots) {
+      if (q.isPlayer) continue;
+      const bar = el('i');
+      const row = el('div', { class: 'vb-row' }, [
+        el('span', { class: 'vb-dot', style: `background:${cssHex(q.color)}; color:${cssHex(q.color)}` }),
+        el('span', { class: 'vb-name', text: q.name }),
+        el('span', { class: 'vb-bar' }, [bar]),
+        el('span', { class: 'vb-range' }),
+      ]);
+      const mark = el('div', { class: 'vec-marker' }, [
+        el('span', { class: 'vm-name', text: q.name, style: `color:${cssHex(q.color)}` }),
+        el('span', { class: 'vm-range' }),
+      ]);
+      this._board.append(row);
+      this._markers.append(mark);
+      this._rivalRows.push({
+        q,
+        row,
+        bar,
+        range: row.querySelector('.vb-range'),
+        mark,
+        markRange: mark.querySelector('.vm-range'),
+      });
+    }
+    this._board.classList.remove('hidden');
+    this._markers.classList.remove('hidden');
+  }
+
+  _updateRivals() {
+    if (!this._rivalRows.length) return;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const me = this.pilots[0];
+    const inset = 40;
+    for (const r of this._rivalRows) {
+      const q = r.q;
+      const flying = q.alive && q.respawn <= 0;
+      const frac = flying ? clamp(q.hull / q.hullMax, 0, 1) : 0;
+      r.row.classList.toggle('down', !flying);
+      r.row.classList.toggle('hit', this.t < q.flashUntil);
+      r.bar.style.width = `${Math.round(frac * 100)}%`;
+      r.bar.style.background = frac > 0.5 ? '#6effa8' : frac > 0.22 ? '#ffd166' : '#ff6b7a';
+      const d = this._arc(me.u, q.u);
+      const range = d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`;
+      r.range.textContent = flying ? range : 'DOWN';
+      r.markRange.textContent = range;
+      // the marker rides the rival while the rig can see it, and pins to the
+      // edge of the glass when the rival is off to one side. A hull behind the
+      // camera gets no marker at all rather than a marker that lies.
+      const ndc = this._mv.copy(q.group.position).project(this.camera);
+      const seen = flying && ndc.z <= 1;
+      r.mark.classList.toggle('hidden', !seen);
+      if (!seen) continue;
+      const x = clamp((ndc.x * 0.5 + 0.5) * w, inset, w - inset);
+      const y = clamp((-ndc.y * 0.5 + 0.5) * h, inset, h - inset);
+      r.mark.classList.toggle('edge', ndc.x < -1 || ndc.x > 1 || ndc.y < -1 || ndc.y > 1);
+      r.mark.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     }
   }
 
@@ -1917,12 +2076,12 @@ export class VectorChallenge {
         // over the shoulder but well up off the deck: standing high on the
         // local vertical is what buys the long view, and on an orb the horizon
         // is only ever as far away as the rig is tall
-        const pos = this._pointAt(p.u, h + CAM_UP, this._w1)
-          .addScaledVector(p.fwd, -CAM_BACK);
+        const pos = this._pointAt(p.u, h + this.camUp, this._w1)
+          .addScaledVector(p.fwd, -this.camBack);
         const k = 1 - Math.pow(0.0025, dt);
         this.camera.position.lerp(pos, k);
         this.camera.up.copy(p.u);
-        this._ahead(p.u, p.fwd, CAM_LOOK, this._w2);
+        this._ahead(p.u, p.fwd, this.camLook, this._w2);
         this._pointAt(this._w2, this.groundAt(this._w2) + p.y + CAM_AIM_H, this._w3);
         this.camera.lookAt(this._w3);
       }

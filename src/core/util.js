@@ -16,16 +16,6 @@ export function wrapAngle(a) {
 export const angleDiff = (a, b) => wrapAngle(b - a);
 
 /** Move angle a toward b by at most step. */
-export function approachAngle(a, b, step) {
-  const d = angleDiff(a, b);
-  if (Math.abs(d) <= step) return wrapAngle(b);
-  return wrapAngle(a + Math.sign(d) * step);
-}
-
-export function len2(x, z) {
-  return Math.hypot(x, z);
-}
-
 export function dist2(ax, az, bx, bz) {
   return Math.hypot(ax - bx, az - bz);
 }
@@ -35,8 +25,6 @@ export function distSq2(ax, az, bx, bz) {
   const dz = az - bz;
   return dx * dx + dz * dz;
 }
-
-export const approx = (a, b, eps = 1e-3) => Math.abs(a - b) <= eps;
 
 export function fmtNum(n) {
   return Math.round(n).toLocaleString('en-US');
@@ -64,14 +52,6 @@ export function fmtDate(ms) {
     });
   } catch {
     return '—';
-  }
-}
-
-export function deepClone(obj) {
-  try {
-    return structuredClone(obj);
-  } catch {
-    return JSON.parse(JSON.stringify(obj));
   }
 }
 

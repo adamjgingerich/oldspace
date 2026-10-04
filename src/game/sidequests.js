@@ -6,7 +6,6 @@
 // Finishing a whole chain grants a small permanent perk and a purse.
 // ---------------------------------------------------------------------------
 
-import { SYSTEMS } from '../data/systems.js';
 import { levelFromXp, treeRanks, skillRank, addKarma } from './skills.js';
 import { ensureStory } from './story.js';
 import { rngOf } from '../core/rng.js';
@@ -338,11 +337,6 @@ export function ensureSide(state) {
 }
 
 /** Short tag for a side contract, shared by dock and chart. */
-export function sideTag(m) {
-  const q = m.side ? SIDE_BY_ID[m.side.group] : null;
-  return q ? `${q.name} · ${m.side.step + 1}/${q.steps.length}` : null;
-}
-
 function eligible(state, q) {
   const r = q.requires || {};
   if (r.background && state.background !== r.background) return false;

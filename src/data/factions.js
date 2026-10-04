@@ -56,8 +56,6 @@ export const FACTION_IDS = Object.keys(FACTIONS);
  * handful of habs out there that fly no colours at all. It is deliberately not
  * a faction — no standing, no desk, no law, no ledger.
  */
-export const UNCLAIMED = 'none';
-
 /** Standing you begin with when you swear to a flag at character creation. */
 export const STARTING_SWEAR_REP = 45;
 

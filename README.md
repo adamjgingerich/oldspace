@@ -57,6 +57,7 @@ Node 18+ recommended. Everything runs client-side; there is no server component.
 | Ship's computer | `M` or `J` — star map, missions, inventory, logs |
 | Warp a lane | pick a neighbouring system on the star map, then warp from the bay |
 | Skill tree | `K` |
+| Vector Challenge (at a port or station) | `R` — then `W`/`S` thrust, `A`/`D` yaw, `Space` fire, `Shift` burns the turbo reserve, `Esc` steps out |
 | Pause / save / load | `Esc` |
 
 **Flight is inertial.** Turning the bow does not turn your momentum. The
@@ -90,6 +91,13 @@ when you want to cross a system in a hurry. Your choice is remembered.
 - **Ships** — over a hundred hulls, from starter cutters up to rare capital
   ships, each built from a procedural model. Shipyards trade in your old hull
   at 70%.
+- **The Vector Challenge** — every port with a bar keeps a holo-sim rig older
+  than half the hulls outside. Press `R` to fly a *duel* (three pilots, last one
+  flying) or a *harvest* (two minutes on the crystal field) on a wire-and-
+  phosphor orb, in your own hull with the guns you actually carry. The rig lays
+  a course of walls, hills and launch ramps on one patch of the world, marks its
+  edges on the ground, and shows you where the other pilots are. Winners take
+  the purse; the desk pays consolation.
 - **The law** — four factions (Free Ports, Helion Combine, The Vigil, Reaver
   Clans) remember what you do. Wrong a faction past −60 and their ports
   refuse you — though contract business still earns a grudging berth.
@@ -101,7 +109,7 @@ at any station berth — or call a lumen courier if you run dry in the black.
 
 ### The cluster
 
-Fifty-two systems make up *The Ten Lanes & the Outer Reach* — the busy Free
+Fifty-five systems make up *The Ten Lanes & the Outer Reach* — the busy Free
 Port core (Haven, Coriolis, Meridian…) ringed by the Combine's foundry lanes,
 the Vigil's marches, the Kreth Houses' deep holds, and the Reaver Clans' outer
 rim. Each faction flies its colours over its own block of the chart; each system
@@ -124,8 +132,9 @@ has its own governments, tech levels, markets, pirates and patrols.
 ## Development notes
 
 - `window.GAME` exposes the live `game`, `engine` and `ui` for console
-  poking, plus `GAME.debug` helpers (`grant`, `gosys`, `zoom`, `fast`,
-  `nearStation`, `spawnPirate`, `purse`, `panels`).
+  poking, plus `GAME.debug` helpers (`grant`, `zoom`, `fast`, `overPlanet`,
+  `atWarp`, `wormhole`, `scan`, `gosys`, `teleport`, `nearStation`,
+  `spawnPirate`, `purse`, `panels`).
 - URL test hooks (handy when iterating): open `/#test=dock` to continue the
   latest save parked at a station, `/#test=pirates` for immediate traffic,
   `/#test=rich` for a flush purse, or `/#test=chart` to open the star map.

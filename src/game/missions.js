@@ -560,10 +560,6 @@ export function factionQuestOffers(state, station, rng) {
 }
 
 /** The one posting your flag's desk is leading with, for callers that show one. */
-export function factionQuestOffer(state, station, rng) {
-  return factionQuestOffers(state, station, rng)[0] || null;
-}
-
 /* ------------------------------------------------------------------ */
 /* Where a flag's desks are                                            */
 /* ------------------------------------------------------------------ */

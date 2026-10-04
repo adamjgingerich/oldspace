@@ -6,7 +6,6 @@
 // two onward unlocks unique weapons, outfits and ships in the shops.
 // ---------------------------------------------------------------------------
 
-import { SYSTEMS } from '../data/systems.js';
 import { levelFromXp } from './skills.js';
 import { rngOf } from '../core/rng.js';
 

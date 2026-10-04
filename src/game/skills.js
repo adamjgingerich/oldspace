@@ -4,7 +4,7 @@
 // learn and aggregate them. All aggregation functions are pure reads of
 // state so they are safe to call from hot paths (computeStats, combat).
 
-import { SKILL_BY_ID, SKILL_TREES, TREE_BY_ID, TIER_RANK_REQ } from '../data/skills.js';
+import { SKILL_BY_ID, TREE_BY_ID, TIER_RANK_REQ } from '../data/skills.js';
 import { FACTIONS } from '../data/factions.js';
 import { STORY_LINES } from './story.js';
 import { SIDE_BY_ID } from './sidequests.js';
@@ -464,12 +464,6 @@ export function brokerDefect(state, factionId) {
   state.factionLine = { faction: factionId, stage: 0 };
   if (old) state.addRep(old, Math.round(DEFECT_REP_COST * 0.6)); // quieter than a public defection
   return { ok: true, old };
-}
-
-export function isTreeUnlocked(state, treeId) {
-  const tree = TREE_BY_ID[treeId];
-  if (!tree) return false;
-  return !tree.faction || state.allegiance === tree.faction;
 }
 
 /** Quick summary used by HUD / career views. */

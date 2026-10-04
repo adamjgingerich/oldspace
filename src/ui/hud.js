@@ -2,10 +2,9 @@
 
 import * as THREE from 'three';
 import { el, clear } from './dom.js';
-import { fmtCredits, fmtNum, clamp, wrapAngle, dist2 } from '../core/util.js';
+import { fmtCredits, clamp, wrapAngle, dist2 } from '../core/util.js';
 import { SYSTEMS, RIM_RADIUS, laneAngle } from '../data/systems.js';
 import { farEnd } from '../game/wormholes.js';
-import { FACTIONS } from '../data/factions.js';
 import { careerSummary } from '../game/skills.js';
 import { BURST } from '../game/ship.js';
 import { MISSION_COLORS, missionGuide, missionStationName } from '../game/missions.js';

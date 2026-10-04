@@ -6,7 +6,6 @@
 import { FACTIONS, FACTION_IDS } from '../data/factions.js';
 import { SYSTEMS } from '../data/systems.js';
 import { rngOf } from '../core/rng.js';
-import { clamp } from '../core/util.js';
 
 /** How many days between expansion checks — the lanes change slowly. */
 export const EXPAND_EVERY_DAYS = 8;
@@ -22,10 +21,6 @@ export function factionOf(state, sysId) {
 }
 
 /** A faction's current wealth (0 if the save predates the sim). */
-export function wealthOf(state, factionId) {
-  return state.factions?.[factionId]?.wealth ?? FACTIONS[factionId]?.startWealth ?? 0;
-}
-
 /** The systems a faction presently holds. */
 export function systemsOf(state, factionId) {
   const out = [];
