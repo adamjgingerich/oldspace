@@ -97,7 +97,7 @@ const CHUTE = {
   accel: 340,      // how hard the drive pulls toward the setting…
   decel: 460,      // …and how hard it comes off it (braking is always stronger)
   rivalTop: 1,     // the field can match the commander's ceiling…
-  rivalFall: 0.010, // …and each grid slot back is that much slower
+  rivalFall: 0.002, // …and each grid slot back is that much slower
   gridLever: 0.35, // where the commander's lever sits on the line
   ringEvery: 70,   // a wireframe rib every this many units
   chevEvery: 210,  // and a chevron painted on the road every this many
@@ -127,10 +127,14 @@ const CHUTE = {
   padCount: 3,     // burst plates in a run
   padSpacing: 95,  // and how far apart they sit
   padR: 26,        // how close a hull must pass to take one
-  padRespawn: 14,  // seconds before a taken plate comes back
+  padRespawn: 6,   // seconds before a taken plate comes back — short, so the
+                   // traffic behind gets its share rather than losing the whole
+                   // track to whoever is in front
   padHover: 12,    // how high a plate rides off the road
+  rivalLook: 880,  // how far up the road a rival spots a pickup and goes for it
   stars: 9,        // stars along the track, the turbo tank's refill
-  starTop: 0.34,   // how much of the tank one star puts back
+  starTop: 0.22,   // how much of the tank one star puts back — enough to matter,
+                   // not enough to run away with: the field takes stars too
   air: 215,        // the launch a ramp gives — the orb's ramps use the same
   gravity: 430,    // and the same pull back down
   rivals: 5,       // six fly: the commander and five
@@ -2885,7 +2889,7 @@ export class VectorChallenge {
   _chuteAi(p, dt) {
     p.wobble += dt;
     const half = this._chuteHalf(p.s);
-    let want = Math.sin((p.s + p.wobble * 90) / 320) * half * 0.45;
+    let want = Math.sin((p.s + p.wobble * 90) / 320) * half * 0.3;
 
     // A split is a commitment: the island does not negotiate, so a rival picks
     // a lane while there is still road between the two of them, and once the
@@ -2903,7 +2907,7 @@ export class VectorChallenge {
     // plates are worth a detour while there is road to take one on
     let plate = null;
     for (const pad of this.chute.pads) {
-      if (!pad.alive || pad.s <= p.s || pad.s - p.s > 540) continue;
+      if (!pad.alive || pad.s <= p.s || pad.s - p.s > CHUTE.rivalLook) continue;
       const lane = Math.abs(pad.lat) > CHUTE.halfW * 0.5 ? Math.sign(pad.lat) : 0;
       if (lane && p.lane && lane !== p.lane) continue;
       if (!plate || pad.s < plate.s) plate = pad;

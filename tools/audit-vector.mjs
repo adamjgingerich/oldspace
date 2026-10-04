@@ -1,4 +1,4 @@
-// Geometry and gun audit for the Vector Challenge.
+﻿// Geometry and gun audit for the Vector Challenge.
 //
 //   node tools/audit-vector.mjs
 //
@@ -30,7 +30,7 @@ const fail = (msg) => {
   bad++;
 };
 
-/** An instance without the constructor — no DOM, no canvas, no WebGL. */
+/** An instance without the constructor â€” no DOM, no canvas, no WebGL. */
 function makeOrb(orbR = R, seed = 1) {
   const v = Object.create(VectorChallenge.prototype);
   let s = seed;
@@ -367,12 +367,12 @@ function makeRacer(c, i, isPlayer = false) {
   }
   // the pull toward the middle of the charts is the whole point: taking their
   // damage-per-second literally makes a disruptor fit a duel nobody can win
-  if (low < 12) fail(`the weakest gun in the sim does ${f(low, 1)} dps — a pea-shooter`);
-  if (high > 30) fail(`the strongest gun in the sim does ${f(high, 1)} dps — a duel that ends itself`);
+  if (low < 12) fail(`the weakest gun in the sim does ${f(low, 1)} dps â€” a pea-shooter`);
+  if (high > 30) fail(`the strongest gun in the sim does ${f(high, 1)} dps â€” a duel that ends itself`);
   if (heavy) fail(`${heavy} weapons can take more than half a hull in one hit`);
 
-  // A wider orb is fought at wider ranges — the sim fires at 320 field-widths
-  // and leads by more — so the guns have to come with it. Scaling one side and
+  // A wider orb is fought at wider ranges â€” the sim fires at 320 field-widths
+  // and leads by more â€” so the guns have to come with it. Scaling one side and
   // not the other is a field where rivals shoot from outside their own range.
   for (const orbR of COURSE_ORBS) {
     const reach = orbR / 820;
@@ -442,7 +442,7 @@ function makeRacer(c, i, isPlayer = false) {
 /* ---- wedged between barriers ---- */
 {
   // Two faces pushing against each other have opposed normals, so anything
-  // derived from a face — its left, the way its frame is turned — is opposed as
+  // derived from a face â€” its left, the way its frame is turned â€” is opposed as
   // well. A hull caught between them used to be handed one direction by each and
   // cancel its own escape, which is how a pilot ends up pinned at a standstill.
   // Sim time advances here, as it does in the game: with it frozen the hull never
@@ -532,8 +532,8 @@ function makeRacer(c, i, isPlayer = false) {
     // a wide orb wants open ground between pieces; a pebble is meant to be tight
     density[orbR] = crowded;
   }
-  // the widest orb has to be the open one — that is the whole point of flying a
-  // wide one — so it can never be more crowded than the tight one
+  // the widest orb has to be the open one â€” that is the whole point of flying a
+  // wide one â€” so it can never be more crowded than the tight one
   if (density[COURSE_ORBS[1]] > density[COURSE_ORBS[0]]) {
     fail(`the wide ${COURSE_ORBS[1]} orb is more crowded (${density[COURSE_ORBS[1]]} pairs) than the tight ${COURSE_ORBS[0]} one (${density[COURSE_ORBS[0]]})`);
   }
@@ -697,7 +697,7 @@ function makeRacer(c, i, isPlayer = false) {
   }
   if (c.chute.gates[c.chute.gates.length - 1] !== c.chute.length) fail('the last gate is not the line');
   if (c.chute.gates[0] > 1200) fail('the first gate is further than a run-up');
-  // a gate inside a split or a squeeze would be an ambiguous line to cross —
+  // a gate inside a split or a squeeze would be an ambiguous line to cross â€”
   // and a gate is also the reset point after a fall, so it may not sit inside
   // anything that has to be jumped or steered
   for (const g of c.chute.gates) {
@@ -715,7 +715,7 @@ function makeRacer(c, i, isPlayer = false) {
     const t = makeChute(tier, 5);
     // What a hull crossing the lip at exactly the ramp's minimum speed clears.
     // The gap has to be comfortably inside that, or a rival that just made the
-    // jump still falls in — which is the worst kind of unfair.
+    // jump still falls in â€” which is the worst kind of unfair.
     const minClear = CHUTE_SPEC.rampMin * flight;
     for (const r of t.chute.ramps) {
       const gap = t.chute.gaps.find((g) => g.from === r.to && g.lane === r.lane);
@@ -761,7 +761,7 @@ function makeRacer(c, i, isPlayer = false) {
       if (t._chuteHalf(mid) - CHUTE_SPEC.hullSide < CHUTE_SPEC.hullSide) fail('a squeeze is too tight to fly through');
       if (Math.abs(t._chuteHalf(n.from - 10) - CHUTE_SPEC.halfW) > 1e-6) fail('the road is already pinched before a squeeze');
     }
-    // nothing may overlap anything else — features are laid in sequence
+    // nothing may overlap anything else â€” features are laid in sequence
     const spans = [
       ...t.chute.ramps.map((r) => ({ a: r.from, b: r.to, k: 'ramp', lane: r.lane })),
       ...t.chute.gaps.map((g) => ({ a: g.from, b: g.to, k: 'rift', lane: g.lane })),
@@ -806,7 +806,7 @@ function makeRacer(c, i, isPlayer = false) {
     const capClean = g._chuteCap(victim);
     g._chuteHit(victim, shooter);
     if (victim.daze <= 0) fail('a hit in the chute costs a rival nothing');
-    if (victim.hull !== victim.hullMax) fail('a hit in the chute took a rival’s hull rather than its drive');
+    if (victim.hull !== victim.hullMax) fail('a hit in the chute took a rivalâ€™s hull rather than its drive');
     if (g._chuteCap(victim) >= capClean) fail('a spoiled hull is as quick as a clean one');
     if (g._chutePlace(victim) !== 1 && g._chutePlace(victim) !== 2) fail('the chute cannot work out who is ahead');
     // and it cannot be chain-stunned: the bolt after the bolt does nothing
@@ -816,7 +816,7 @@ function makeRacer(c, i, isPlayer = false) {
   }
 
   // and the whole thing flies: four racers, the real stepping function, from a
-  // standing start to the line — nobody stuck, nobody outside the walls
+  // standing start to the line â€” nobody stuck, nobody outside the walls
   {
     const r = makeChute(1, 7);
     r.pilots = Array.from({ length: CHUTE_SPEC.rivals + 1 }, (_, i) => makeRacer(r, i, i === 0));
@@ -841,7 +841,7 @@ function makeRacer(c, i, isPlayer = false) {
       }
     }
     const home = r.pilots.filter((p) => p.finishAt != null).length;
-    if (nan) fail(`the chute produced ${nan} frames of nonsense — a NaN lane, or a hull under the deck`);
+    if (nan) fail(`the chute produced ${nan} frames of nonsense â€” a NaN lane, or a hull under the deck`);
     if (offTrack) fail(`${offTrack} frames put a racer outside the chute walls`);
     if (inIsland) fail(`${inIsland} frames put a racer inside the divider of a split`);
     if (home !== r.pilots.length) fail(`${home} of ${r.pilots.length} racers finished inside 200 seconds`);
@@ -867,7 +867,7 @@ function makeRacer(c, i, isPlayer = false) {
     const plain = drive(false);
     const turbo = drive(true);
     if (turbo.peak < plain.peak * 1.15) {
-      fail(`the turbo tank buys ${(turbo.peak / plain.peak).toFixed(2)}x speed — the bar is a display`);
+      fail(`the turbo tank buys ${(turbo.peak / plain.peak).toFixed(2)}x speed â€” the bar is a display`);
     }
     if (turbo.p.turboCharge >= plain.p.turboCharge) fail('the turbo tank never empties while it is burning');
   }
@@ -876,16 +876,18 @@ function makeRacer(c, i, isPlayer = false) {
   // holds the lever down comes out about even with the field over a run of
   // brackets, and one who works the tank as well comes out ahead of that
   {
-    const fly = (tier, keys) => {
+    const fly = (tier, keys, padStep = false) => {
       const r = makeChute(tier, 7);
       r.pilots = Array.from({ length: CHUTE_SPEC.rivals + 1 }, (_, i) => makeRacer(r, i, i === 0));
       for (const k of keys) r._keys.add(k);
+      const dt = 1 / 60;
       let steps = 0;
       while (steps < 60 * 400 && r.pilots.some((p) => p.finishAt == null)) {
         steps += 1;
-        r.match.time += 1 / 60;
-        r.t += 1 / 60;
-        r._chuteStep(1 / 60);
+        r.match.time += dt;
+        r.t += dt;
+        r._chuteStep(dt);
+        if (padStep) r._chutePadsStep(dt);
       }
       if (r.pilots[0].finishAt == null) return null;
       const best = Math.min(...r.pilots.slice(1).map((p) => p.finishAt ?? Infinity));
@@ -895,8 +897,8 @@ function makeRacer(c, i, isPlayer = false) {
     let turbo = 0;
     let tiers = 0;
     for (const tier of [1, 2, 4, 6, 8]) {
-      const a = fly(tier, ['KeyW']);
-      const b = fly(tier, ['KeyW', 'ShiftLeft']);
+      const a = fly(tier, ['KeyW'], true);
+      const b = fly(tier, ['KeyW', 'ShiftLeft'], true);
       if (a == null || b == null) { fail(`a commander holding the lever down cannot finish bracket ${tier}`); break; }
       plain += a;
       turbo += b;
@@ -906,10 +908,10 @@ function makeRacer(c, i, isPlayer = false) {
       plain /= tiers;
       turbo /= tiers;
       if (Math.abs(plain) > 6) {
-        fail(`a commander who only holds the lever ${plain > 0 ? 'wins' : 'loses'} by ${Math.abs(plain).toFixed(1)}s a race on average — the field is not flying`);
+        fail(`a commander who only holds the lever ${plain > 0 ? 'wins' : 'loses'} by ${Math.abs(plain).toFixed(1)}s a race on average â€” the field is not flying`);
       }
       if (turbo < plain + 0.4) {
-        fail(`working the tank is worth ${(turbo - plain).toFixed(2)}s a race — the bar does not pay`);
+        fail(`working the tank is worth ${(turbo - plain).toFixed(2)}s a race â€” the bar does not pay`);
       }
     }
   }
