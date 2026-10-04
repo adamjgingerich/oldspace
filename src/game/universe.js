@@ -19,7 +19,7 @@ import { AIController } from './ai.js';
 import { Ship } from './ship.js';
 import { rngOf } from '../core/rng.js';
 import { audio } from '../core/audio.js';
-import { clamp, damp, dist2, hashString, TAU, wrapAngle } from '../core/util.js';
+import { clamp, damp, dist2, distSq2, hashString, TAU, wrapAngle } from '../core/util.js';
 import { SHIP_BY_ID } from '../data/ships.js';
 import { HOUSE_NAMES, PIRATE_FIRST, PIRATE_EPITHET } from '../data/names.js';
 import { computeStats, HOSTILE_REP } from './state.js';
@@ -51,7 +51,22 @@ const MERCY_KARMA = 1;
 const MERCY_REP = 3;
 
 /** Global dampener on unprovoked attacks — one knob for every system's temper. */
-const AMBIENT_ATTACK_TRIM = 0.55;
+const AMBIENT_ATTACK_TRIM = 0.42;
+
+/*
+ * Cooling off. A raider that has taken against the captain holds that decision
+ * only while it keeps the captain in reach: break contact past AGGRO_BREAK and
+ * hold it for AGGRO_COOL and the pilot goes back to its own business. Nothing
+ * here touches what a flag *remembers* — a grudge still runs for days — but a
+ * lane the captain has run through once is not a lane that shoots at them for
+ * the rest of their life.
+ */
+const AGGRO_BREAK = 2600;  // units — further out than a gun, a hail or a lock reaches
+const AGGRO_COOL = 18;     // seconds of clear air before a hull stands down
+/** The lanes only hold so much violence at a time: one unprovoked ambush per gap. */
+const AMBUSH_GAP = 60;
+/** The cooling-off figures, for the audit to hold the lanes to. */
+export const AGGRO_SPEC = { breakOff: AGGRO_BREAK, cool: AGGRO_COOL, ambushGap: AMBUSH_GAP };
 
 /** View zoom bounds: zoomTarget 1 is the normal helm view. */
 const ZOOM_MIN = 0.32;
@@ -215,6 +230,7 @@ export class Universe {
     this.spawnTimer = 2;
     this.missionRefreshT = 0;
     this._capitalCd = 0; // cooldown between capital transits (see _maybeCapitalTransit)
+    this._ambushReadyAt = 0; // when the lanes may spring another unprovoked attack
     this._hailTimer = 0; // radio chatter pacing
     this._sightTimer = 0;
     this._pick = new THREE.Vector3(); // scratch vector for click-to-select
@@ -691,10 +707,18 @@ export class Universe {
     else if (threat <= 24) { ship.aimError = 0.01; ship.cdMult = 0.95; ship.dmgMult = 1.08; }
     else if (threat <= 32) { ship.aimError = 0.005; ship.cdMult = 0.88; ship.dmgMult = 1.2; }
     else { ship.aimError = 0.004; ship.cdMult = 0.82; ship.dmgMult = 1.32; }
-    // renown draws trouble — but mostly in lanes that already belong to trouble
-    const hostile = Math.min(1, this.hostileWeight());
-    if (threat >= 12 && rng.chance(0.15 * hostile)) ship.hunting = true;
-    if (threat >= 18 && rng.chance(0.22 * hostile)) ship.hunting = true;
+    // renown draws trouble — but mostly in lanes that already belong to trouble,
+    // and only in the stretches of lane that have not been shot up already
+    if (this.ambushReady()) {
+      const hostile = Math.min(1, this.hostileWeight());
+      const keen = threat >= 18 && rng.chance(0.22 * hostile)
+        ? true
+        : threat >= 12 && rng.chance(0.15 * hostile);
+      if (keen) {
+        ship.hunting = true;
+        this.noteAmbush();
+      }
+    }
     // nobody in a free-fire system is waiting for an excuse
     if (this.freefire) {
       ship.aggroed = true;
@@ -1059,8 +1083,14 @@ export class Universe {
         return npc.aggroed || npc.hunting || grudge || st.rep.reaver < -10;
       case 'bounty':
         return true;
-      case 'navy':
-        return st.rep.vigil <= HOSTILE_REP || st.rep.combine <= HOSTILE_REP || npc.aggroed || grudge;
+      case 'navy': {
+        // a patrol answers to its own flag's books: the Combine does not open
+        // fire for the Vigil's quarrels, nor the other way round
+        const books = npc.faction === 'combine' ? st.rep.combine
+          : npc.faction === 'kreth' ? (st.rep.kreth ?? 0)
+            : st.rep.vigil;
+        return books <= HOSTILE_REP || npc.aggroed || grudge;
+      }
       case 'house':
         return (st.rep.kreth ?? 0) <= HOSTILE_REP || npc.aggroed || grudge;
       default:
@@ -1073,12 +1103,71 @@ export class Universe {
     if (!faction) return;
     if (this.freefire) return; // nothing done in these systems follows you out
     const st = this.state;
-    st.grudge[faction] = Math.max(st.grudge[faction] || 0, st.day + 2);
+    st.grudge[faction] = Math.max(st.grudge[faction] || 0, st.day + 1);
   }
 
   grudgeActive(faction) {
     if (!faction) return false;
     return (this.state.grudge?.[faction] || 0) >= this.state.day;
+  }
+
+  /**
+   * The lanes have had their excitement for a while. Any unprovoked attack on
+   * the captain — a raider that talks itself into a hunt, or one that spawns
+   * with the bit between its teeth — spends this, so passing through a system
+   * is worth at most one ambush per AMBUSH_GAP however much traffic rolls in.
+   */
+  noteAmbush() {
+    this._ambushReadyAt = this.time + AMBUSH_GAP;
+  }
+
+  /** Whether an unprovoked attack is on the cards at all right now. */
+  ambushReady() {
+    return this.time >= (this._ambushReadyAt || 0);
+  }
+
+  /**
+   * Cooling off: a hull that is up in arms against the captain holds that
+   * decision only while it keeps the captain in reach. Called every frame, and
+   * cheap — it reads two flags and one squared distance per hull.
+   */
+  _updateAggro(dt) {
+    const p = this.player;
+    if (!p?.alive) return;
+    const limit = AGGRO_BREAK * AGGRO_BREAK;
+    for (const s of this.ships) {
+      if (s.isPlayer || !s.alive || s.role === 'escort' || s.despawn) continue;
+      if (!s.hunting && !s.aggroed) {
+        s.coolT = 0;
+        continue;
+      }
+      if (distSq2(s.x, s.z, p.x, p.z) > limit) s.coolT = (s.coolT || 0) + dt;
+      else s.coolT = 0;
+      if (s.coolT >= AGGRO_COOL) this._calmDown(s);
+    }
+  }
+
+  /**
+   * Whatever this hull had against the captain is dropped. What the flag
+   * remembers is untouched — a grudge still runs its days, a provoked faction
+   * still counts the shots — but this pilot stops hunting, stops fleeing, and
+   * goes back to the lane it was flying. It hails again if it ever takes
+   * against the captain anew.
+   */
+  _calmDown(ship) {
+    ship.hunting = false;
+    ship.aggroed = false;
+    ship.coolT = 0;
+    ship._provoked = 0;
+    ship._provokedT = -99;
+    ship._hailed = false;
+    if (!ship.ai) return;
+    ship.ai.witnessed = null;
+    ship.ai.fleeing = false;
+    ship.ai._fleeDecided = false;
+    ship.ai._willFlee = false;
+    ship.ai.target = null;
+    if (ship.ai.state === 'flee') ship.ai.state = 'cruise';
   }
 
   /**
@@ -1103,7 +1192,7 @@ export class Universe {
     w *= this.hostileWeight();
     // the lanes breathe easier — ambushes are rarer everywhere, by decree
     w *= AMBIENT_ATTACK_TRIM;
-    return clamp(w, threat > 18 ? 0.04 : 0.01, 0.55);
+    return clamp(w, threat > 18 ? 0.04 : 0.01, 0.45);
   }
 
   /**
@@ -1518,6 +1607,9 @@ export class Universe {
       ship.ai?.update(dt);
       ship.update(dt, this.fx);
     }
+
+    // hulls that have lost the captain go back to minding their own business
+    this._updateAggro(dt);
 
     // enemy markers: every hull hostile to the captain wears a soft red halo
     for (const ship of this.ships) {

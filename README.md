@@ -109,7 +109,14 @@ when you want to cross a system in a hurry. Your choice is remembered.
   Winners take the purse; the desk pays consolation.
 - **The law** — four factions (Free Ports, Helion Combine, The Vigil, Reaver
   Clans) remember what you do. Wrong a faction past −60 and their ports
-  refuse you — though contract business still earns a grudging berth.
+  refuse you — though contract business still earns a grudging berth. A flag
+  also answers to its own books: a Vigil patrol does not open fire over a
+  quarrel you had with the Combine, and a grudge lasts a day, not a career.
+- **Cooling off** — nothing in the lanes holds a grudge for its own sake. A
+  raider that takes against you keeps it up only while you are in reach; break
+  contact, run the lane, and it goes back to its own business. Provoke a flag
+  and their patrols will come for you, but the lanes themselves only spring so
+  many unprovoked attacks in one stretch — a pass-through is not a war.
 - **Death is a setback, not the end** — an escape pod drags you to your last
   dock, lighter part of your purse; your hold and contracts ride with you.
 

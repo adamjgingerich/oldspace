@@ -33,7 +33,7 @@ export class AIController {
     this.fleeing = false;
     this._fleeDecided = false;
     this._willFlee = false;
-    this._huntTimer = 3 + ((hashString(`hunt:${ship.name}`) % 1000) / 1000) * 7;
+    this._huntTimer = 8 + ((hashString(`hunt:${ship.name}`) % 1000) / 1000) * 10;
     // gunner focus: a fresh lock starts shaky and tightens as the pilot settles
     this._focus = 0;
     this._focusTarget = null;
@@ -71,15 +71,18 @@ export class AIController {
     this._thinkTimer -= dt;
     if (this._thinkTimer <= 0) {
       this._thinkTimer = 0.25;
-      // pirates size the captain up now and then — they need a reason to bite
+      // pirates size the captain up now and then — they need a reason to bite,
+      // and the lanes only have so much violence in them at a time
       if (this.role === 'pirate' && !ship.hunting && !ship.aggroed && !u.grudgeActive(ship.faction)) {
         this._huntTimer -= 0.25;
         if (this._huntTimer <= 0) {
-          this._huntTimer = 10 + Math.random() * 12;
+          this._huntTimer = 26 + Math.random() * 28;
           const p = u.player;
-          if (p && p.alive && Math.hypot(p.x - ship.x, p.z - ship.z) < 1900
+          if (p && p.alive && u.ambushReady()
+            && Math.hypot(p.x - ship.x, p.z - ship.z) < 1900
             && Math.random() < u.pirateInterest()) {
             ship.hunting = true;
+            u.noteAmbush();
           }
         }
       }
