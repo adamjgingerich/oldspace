@@ -11,7 +11,7 @@ import { planetInfo, formatPopulation } from '../game/planetSurvey.js';
 import { levelFromXp, karmaLabel, KARMA_ACTS, karmaActCost, karmaActBlock, karmaActFaction } from '../game/skills.js';
 import { backgroundOf, driveOf } from '../game/character.js';
 import { MISSION_TAGS, tierStars, missionProgress } from '../game/missions.js';
-import { STORY_LINES, ensureStory } from '../game/story.js';
+import { STORY_LINES } from '../game/story.js';
 import { SIDE_BY_ID } from '../game/sidequests.js';
 
 const kv = (k, v, color = null) => el('div', { class: 'kv' }, [
@@ -235,23 +235,37 @@ export function buildLog(state, { style = '', missionLog = true, actions = null 
     wrap.append(missionsSec);
   }
 
-  // ---- story paths ----
-  const storySec = section('Story paths', 'Three lines run through the Ten. The fourth chapter of any line is an oath; taking one closes the others.');
-  const s = ensureStory(state);
-  for (const line of Object.values(STORY_LINES)) {
-    const rank = s.rank[line.id] || 0;
-    const pips = Array.from({ length: line.chapters.length }, (_, i) => (i < rank ? '●' : '○')).join(' ');
-    const closed = s.oath && s.oath !== line.id;
-    const done = rank >= line.chapters.length;
-    const status = closed ? 'path closed' : done ? 'finished' : rank ? `chapter ${rank} of ${line.chapters.length} done` : 'not started';
-    const box = el('div', { style: `border-left:3px solid ${line.color};padding-left:10px;margin:8px 0` }, [
+  // ---- your path ----
+  const storySec = section('Your path', state.allegiance
+    ? 'Your flag keeps one chain — written chapters, then steady work, then open-ended postings. The other flags\' branches are not your concern.'
+    : 'No flag owns you yet. Run any flag\'s chapter-one opening to sign on — its whole chain becomes yours.');
+  if (state.allegiance) {
+    const flag = FACTIONS[state.allegiance];
+    const myLine = Object.values(STORY_LINES).find((l) => l.faction === state.allegiance);
+    const stage = state.factionLine?.faction === state.allegiance ? state.factionLine.stage : 0;
+    const done = myLine && stage >= myLine.chapters.length;
+    const status = myLine
+      ? stage < myLine.chapters.length
+        ? `${myLine.name} — chapter ${stage + 1} of ${myLine.chapters.length}`
+        : `${myLine.name} written line complete — open-ended work continues`
+      : `${flag?.name || state.allegiance} — open-ended work`;
+    storySec.append(el('div', { style: `border-left:3px solid ${myLine?.color || flag?.color || '#9fb0c6'};padding-left:10px;margin:8px 0` }, [
       el('div', { class: 'kv' }, [
-        el('span', { style: `color:${line.color}`, text: `${line.name}  ${pips}` }),
+        el('span', { style: `color:${myLine?.color || flag?.color || '#9fb0c6'}`, text: myLine ? myLine.name : (flag?.name || state.allegiance) }),
         el('b', { text: status }),
       ]),
-      el('p', { class: 'note', text: closed ? 'The oath you swore closed this path — its remaining chapters will never be offered.' : line.blurb }),
-    ]);
-    storySec.append(box);
+      el('p', { class: 'note', text: `Chain stage ${stage + 1}. Finish each posting to unlock the next at ${flag?.name || ''} desks.${done ? ' The written line is run out — the desk keeps the work coming, priced higher each time.' : ''}` }),
+    ]));
+  } else {
+    for (const line of Object.values(STORY_LINES)) {
+      storySec.append(el('div', { style: `border-left:3px solid ${line.color};padding-left:10px;margin:8px 0` }, [
+        el('div', { class: 'kv' }, [
+          el('span', { style: `color:${line.color}`, text: line.name }),
+          el('b', { text: 'chapter 1 — sign on' }),
+        ]),
+        el('p', { class: 'note', text: line.blurb }),
+      ]));
+    }
   }
   wrap.append(storySec);
 

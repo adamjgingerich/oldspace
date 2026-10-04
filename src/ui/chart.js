@@ -116,18 +116,30 @@ export class ChartUI {
         rec(m.issuer.systemId).turnins += 1;
       }
     }
-    const s = story.ensureStory(state);
     const lvl = levelFromXp(state.xp || 0);
-    for (const line of Object.values(story.STORY_LINES)) {
-      if (s.oath && s.oath !== line.id) continue; // closed paths do not beckon
-      const rank = s.rank[line.id] || 0;
-      if (rank >= line.chapters.length) continue;
-      const ch = line.chapters[rank];
-      if (lvl < ch.lvl) continue;
-      const dest = ch.objective?.dest;
-      if (!dest) continue;
-      const bag = rec(dest).story;
-      if (!bag.some((l) => l.id === line.id)) bag.push(line);
+    if (state.allegiance) {
+      // your flag's next written chapter, if the chain is still in its story run
+      const chain = missions.factionChain(state.allegiance);
+      const stage = state.factionLine?.faction === state.allegiance ? state.factionLine.stage : 0;
+      if (stage < chain.length && chain[stage].kind === 'story') {
+        const spec = chain[stage];
+        const line = story.STORY_LINES[spec.line];
+        const ch = line.chapters[spec.chapter - 1];
+        if (ch) {
+          const dest = ch.objective?.dest;
+          if (dest) rec(dest).story.push(line);
+        }
+      }
+    } else {
+      // unsworn: every flag's chapter-one opening beckons from its home desk
+      for (const line of Object.values(story.STORY_LINES)) {
+        const ch = line.chapters[0];
+        if (lvl < (ch.lvl || 1)) continue;
+        const dest = ch.objective?.dest;
+        if (!dest) continue;
+        const bag = rec(dest).story;
+        if (!bag.some((l) => l.id === line.id)) bag.push(line);
+      }
     }
     return info;
   }

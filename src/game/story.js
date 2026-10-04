@@ -166,22 +166,15 @@ export const STORY_LINES = {
 /** Make sure a save has a story block (older saves predate it). */
 export function ensureStory(state) {
   if (!state.story || typeof state.story !== 'object') {
-    state.story = { rank: {}, mods: {}, unlocked: [], oath: null };
+    state.story = { mods: {}, unlocked: [] };
   }
-  if (!state.story.rank) state.story.rank = {};
   if (!state.story.mods) state.story.mods = {};
   if (!Array.isArray(state.story.unlocked)) state.story.unlocked = [];
-  if (state.story.oath === undefined) state.story.oath = null;
   return state.story;
 }
 
-/** Short tag for a story contract, shared by dock and chart. */
-export function storyTag(m) {
-  const line = m.story ? STORY_LINES[m.story.line] : null;
-  return line ? `${line.name} · CH ${m.story.chapter}` : null;
-}
-
-function buildOffer(line, ch, state, station) {
+/** Build a fixed story-chapter offer from a line + chapter. */
+export function buildStoryOffer(line, ch, state, station) {
   const o = ch.objective;
   const offer = {
     id: `story-${line.id}-${ch.n}`,
@@ -207,35 +200,51 @@ function buildOffer(line, ch, state, station) {
   return offer;
 }
 
-/** Story assignments currently open to the pilot, wherever they dock. */
-export function storyOffers(state, station) {
-  const s = ensureStory(state);
+/**
+ * Chapter-one openings for an unsworn pilot — one per flag with a written
+ * path. Running one signs you on with that flag.
+ */
+export function joinOffers(state, station) {
   const lvl = levelFromXp(state.xp || 0);
   const out = [];
   for (const line of Object.values(STORY_LINES)) {
-    // only your own flag's path shows. Unsworn, the three chapter-one
-    // openings are the join offers; once you fly colours, the others vanish.
-    if (state.allegiance && line.faction !== state.allegiance) continue;
-    if (s.oath && s.oath !== line.id) continue; // the other paths are closed
-    const rank = s.rank[line.id] || 0;
-    if (rank >= line.chapters.length) continue; // line finished
-    const ch = line.chapters[rank];
-    if (lvl < ch.lvl) continue; // not yet trusted with this
-    out.push(buildOffer(line, ch, state, station));
+    const ch = line.chapters[0];
+    if (lvl < (ch.lvl || 1)) continue;
+    const offer = buildStoryOffer(line, ch, state, station);
+    offer.line = { faction: line.faction, stage: 0, repeat: false };
+    out.push(offer);
   }
   return out;
 }
 
-/** Called when a story contract is accepted — the oath closes the other lines. */
-export function onStoryAccepted(state, meta) {
+/**
+ * Settle a completed story chapter: merge passives, unlock gear, and — on the
+ * chapter-one opening — sign an unsworn pilot on with the flag. Progress down
+ * the chain itself is carried by state.factionLine.
+ */
+export function applyStoryRewards(state, meta) {
+  const line = STORY_LINES[meta.line];
+  if (!line) return null;
   const s = ensureStory(state);
-  if (!meta.oath || s.oath) return;
-  s.oath = meta.line;
-  for (const m of [...state.missions]) {
-    if (m.story && m.story.line !== meta.line) {
-      state.missions.splice(state.missions.indexOf(m), 1);
-    }
+  const ch = line.chapters[meta.chapter - 1];
+  if (!ch) return null;
+  for (const [key, val] of Object.entries(ch.mods || {})) {
+    s.mods[key] = (s.mods[key] || 0) + val;
   }
+  for (const id of ch.unlock || []) {
+    if (!s.unlocked.includes(id)) s.unlocked.push(id);
+  }
+  if (meta.chapter === 1 && !state.allegiance) {
+    state.allegiance = line.faction;
+    state.factionLine = { faction: line.faction, stage: 0 };
+  }
+  return {
+    line: line.id,
+    lineName: line.name,
+    chapter: meta.chapter,
+    rewards: ch.rewards || [],
+    oath: !!ch.oath,
+  };
 }
 
 /**
@@ -288,40 +297,4 @@ export function defectionOffers(state, station) {
     });
   }
   return out;
-}
-
-/**
- * Settle a completed story chapter: rank up, merge passives, unlock gear.
- * Returns a report for toasts, or null if out of order.
- */
-export function advanceStory(state, meta) {
-  const line = STORY_LINES[meta.line];
-  if (!line) return null;
-  const s = ensureStory(state);
-  const prev = s.rank[line.id] || 0;
-  if (meta.chapter !== prev + 1) return null; // already settled or skipped
-  const ch = line.chapters[meta.chapter - 1];
-  if (!ch) return null;
-  s.rank[line.id] = meta.chapter;
-  for (const [key, val] of Object.entries(ch.mods || {})) {
-    s.mods[key] = (s.mods[key] || 0) + val;
-  }
-  for (const id of ch.unlock || []) {
-    if (!s.unlocked.includes(id)) s.unlocked.push(id);
-  }
-  if (ch.oath) s.oath = line.id;
-  // the chapter-one opening is the join: an unsworn pilot who runs it now
-  // flies those colours, and the line that goes with them
-  if (meta.chapter === 1 && !state.allegiance) {
-    state.allegiance = line.faction;
-    state.factionLine = { faction: line.faction, stage: 0 };
-  }
-  const complete = s.rank[line.id] >= line.chapters.length;
-  return {
-    line: line.id,
-    lineName: line.name,
-    chapter: meta.chapter,
-    rewards: ch.rewards || [],
-    complete,
-  };
 }

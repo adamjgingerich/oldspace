@@ -14,8 +14,8 @@ import { BRIEFS, TWIST_INFO, OUTROS } from '../data/voices.js';
 import { rngOf } from '../core/rng.js';
 import { addKarma, economyMods, levelFromXp } from './skills.js';
 import { clamp } from '../core/util.js';
-import { advanceStory, onStoryAccepted, ensureStory } from './story.js';
 import { advanceSide } from './sidequests.js';
+import { STORY_LINES, buildStoryOffer, applyStoryRewards, ensureStory } from './story.js';
 
 export const MAX_ACTIVE = 6;
 
@@ -309,6 +309,22 @@ function fillText(s, vars) {
 /** Legal commodities, for salvage bonuses on open contracts. */
 const LEGAL_COMMODITIES = Object.values(COMMODITY_BY_ID).filter((c) => !c.illegal);
 
+/** Story chapters run first in a flag's chain, then its templated work. */
+function storyStages(faction) {
+  const line = Object.values(STORY_LINES).find((l) => l.faction === faction);
+  if (!line) return [];
+  return line.chapters.map((ch) => ({ kind: 'story', line: line.id, chapter: ch.n, lvl: ch.lvl || 1 }));
+}
+
+function factionStages(faction) {
+  return (FACTION_LINES[faction] || []).map((s) => ({ kind: 'faction', ...s }));
+}
+
+/** The flag's one quest chain: written story, written work, then procedural. */
+export function factionChain(faction) {
+  return [...storyStages(faction), ...factionStages(faction)];
+}
+
 /** Work each flag keeps generating once its written line is run out. */
 const PROCEDURAL_POOLS = {
   free: ['sweep', 'delivery', 'courier', 'survey'],
@@ -319,12 +335,13 @@ const PROCEDURAL_POOLS = {
 };
 
 /**
- * Beyond the written stages the desk keeps generating the same honest work in
+ * Beyond the written chain the desk keeps generating the same honest work in
  * the flag's own voice, priced higher each time it is asked. `stage` is the
- * 0-based line position, already past `line.length`.
+ * 0-based chain position, already past the end of the chain.
  */
 function proceduralFactionStage(flag, stage, rng) {
   const line = FACTION_LINES[flag];
+  const chainLen = factionChain(flag).length;
   const type = rng.pick(PROCEDURAL_POOLS[flag] || ['delivery', 'bounty']);
   // borrow the flag's own phrasing from a written stage of the same type
   const template = line.find((s) => s.type === type) || line[line.length - 1];
@@ -334,7 +351,7 @@ function proceduralFactionStage(flag, stage, rng) {
     key: `repeat-${stage}`,
     type,
     foe,
-    tier: clamp(7 + (stage - line.length), 7, 8),
+    tier: clamp(7 + (stage - chainLen), 7, 8),
     rep: 8 + Math.floor(stage / 3),
     days: 5 + Math.floor(stage / 4),
     title: template.title,
@@ -343,21 +360,10 @@ function proceduralFactionStage(flag, stage, rng) {
 }
 
 /**
- * The one posting from your flag's line, if this is your flag's desk. Null
- * anywhere else — rival flags, free ports and no-flag berths carry no line
- * work for you, so nothing from another branch ever reaches your board.
+ * Build a templated faction-stage (or repeatable procedural) posting.
  */
-export function factionLineOffer(state, station, rng) {
-  const flag = state.allegiance;
-  if (!isFaction(flag) || station.owner !== flag) return null;
-  const line = FACTION_LINES[flag];
-  if (!line || !line.length) return null;
-  const ls = state.factionLine && state.factionLine.faction === flag
-    ? state.factionLine
-    : { faction: flag, stage: 0 };
-  const repeat = ls.stage >= line.length;
-  const stage = repeat ? ls.stage : Math.min(ls.stage, line.length - 1);
-  const spec = repeat ? proceduralFactionStage(flag, ls.stage, rng) : line[stage];
+function buildFactionStageOffer(state, station, rng, flag, spec, stageIdx, repeat) {
+  const chainLen = factionChain(flag).length;
   const tier = clamp(spec.tier ?? 3, 2, 8);
   const reach = reachableFrom(state.systemId, MAX_HOPS[tier]);
   const cands = reach.length ? reach : reachableFrom(state.systemId, 2);
@@ -365,14 +371,14 @@ export function factionLineOffer(state, station, rng) {
   const dest = weightedDest(rng, cands, tier);
   const dname = SYSTEMS[dest.id].name;
   // repeatable postings climb a little in pay each time they are asked
-  const climb = repeat ? 1 + (ls.stage - line.length + 1) * 0.16 : 1;
+  const climb = repeat ? 1 + (stageIdx - chainLen + 1) * 0.16 : 1;
   const mul = TIER_MULT[tier] * riskBonus(dest.id) * deepPay(dest.id) * 1.15 * climb;
   const issuer = { stationId: station.id, systemId: state.systemId, faction: flag };
   const offer = {
     id: `${station.id}-d${state.day}-line-${spec.key}-${rng.int(100, 999)}`,
     type: spec.type,
     tier,
-    line: { faction: flag, stage, repeat },
+    line: { faction: flag, stage: stageIdx, repeat },
     issuer,
     dest: { systemId: dest.id },
     rep: { faction: flag, amount: spec.rep },
@@ -436,6 +442,36 @@ export function factionLineOffer(state, station, rng) {
     offer.desc = fillText(spec.desc, { dest: dname, qty, commodity: c.name });
   }
   return offer;
+}
+
+/**
+ * The one posting from your flag's chain, if this is your flag's desk. Null
+ * anywhere else — rival flags, free ports and no-flag berths carry no chain
+ * work for you, so nothing from another branch ever reaches your board.
+ */
+export function factionQuestOffer(state, station, rng) {
+  const flag = state.allegiance;
+  if (!isFaction(flag) || station.owner !== flag) return null;
+  const chain = factionChain(flag);
+  if (!chain.length) return null;
+  const ls = state.factionLine && state.factionLine.faction === flag
+    ? state.factionLine
+    : { faction: flag, stage: 0 };
+  const stageIdx = ls.stage;
+  if (stageIdx < chain.length) {
+    const spec = chain[stageIdx];
+    if (spec.kind === 'story') {
+      const line = STORY_LINES[spec.line];
+      const ch = line.chapters[spec.chapter - 1];
+      const offer = buildStoryOffer(line, ch, state, station);
+      offer.line = { faction: flag, stage: stageIdx, repeat: false };
+      return offer;
+    }
+    return buildFactionStageOffer(state, station, rng, flag, spec, stageIdx, false);
+  }
+  // the chain is run out — the desk keeps the same honest work coming, priced up
+  const spec = proceduralFactionStage(flag, ls.stage, rng);
+  return buildFactionStageOffer(state, station, rng, flag, spec, ls.stage, true);
 }
 
 /**
@@ -696,7 +732,7 @@ export function generateBoard(state, station) {
   }
 
   // ---- your flag's line: the one posting that is yours alone ----
-  const lineOffer = factionLineOffer(state, station, rng);
+  const lineOffer = factionQuestOffer(state, station, rng);
   if (lineOffer) offers.push(lineOffer);
   return offers;
 }
@@ -748,7 +784,6 @@ export function acceptMission(state, offer) {
     mission.pods = { need: offer.pods.need, taken: [] };
   }
   state.missions.push(mission);
-  if (mission.story) onStoryAccepted(state, mission.story);
   return { ok: true, mission };
 }
 
@@ -822,7 +857,7 @@ export function finishMission(state, mission) {
   addKarma(state, CONTRACT_KARMA[mission.type] || 1);
   if (mission.rep) state.addRep(mission.rep.faction, mission.rep.amount);
   if (mission.repPenalty) state.addRep(mission.repPenalty.faction, mission.repPenalty.amount);
-  if (mission.story) mission.storyResult = advanceStory(state, mission.story);
+  if (mission.story) mission.storyResult = applyStoryRewards(state, mission.story);
   if (mission.side) mission.sideResult = advanceSide(state, mission.side);
 
   // open-contract bonus: a windfall, a clean name, salvage or a rare skill point

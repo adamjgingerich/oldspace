@@ -935,7 +935,7 @@ export class DockUI {
       panel.append(
         el('div', { class: 'kv' }, [el('span', { text: 'Sworn to' }), el('b', { style: `color:${sworn.color}`, text: sworn.name })]),
         el('div', { class: 'kv' }, [el('span', { text: 'Standing' }), el('b', { text: `${state.rep[state.allegiance] ?? 0}` })]),
-        el('p', { class: 'note', html: `The ${sworn.name} line runs stage ${(state.factionLine?.faction === state.allegiance ? state.factionLine.stage : 0) + 1} — the next posting waits at their desks. Standing grows 10% faster, their stations post their own work to you, and their skill tree is open. Learned ranks stay if you ever leave.` }),
+        el('p', { class: 'note', html: `The ${sworn.name} chain is at stage ${(state.factionLine?.faction === state.allegiance ? state.factionLine.stage : 0) + 1} — the next posting waits at their desks. Standing grows 10% faster, their stations post their own work to you, and their skill tree is open. Learned ranks stay if you ever leave.` }),
       );
     } else {
       panel.append(el('p', { class: 'note', text: 'Unsworn: every desk deals with you and no flag claims you. Swearing opens a flag\'s own mission line and its skill tree — and closes its rivals\' blades to you.' }));
@@ -1076,20 +1076,14 @@ export class DockUI {
   _renderContracts() {
     const { state, station, actions } = this.ctx;
 
-    // ---- your path: the one quest line that is yours ----
-    const s = story.ensureStory(state);
+    // ---- choose a flag: chapter-one openings for the unsworn ---- 
     const sworn = state.allegiance ? FACTIONS[state.allegiance] : null;
-    const myLine = sworn ? Object.values(story.STORY_LINES).find((l) => l.faction === state.allegiance) : null;
-    const storyBoard = story.storyOffers(state, station).filter((o) => !state.missions.some((m) => m.id === o.id));
 
-    const storyCard = (o, acceptLabel) => {
+    const joinCard = (o) => {
       const line = story.STORY_LINES[o.story.line];
-      const accept = btn(acceptLabel || 'Take the assignment', () => actions.actAcceptMission(o.id), `btn small ${o.story.oath ? 'danger' : 'primary'}`);
+      const accept = btn('Sign on', () => actions.actAcceptMission(o.id), 'btn small primary');
       return el('div', { class: `mission ${o.type}`, style: `--mcol: ${line.color}` }, [
-        el('div', {
-          class: 'mtag',
-          html: `${line.name.toUpperCase()} · CHAPTER ${o.story.chapter}${o.story.oath ? ' · <span class="urgent">OATH</span>' : ''}`,
-        }),
+        el('div', { class: 'mtag', html: `${line.name.toUpperCase()} · CHAPTER 1` }),
         el('h4', { text: o.title }),
         el('p', { text: o.desc }),
         el('div', { class: 'mfoot' }, [
@@ -1102,22 +1096,11 @@ export class DockUI {
       ]);
     };
 
-    if (sworn) {
-      this.body.append(el('h2', { html: `${emblemSVG(state.allegiance, 20)} <span style="color:${sworn.color}">${sworn.name}</span> — your path` }));
-      if (myLine) {
-        const rank = s.rank[myLine.id] || 0;
-        const done = rank >= myLine.chapters.length;
-        const pips = myLine.chapters.map((_, i) => (i < rank ? '●' : '○')).join(' ');
-        this.body.append(el('p', { class: 'note', text: `${myLine.name} — ${done ? 'complete' : `chapter ${rank + 1} of ${myLine.chapters.length}`} · ${pips}. The other flags' paths are not your concern.` }));
-        for (const o of storyBoard) this.body.append(storyCard(o, o.story.oath ? 'Swear the oath' : 'Take the assignment'));
-        if (!storyBoard.length && !done) this.body.append(el('p', { class: 'note', text: 'No chapter is open yet — grow your renown and the next posting will find you.' }));
-      } else {
-        this.body.append(el('p', { class: 'note', text: `${sworn.name} keeps its work on the board below — your flag's line posts one job at a time, and it is always yours.` }));
-      }
-    } else {
+    if (!sworn) {
       this.body.append(el('h2', { text: 'Choose a flag' }));
       this.body.append(el('p', { class: 'note', text: 'Three flags keep a written path. Run a chapter-one opening to sign on with one of them — or swear later at any desk. Until then, the open contracts below are yours.' }));
-      for (const o of storyBoard) this.body.append(storyCard(o, 'Sign on'));
+      const joins = story.joinOffers(state, station).filter((o) => !state.missions.some((m) => m.id === o.id));
+      for (const o of joins) this.body.append(joinCard(o));
     }
 
     // ---- a change of colours: errands that switch your flag ----
@@ -1258,13 +1241,18 @@ export class DockUI {
     if (lineOffers.length) {
       const o = lineOffers[0];
       const flag = FACTIONS[o.line.faction];
-      const total = (missions.FACTION_LINES[o.line.faction] || []).length;
+      const chain = missions.factionChain(o.line.faction);
+      const chainLen = chain.length;
       const stage = o.line.stage + 1;
+      const storyLine = o.story ? story.STORY_LINES[o.story.line] : null;
+      const where = storyLine
+        ? `${storyLine.name} · chapter ${o.story.chapter} of ${storyLine.chapters.length}${o.story.oath ? ' · <span class="urgent">OATH</span>' : ''}`
+        : `${flag?.name || o.line.faction}, stage ${stage}${chainLen ? ` of ${chainLen}` : ''}`;
       this.body.append(el('p', {
         class: 'note boardpolicy own',
-        html: `${emblemSVG(o.line.faction, 16)} Your flag's line — ${flag?.name || o.line.faction}, stage ${stage} of ${total}. Finish it and the next posting unlocks at ${flag?.name || ''} desks.${o.line.repeat ? ' The line is run out — this posting repeats.' : ''}`,
+        html: `${emblemSVG(o.line.faction, 16)} Your flag's path — ${where}. Finish it and the next posting unlocks at ${flag?.name || ''} desks.${o.line.repeat ? ' The written line is run out — this posting repeats and pays more each time.' : ''}`,
       }));
-      boardWrap.append(offerCard(o, `${emblemSVG(o.line.faction, 14)}<span class="fwork">${(flag?.short || 'FLAG').toUpperCase()} LINE</span> · `));
+      boardWrap.append(offerCard(o, `${emblemSVG(o.line.faction, 14)}<span class="fwork">${(flag?.short || 'FLAG').toUpperCase()} PATH</span> · `));
     }
     if (openOffers.length) {
       this.body.append(el('p', { class: 'note', text: 'Open contracts — every desk\'s work, any captain\'s money. They never touch your flag\'s line. Long runs pay more; bonus rewards are marked on the card.' }));

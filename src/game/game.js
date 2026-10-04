@@ -1471,7 +1471,7 @@ export class Game {
   actAcceptMission(offerId) {
     const station = this.station;
     const offer = missions.generateBoard(this.state, station).find((o) => o.id === offerId)
-      || story.storyOffers(this.state, station).find((o) => o.id === offerId)
+      || story.joinOffers(this.state, station).find((o) => o.id === offerId)
       || sidequests.sideOffers(this.state, station).find((o) => o.id === offerId);
     if (!offer) return;
     const res = missions.acceptMission(this.state, offer);
@@ -1488,7 +1488,7 @@ export class Game {
       const line = story.STORY_LINES[offer.story.line];
       this.ui.toasts.push(
         offer.story.oath
-          ? `The oath is taken. ${line.name} is your path now — the other lines are closed.`
+          ? `${line.name} — the oath is sworn. You are theirs, and they are yours.`
           : `${line.name} — chapter ${offer.story.chapter} begins.`,
         offer.story.oath ? 'warn' : 'good',
       );

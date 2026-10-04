@@ -148,13 +148,11 @@ export class GameState {
     // your own fleet: escorts flying with you, and small craft in bay cradles
     this.fleet = Array.isArray(opts.fleet) ? opts.fleet.map((m) => ({ ...m })) : [];
 
-    // the three storylines and the side-quest chains
+    // permanent passives + shop unlocks earned down the flag's written path
     this.story = opts.story ? {
-      rank: { ...(opts.story.rank || {}) },
       mods: { ...(opts.story.mods || {}) },
       unlocked: [...(opts.story.unlocked || [])],
-      oath: opts.story.oath || null,
-    } : { rank: {}, mods: {}, unlocked: [], oath: null };
+    } : { mods: {}, unlocked: [] };
     this.side = opts.side ? {
       active: { ...(opts.side.active || {}) },
       mods: { ...(opts.side.mods || {}) },
@@ -305,10 +303,8 @@ export class GameState {
       skills: { ...this.skills },
       fleet: this.fleet.map((m) => ({ ...m })),
       story: {
-        rank: { ...this.story.rank },
         mods: { ...this.story.mods },
         unlocked: [...this.story.unlocked],
-        oath: this.story.oath,
       },
       side: {
         active: { ...this.side.active },
@@ -387,11 +383,20 @@ export class GameState {
     st.skills = { ...(obj.skills || {}) };
     st.fleet = Array.isArray(obj.fleet) ? obj.fleet.map((m) => ({ ...m })) : [];
     st.story = obj.story ? {
-      rank: { ...(obj.story.rank || {}) },
       mods: { ...(obj.story.mods || {}) },
       unlocked: [...(obj.story.unlocked || [])],
-      oath: obj.story.oath || null,
-    } : { rank: {}, mods: {}, unlocked: [], oath: null };
+    } : { mods: {}, unlocked: [] };
+
+    // migrate pre-0.48 saves: story rank + faction-line stage were two
+    // separate counters; fold them into the one unified chain position
+    if (obj.story && obj.story.rank && st.allegiance) {
+      const LINE_FACTION = { vig: 'vigil', rea: 'reaver', com: 'combine' };
+      const lineId = Object.keys(obj.story.rank)
+        .find((lid) => LINE_FACTION[lid] === st.allegiance);
+      const oldStoryRank = lineId ? (obj.story.rank[lineId] || 0) : 0;
+      const oldFactionStage = obj.factionLine?.stage || 0;
+      st.factionLine = { faction: st.allegiance, stage: oldStoryRank + oldFactionStage };
+    }
     st.side = obj.side ? {
       active: { ...(obj.side.active || {}) },
       mods: { ...(obj.side.mods || {}) },
