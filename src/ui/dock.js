@@ -1076,30 +1076,19 @@ export class DockUI {
   _renderContracts() {
     const { state, station, actions } = this.ctx;
 
-    // ---- the three storylines ----
+    // ---- your path: the one quest line that is yours ----
     const s = story.ensureStory(state);
-    this.body.append(el('h2', { text: 'The story so far' }));
-    this.body.append(el('p', { class: 'note', text: 'Three paths run through the Ten. Follow any of them to the third chapter — the fourth is an oath, and it closes the other two for good. Story assignments do not count against your contract limit.' }));
-    for (const line of Object.values(story.STORY_LINES)) {
-      const rank = s.rank[line.id] || 0;
-      const closed = !!s.oath && s.oath !== line.id;
-      const done = rank >= line.chapters.length;
-      const pips = line.chapters.map((_, i) => (i < rank ? '●' : '○')).join(' ');
-      const status = done ? 'complete' : closed ? 'path closed' : `chapter ${rank + 1} of ${line.chapters.length}`;
-      this.body.append(el('div', { class: `story-row ${closed ? 'closed' : ''}`, style: `--mcol: ${line.color}` }, [
-        el('h4', { text: line.name }),
-        el('span', { class: 'srank', text: `${pips} · ${status}` }),
-        el('p', { class: 'note', text: line.blurb }),
-      ]));
-    }
+    const sworn = state.allegiance ? FACTIONS[state.allegiance] : null;
+    const myLine = sworn ? Object.values(story.STORY_LINES).find((l) => l.faction === state.allegiance) : null;
     const storyBoard = story.storyOffers(state, station).filter((o) => !state.missions.some((m) => m.id === o.id));
-    for (const o of storyBoard) {
+
+    const storyCard = (o, acceptLabel) => {
       const line = story.STORY_LINES[o.story.line];
-      const accept = btn(o.story.oath ? 'Swear the oath' : 'Take the assignment', () => actions.actAcceptMission(o.id), `btn small ${o.story.oath ? 'danger' : 'primary'}`);
-      this.body.append(el('div', { class: `mission ${o.type}`, style: `--mcol: ${line.color}` }, [
+      const accept = btn(acceptLabel || 'Take the assignment', () => actions.actAcceptMission(o.id), `btn small ${o.story.oath ? 'danger' : 'primary'}`);
+      return el('div', { class: `mission ${o.type}`, style: `--mcol: ${line.color}` }, [
         el('div', {
           class: 'mtag',
-          html: `${line.name.toUpperCase()} · CHAPTER ${o.story.chapter}${o.story.oath ? ' · <span class="urgent">OATH — CLOSES THE OTHER PATHS</span>' : ''}`,
+          html: `${line.name.toUpperCase()} · CHAPTER ${o.story.chapter}${o.story.oath ? ' · <span class="urgent">OATH</span>' : ''}`,
         }),
         el('h4', { text: o.title }),
         el('p', { text: o.desc }),
@@ -1110,7 +1099,51 @@ export class DockUI {
           ]),
           accept,
         ]),
-      ]));
+      ]);
+    };
+
+    if (sworn) {
+      this.body.append(el('h2', { html: `${emblemSVG(state.allegiance, 20)} <span style="color:${sworn.color}">${sworn.name}</span> — your path` }));
+      if (myLine) {
+        const rank = s.rank[myLine.id] || 0;
+        const done = rank >= myLine.chapters.length;
+        const pips = myLine.chapters.map((_, i) => (i < rank ? '●' : '○')).join(' ');
+        this.body.append(el('p', { class: 'note', text: `${myLine.name} — ${done ? 'complete' : `chapter ${rank + 1} of ${myLine.chapters.length}`} · ${pips}. The other flags' paths are not your concern.` }));
+        for (const o of storyBoard) this.body.append(storyCard(o, o.story.oath ? 'Swear the oath' : 'Take the assignment'));
+        if (!storyBoard.length && !done) this.body.append(el('p', { class: 'note', text: 'No chapter is open yet — grow your renown and the next posting will find you.' }));
+      } else {
+        this.body.append(el('p', { class: 'note', text: `${sworn.name} keeps its work on the board below — your flag's line posts one job at a time, and it is always yours.` }));
+      }
+    } else {
+      this.body.append(el('h2', { text: 'Choose a flag' }));
+      this.body.append(el('p', { class: 'note', text: 'Three flags keep a written path. Run a chapter-one opening to sign on with one of them — or swear later at any desk. Until then, the open contracts below are yours.' }));
+      for (const o of storyBoard) this.body.append(storyCard(o, 'Sign on'));
+    }
+
+    // ---- a change of colours: errands that switch your flag ----
+    if (sworn) {
+      const defections = story.defectionOffers(state, station).filter((o) => !state.missions.some((m) => m.id === o.id));
+      if (defections.length) {
+        this.body.append(el('h3', { text: 'A change of colours' }));
+        this.body.append(el('p', { class: 'note', text: 'Carry the papers to another flag and you sign on with them — the old flag writes it down, the new line starts fresh.' }));
+        for (const o of defections) {
+          const f = FACTIONS[o.defect.faction];
+          const accept = btn('Sign on', () => actions.actAcceptMission(o.id), 'btn small primary');
+          if (state.missions.filter((m) => !m.story).length >= missions.MAX_ACTIVE) accept.disabled = true;
+          this.body.append(el('div', { class: `mission ${o.type}`, style: `--mcol: ${f?.color || '#9fb0c6'}` }, [
+            el('div', { class: 'mtag', html: `${emblemSVG(o.defect.faction, 14)} ${f?.name.toUpperCase() || o.defect.faction} · DEFECTION` }),
+            el('h4', { text: o.title }),
+            el('p', { text: o.desc }),
+            el('div', { class: 'mfoot' }, [
+              el('span', { class: 'mwhere' }, [
+                el('span', { class: 'mdest', text: `▸ ${SYSTEMS[o.dest.systemId].name}` }),
+                el('span', { text: `₡${o.reward.toLocaleString()}` }),
+              ]),
+              accept,
+            ]),
+          ]));
+        }
+      }
     }
 
     // ---- side work: notices pinned by whoever needs something ----
@@ -1148,10 +1181,12 @@ export class DockUI {
       const line = m.story ? story.STORY_LINES[m.story.line] : null;
       const sideQ = m.side ? sidequests.SIDE_BY_ID[m.side.group] : null;
       const fLine = m.line ? FACTIONS[m.line.faction] : null;
+      const defectTo = m.defect ? FACTIONS[m.defect.faction] : null;
       const tag = line ? `${line.name} · CH ${m.story.chapter}`
         : sideQ ? `${sideQ.name} · ${m.side.step + 1}/${sideQ.steps.length}`
           : fLine ? `${fLine.short.toUpperCase()} LINE`
-            : (missions.MISSION_TAGS[m.type] || 'CONTRACT');
+            : defectTo ? `${defectTo.short.toUpperCase()} DEFECTION`
+              : (missions.MISSION_TAGS[m.type] || 'CONTRACT');
       const ready = missions.completionsAt(state, this.ctx.systemId, station.id).some((r) => r.mission.id === m.id);
       const progress = missions.missionProgress(m);
       let status = formatDeadline(m.deadlineDay, state.day);

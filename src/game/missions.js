@@ -309,6 +309,39 @@ function fillText(s, vars) {
 /** Legal commodities, for salvage bonuses on open contracts. */
 const LEGAL_COMMODITIES = Object.values(COMMODITY_BY_ID).filter((c) => !c.illegal);
 
+/** Work each flag keeps generating once its written line is run out. */
+const PROCEDURAL_POOLS = {
+  free: ['sweep', 'delivery', 'courier', 'survey'],
+  combine: ['delivery', 'sweep', 'recovery'],
+  vigil: ['bounty', 'sweep', 'recovery'],
+  reaver: ['bounty', 'sweep', 'delivery'],
+  kreth: ['bounty', 'delivery', 'recovery'],
+};
+
+/**
+ * Beyond the written stages the desk keeps generating the same honest work in
+ * the flag's own voice, priced higher each time it is asked. `stage` is the
+ * 0-based line position, already past `line.length`.
+ */
+function proceduralFactionStage(flag, stage, rng) {
+  const line = FACTION_LINES[flag];
+  const type = rng.pick(PROCEDURAL_POOLS[flag] || ['delivery', 'bounty']);
+  // borrow the flag's own phrasing from a written stage of the same type
+  const template = line.find((s) => s.type === type) || line[line.length - 1];
+  const foe = template.foe
+    || (flag === 'reaver' ? (type === 'bounty' ? 'vigil' : type === 'sweep' ? 'navy' : 'pirate') : 'pirate');
+  return {
+    key: `repeat-${stage}`,
+    type,
+    foe,
+    tier: clamp(7 + (stage - line.length), 7, 8),
+    rep: 8 + Math.floor(stage / 3),
+    days: 5 + Math.floor(stage / 4),
+    title: template.title,
+    desc: template.desc,
+  };
+}
+
 /**
  * The one posting from your flag's line, if this is your flag's desk. Null
  * anywhere else — rival flags, free ports and no-flag berths carry no line
@@ -322,16 +355,18 @@ export function factionLineOffer(state, station, rng) {
   const ls = state.factionLine && state.factionLine.faction === flag
     ? state.factionLine
     : { faction: flag, stage: 0 };
-  const stage = Math.min(ls.stage, line.length - 1);
   const repeat = ls.stage >= line.length;
-  const spec = line[stage];
+  const stage = repeat ? ls.stage : Math.min(ls.stage, line.length - 1);
+  const spec = repeat ? proceduralFactionStage(flag, ls.stage, rng) : line[stage];
   const tier = clamp(spec.tier ?? 3, 2, 8);
   const reach = reachableFrom(state.systemId, MAX_HOPS[tier]);
   const cands = reach.length ? reach : reachableFrom(state.systemId, 2);
   if (!cands.length) return null;
   const dest = weightedDest(rng, cands, tier);
   const dname = SYSTEMS[dest.id].name;
-  const mul = TIER_MULT[tier] * riskBonus(dest.id) * deepPay(dest.id) * 1.15;
+  // repeatable postings climb a little in pay each time they are asked
+  const climb = repeat ? 1 + (ls.stage - line.length + 1) * 0.16 : 1;
+  const mul = TIER_MULT[tier] * riskBonus(dest.id) * deepPay(dest.id) * 1.15 * climb;
   const issuer = { stationId: station.id, systemId: state.systemId, faction: flag };
   const offer = {
     id: `${station.id}-d${state.day}-line-${spec.key}-${rng.int(100, 999)}`,
@@ -384,7 +419,7 @@ export function factionLineOffer(state, station, rng) {
     const cDest = rng.pick(shortReach.length ? shortReach : cands);
     offer.dest = { systemId: cDest.id };
     offer.cargo = { id: commodityId, qty };
-    offer.reward = Math.round((rng.int(380, 700) + qty * 60) * TIER_MULT[tier] * riskBonus(cDest.id) * 1.15);
+    offer.reward = Math.round((rng.int(380, 700) + qty * 60) * TIER_MULT[tier] * riskBonus(cDest.id) * 1.15 * climb);
     offer.title = fillText(spec.title, { dest: SYSTEMS[cDest.id].name, noun });
     offer.desc = `${fillText(spec.desc, { dest: SYSTEMS[cDest.id].name, noun })} ${noun[0].toUpperCase()}${noun.slice(1)} in the hold.`;
     offer.deadlineDay = state.day + 2 + cDest.hops;
@@ -687,6 +722,7 @@ export function acceptMission(state, offer) {
     relic: offer.relic ? { ...offer.relic } : null,
     line: offer.line ? { ...offer.line } : null,
     bonus: offer.bonus ? { ...offer.bonus } : null,
+    defect: offer.defect ? { ...offer.defect } : null,
     long: !!offer.long,
     title: offer.title,
     desc: offer.desc,
@@ -819,6 +855,16 @@ export function finishMission(state, mission) {
     state.factionLine.stage += 1;
     const flag = FACTIONS[mission.line.faction];
     extras.push(`next ${flag?.short || 'flag'} posting unlocked`);
+  }
+
+  // a defection errand switches your colours on delivery — the old flag
+  // writes it down, and the new flag's line starts from the top
+  if (mission.defect && state.allegiance !== mission.defect.faction) {
+    const old = state.allegiance;
+    state.allegiance = mission.defect.faction;
+    state.factionLine = { faction: mission.defect.faction, stage: 0 };
+    if (old) state.addRep(old, -8);
+    extras.push(`now flying ${FACTIONS[mission.defect.faction]?.name || mission.defect.faction} colours`);
   }
   mission.extraNote = extras.length ? extras.join(' · ') : null;
 

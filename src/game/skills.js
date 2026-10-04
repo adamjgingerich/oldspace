@@ -10,13 +10,13 @@ import { STORY_LINES } from './story.js';
 import { SIDE_BY_ID } from './sidequests.js';
 import { clamp } from '../core/util.js';
 
-/** The highest commander level. */
-export const MAX_LEVEL = 40;
+/** The highest commander level. Effectively open-ended — the curve just keeps climbing. */
+export const MAX_LEVEL = 999;
 
 /**
  * Cumulative XP needed to reach each level (index 0 = level 1). Levels 1–20
- * are the early game, tuned by hand; 21–40 are the long climb to a flag of
- * your own — the endgame of fleets, charters and the deep lanes.
+ * are the early game, tuned by hand; 21 onward is a procedural climb with no
+ * ceiling in sight — the lanes keep paying, and the numbers keep growing.
  */
 export const XP_TABLE = (() => {
   const t = [

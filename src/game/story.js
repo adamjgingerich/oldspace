@@ -213,6 +213,9 @@ export function storyOffers(state, station) {
   const lvl = levelFromXp(state.xp || 0);
   const out = [];
   for (const line of Object.values(STORY_LINES)) {
+    // only your own flag's path shows. Unsworn, the three chapter-one
+    // openings are the join offers; once you fly colours, the others vanish.
+    if (state.allegiance && line.faction !== state.allegiance) continue;
     if (s.oath && s.oath !== line.id) continue; // the other paths are closed
     const rank = s.rank[line.id] || 0;
     if (rank >= line.chapters.length) continue; // line finished
@@ -236,6 +239,58 @@ export function onStoryAccepted(state, meta) {
 }
 
 /**
+ * A way out: one quiet errand per flag. Carrying the papers to a flag's home
+ * is signing on with them — no standing, no broker, just the run. Completing
+ * one switches your colours and starts that flag's line from the top.
+ */
+export const SWITCH_QUESTS = {
+  free: {
+    name: 'Papers for the Free Ports', dest: 'haven', reward: 2600,
+    desc: 'The Ports keep a berth for any captain who brings their own registry to Haven. Deliver the papers, and no flag will own you — but every port will deal with you.',
+  },
+  combine: {
+    name: 'Papers for the Combine', dest: 'coriolis', reward: 2800,
+    desc: 'The Combine registers factors at Coriolis. Carry your letters of credit there and your name goes on the right ledgers — steel in, freight out, margin on every leg.',
+  },
+  vigil: {
+    name: 'Papers for the Watch', dest: 'vesper', reward: 2800,
+    desc: 'The Watch musters at Vesper Gate. Present your papers there and the Vigil will call you its own — a lane is only as safe as the ships that fly it.',
+  },
+  reaver: {
+    name: 'Papers for the Clans', dest: 'rusthaven', reward: 2800,
+    desc: 'The Clans keep no court but Rusthaven. Carry the writ there and you run with them — nothing in the deep is owned, only held.',
+  },
+  kreth: {
+    name: 'Papers for the Houses', dest: 'vekta', reward: 2800,
+    desc: "The Houses keep their books at Vek'Tal. Deliver the name-seal there and a name is a debt — yours, to them, from that bell on.",
+  },
+};
+
+/** Defection errands open to a sworn pilot: one per flag they do not fly. */
+export function defectionOffers(state, station) {
+  if (!state.allegiance) return [];
+  const out = [];
+  for (const [fid, q] of Object.entries(SWITCH_QUESTS)) {
+    if (fid === state.allegiance) continue;
+    out.push({
+      id: `defect-${fid}`,
+      type: 'courier',
+      tier: 3,
+      defect: { faction: fid },
+      title: q.name,
+      desc: q.desc,
+      issuer: { stationId: station.id, systemId: state.systemId, faction: station.owner },
+      dest: { systemId: q.dest },
+      cargo: { id: 'electronics', qty: 1 },
+      reward: q.reward,
+      rep: { faction: fid, amount: 8 },
+      deadlineDay: state.day + 10,
+    });
+  }
+  return out;
+}
+
+/**
  * Settle a completed story chapter: rank up, merge passives, unlock gear.
  * Returns a report for toasts, or null if out of order.
  */
@@ -255,6 +310,12 @@ export function advanceStory(state, meta) {
     if (!s.unlocked.includes(id)) s.unlocked.push(id);
   }
   if (ch.oath) s.oath = line.id;
+  // the chapter-one opening is the join: an unsworn pilot who runs it now
+  // flies those colours, and the line that goes with them
+  if (meta.chapter === 1 && !state.allegiance) {
+    state.allegiance = line.faction;
+    state.factionLine = { faction: line.faction, stage: 0 };
+  }
   const complete = s.rank[line.id] >= line.chapters.length;
   return {
     line: line.id,
