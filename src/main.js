@@ -194,6 +194,7 @@ function boot() {
     game,
     engine,
     ui,
+    backdrop,
     debug: {
       grant(n = 5000) {
         game.state?.addCredits(n);
