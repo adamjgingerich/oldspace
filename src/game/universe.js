@@ -23,6 +23,7 @@ import { clamp, damp, dist2, distSq2, hashString, TAU, wrapAngle } from '../core
 import { SHIP_BY_ID } from '../data/ships.js';
 import { HOUSE_NAMES, PIRATE_FIRST, PIRATE_EPITHET } from '../data/names.js';
 import { computeStats, HOSTILE_REP } from './state.js';
+import { brokerVisit } from '../data/brokers.js';
 import { addXp, addKarma, economyMods, levelFromXp, wingMods } from './skills.js';
 import { fleetLoadout, nextFreeBay, removeFromFleet } from './fleet.js';
 import { holeInSystem, holePos, isDiscovered } from './wormholes.js';
@@ -250,8 +251,11 @@ export class Universe {
     this.nearStation = null;
     this.nearWormhole = null;
     this.nearStar = null;
+    this.nearBroker = null;
     this.wormholes = [];
     this.courier = null; // a lumen courier folding in, en route or handing over
+    this.brokerShip = null; // today's crate trader, if the lanes have one
+    this.broker = null;
     this.dampeners = []; // warp-blocking fields: star, worlds, moons, stations
     this.warpBlock = null; // nearest clear point when the coils are dampened
     this.warpGuide = null; // dotted exit vector (Warp Field Plotter owners)
@@ -294,8 +298,11 @@ export class Universe {
     this.nearStation = null;
     this.nearWormhole = null;
     this.nearStar = null;
+    this.nearBroker = null;
     this.wormholes = [];
     this.courier = null;
+    this.brokerShip = null;
+    this.broker = null;
     this.dampeners = [];
     this.warpBlock = null;
     this.warpGuide = null;
@@ -476,6 +483,8 @@ export class Universe {
     this.missionRefreshT = 12;
     this._manageSpawns(true);
     this._spawnMissionObjects(true);
+    // ...and whoever is working the lanes today
+    this._maybeBroker();
 
     // seed the dampener state immediately so prompts/hints are right on frame one
     this.warpBlock = this.warpClearance();
@@ -829,6 +838,59 @@ export class Universe {
     ship.weapons = weapons;
     ship.ammo = {};
     this._addNpc(ship, 'trader', station ? { x: station.x, z: station.z } : p);
+  }
+
+  /**
+   * Brokers are not lane traffic: most systems have none on any given day, and
+   * the one that is there came to trade, not to run the gauntlet. She works a
+   * patch of open sky with a couple of escorts on her wings, sits out any
+   * shooting match that is not hers, and folds out if it becomes hers.
+   */
+  _maybeBroker() {
+    if (this.freefire) return; // no law at all is no place for a market
+    const broker = brokerVisit(this.state, this.systemId);
+    if (!broker || this.ships.some((s) => s.role === 'broker')) return;
+    const rng = rngOf(this.state.worldSeed, 'brokerpos', broker.id, this.systemId, this.state.day);
+    const station = this.stations.length ? this.stations[0] : null;
+    const a = rng.float(0, TAU);
+    const d = station ? rng.float(700, 1100) : rng.float(1500, 2400);
+    const x = (station ? station.x : 0) + Math.cos(a) * d;
+    const z = (station ? station.z : 0) + Math.sin(a) * d;
+    const ship = Ship.npc(broker.hull, {
+      scene: this.scene, x, z, heading: rng.float(0, TAU),
+      faction: this.system.gov === 'combine' ? 'combine' : this.system.gov === 'kreth' ? 'kreth' : 'free',
+      role: 'broker', name: broker.name,
+      loadout: { weapons: [rng.chance(0.6) ? 'needler' : null, 'pulse', null, null] },
+    });
+    ship.brokerId = broker.id;
+    ship.ammo = {};
+    ship.aimError = 0.05;
+    this._addNpc(ship, 'broker', null);
+    this.brokerShip = ship;
+    this.broker = broker;
+    for (const [i, hull] of (broker.escorts || []).entries()) {
+      const ea = a + 0.35 * (i + 1) * (i % 2 ? -1 : 1);
+      const ed = d + 220 + 90 * i;
+      const escort = Ship.npc(hull, {
+        scene: this.scene,
+        x: (station ? station.x : 0) + Math.cos(ea) * ed,
+        z: (station ? station.z : 0) + Math.sin(ea) * ed,
+        heading: rng.float(0, TAU),
+        faction: ship.faction, role: 'broker', name: `${broker.name} escort`,
+        loadout: { weapons: ['flenser', 'flenser', null] },
+      });
+      escort.brokerId = broker.id;
+      escort.ammo = {};
+      // wingmen hold station on the crate: same loiter, tighter leash
+      escort.ai = new AIController(escort, {
+        role: 'broker',
+        universe: this,
+        home: { x: ship.x, z: ship.z, haseed: rng.float(0, 1) },
+      });
+      escort.ai.loiterRadius = 300;
+      this.ships.push(escort);
+    }
+    this.onEvent?.('brokerArrived', { broker, ship });
   }
 
   /**
@@ -1803,6 +1865,13 @@ export class Universe {
         bestD = d;
         this.nearStation = st;
       }
+    }
+    // a broker comes alongside when you are close and have stopped chasing her
+    this.nearBroker = null;
+    if (this.brokerShip?.alive && !this.brokerShip.despawn) {
+      const d = dist2(this.brokerShip.x, this.brokerShip.z, p.x, p.z);
+      const reach = (this.brokerShip.def?.len || 40) * 1.6 + 220;
+      if (d < reach) this.nearBroker = this.brokerShip;
     }
     this.nearPlanet = null;
     bestD = Infinity;

@@ -53,7 +53,7 @@ Node 18+ recommended. Everything runs client-side; there is no server component.
 | Fullscreen | corner button (top right) or `F` |
 | Volume / mute | corner speaker button (click for the mixer) or `V` |
 | Simulation speed | corner ×N button, `X` faster, `Z` slower |
-| Dock / scan | `E` — dock at a station; near a world or star, hold close and slow to survey |
+| Dock / scan | `E` — dock at a station; near a world or star, hold close and slow to survey; alongside a crate trader, come aboard her manifest |
 | Ship's computer | `M` or `J` — star map, missions, inventory, logs |
 | Warp a lane | pick a neighbouring system on the star map, then warp from the bay |
 | Skill tree | `K` |
@@ -88,6 +88,18 @@ when you want to cross a system in a hurry. Your choice is remembered.
 - **Outfit & upgrade** — weapons (needlers, pulse lances, railguns, homing
   harpoons), shields, capacitors, engines, plating, bigger holds, repair
   drones, sensors, lumen tanks.
+- **Crate traders** — a handful of factors, brokers and chandlers work the
+  lanes rather than a quay, and none of them are common: most systems have no
+  broker in them on any given day, and the one that is there came to trade.
+  What they carry is the gear you would otherwise have to earn — licence-gated
+  faction guns and fittings, salvage out of somebody else's story, relic vault
+  loot out of the sealed bands — and they ask a little over the odds for it,
+  more if you cannot show papers. The papers come with the crate, so a
+  mechanic will fit her out again if you ever take her off. Hail one on the
+  radio (`T`) or come alongside and press `E`; the Odd Lot deals in finds, the
+  Faraday Bourse deals in licences, the Ashgrove Bourse deals in banded relics,
+  and the Quiet Fair — an ark refitted into an auction house — deals in the
+  third band, in the hottest lanes of the Reach, when it turns up at all.
 - **Ships** — over a hundred and forty hulls, from starter cutters up to the
   great keels, each built from a procedural model. Yards are not equal: a
   frontier outpost stocks light hulls, a port stocks the working trade, and only

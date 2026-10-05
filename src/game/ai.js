@@ -103,11 +103,14 @@ export class AIController {
     this._focus = Math.min(1, this._focus + dt / settle);
     ship.focusErr = this.target?.alive ? (1 - this._focus) * 0.06 : 0;
 
-    const hurt = ship.hull < ship.stats.hull * (this.role === 'trader' ? 0.72 : 0.3);
+    const hurt = ship.hull < ship.stats.hull * (this.role === 'trader' || this.role === 'broker' ? 0.72 : 0.3);
 
     switch (this.role) {
       case 'trader':
         this.updateTrader(dt, hurt);
+        break;
+      case 'broker':
+        this.updateBroker(dt, hurt);
         break;
       case 'bounty':
       case 'pirate':
@@ -162,6 +165,37 @@ export class AIController {
     ship.throttleCmd = Math.abs(d) > 1.4 ? 0.45 : 1;
     ship.brakeCmd = 0;
     if (Math.hypot(ship.x - this.cruise.x, ship.z - this.cruise.z) < 140) ship.despawn = true;
+  }
+
+  /**
+   * A broker works where she pleases: she comes to a stop on her own patch of
+   * sky and stays there for as long as the day lasts, so a captain who has been
+   * told where to look can actually find her. Provoke her and she runs like any
+   * other merchant.
+   */
+  updateBroker(dt, hurt) {
+    const ship = this.ship;
+    if (hurt || this.state === 'flee') {
+      this.state = 'flee';
+      const flee = this.pickFleePoint();
+      this.steerTo(flee.x, flee.z);
+      ship.throttleCmd = 1;
+      ship.brakeCmd = 0;
+      if (Math.hypot(ship.x - flee.x, ship.z - flee.z) < 320) ship.despawn = true;
+      return;
+    }
+    const home = this.home || { x: ship.x, z: ship.z };
+    const ring = this.loiterRadius || 620;
+    this._loiter = this._loiter || 0;
+    const nextPoint = () => {
+      const a = (this._loiter += 1.7) + (home.haseed || 0) * 6.28;
+      return { x: home.x + Math.cos(a) * ring, z: home.z + Math.sin(a) * ring };
+    };
+    if (!this.cruise) this.cruise = nextPoint();
+    const d = this.steerTo(this.cruise.x, this.cruise.z);
+    ship.throttleCmd = Math.abs(d) > 0.9 ? 0.3 : 0.16;
+    ship.brakeCmd = 0;
+    if (Math.hypot(ship.x - this.cruise.x, ship.z - this.cruise.z) < ring * 0.42) this.cruise = nextPoint();
   }
 
   updateWarrior(dt, hurt) {

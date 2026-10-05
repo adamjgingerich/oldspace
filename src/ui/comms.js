@@ -17,6 +17,7 @@ const WORLD_RANGE = 1500;
 const ROLE_LABEL = {
   pirate: 'raider', bounty: 'bounty mark', navy: 'patrol', trader: 'hauler',
   house: 'House ship', transit: 'capital', courier: 'courier', escort: 'your wing',
+  broker: 'crate trader',
 };
 
 export class CommsUI {
@@ -218,6 +219,22 @@ export class CommsUI {
         say: 'Anything moving on these lanes worth knowing?',
         act: () => actions.rumour(),
       });
+      if (s.brokerId && actions.openBroker) {
+        const crate = actions.brokerCrate ? actions.brokerCrate(s) : [];
+        const best = crate[0];
+        opts.push({
+          label: 'Ask about the crate',
+          cls: 'primary',
+          title: best ? `Top of the manifest: ${best.name}, asking ${Math.round(best.asking).toLocaleString()}.` : '',
+          say: 'I hear you are carrying more than freight. What is on the deck?',
+          act: () => {
+            actions.openBroker(s);
+            return best
+              ? `A deck light comes on: ${crate.length} pieces laid out, ${best.name} at the head of them. “Come alongside and read the manifest yourself.”`
+              : '“Deck is bare this run. Try me another system.”';
+          },
+        });
+      }
       if (!s.surrendered) {
         opts.push({
           label: s.disabled ? 'Demand her colours' : 'Offer terms',

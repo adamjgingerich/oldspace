@@ -2601,3 +2601,60 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 .defect-toggle:hover { color: var(--bone); border-color: rgba(159, 176, 198, 0.5); }
 .defect-toggle.on { color: var(--bone); border-color: rgba(159, 176, 198, 0.5); }
 .defect-toggle .dtri { font-size: 9px; opacity: 0.8; }
+
+/* ==================================================================
+   THE CRATE TRADE — a broker's manifest, read alongside in open space.
+   The radio's frame, because it opens the same way: a panel over the
+   sky with the helm idle behind it.
+   ================================================================== */
+.broker {
+  position: absolute;
+  inset: 0;
+  z-index: 82;
+  display: grid;
+  place-items: center;
+  background:
+    var(--grime) 0 0 / 26px 26px repeat,
+    linear-gradient(180deg, rgba(4, 10, 16, 0.82), rgba(3, 6, 10, 0.92));
+}
+.broker.hidden { display: none; }
+
+.broker .broker-box {
+  width: min(1040px, 95vw);
+  max-height: min(700px, 90vh);
+  background: var(--panel);
+  box-shadow:
+    0 0 0 3px rgba(255, 210, 122, 0.4),
+    inset 3px 3px 0 rgba(255, 235, 200, 0.08),
+    inset -3px -3px 0 rgba(0, 8, 16, 0.7),
+    0 20px 60px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.broker header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 2px solid var(--panel-line-dim);
+}
+.broker header h2 { margin: 0; font-size: 16px; letter-spacing: 0.08em; }
+.broker .csub { flex: 1; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+.broker-lede { padding: 10px 16px 0; }
+.broker-purse {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--bone);
+}
+.broker-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 4px; }
+.broker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.broker-foot { padding: 8px 16px 12px; border-top: 1px solid var(--panel-line-dim); }
+.broker-buy { display: flex; gap: 5px; flex-wrap: wrap; }
+.card.relic { box-shadow: 0 0 0 2px rgba(255, 210, 122, 0.4), inset 2px 2px 0 rgba(255, 235, 200, 0.08), inset -2px -2px 0 rgba(0, 10, 18, 0.7); }
+.card.relic::before { background: #ffd27a; }

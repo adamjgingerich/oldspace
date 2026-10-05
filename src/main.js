@@ -17,6 +17,7 @@ import { installVolumeControl } from './ui/volume.js';
 import { installSpeedControl } from './ui/speed.js';
 import { SkillTreeUI, installSkillsButton } from './ui/skilltree.js';
 import { CommsUI } from './ui/comms.js';
+import { BrokerUI } from './ui/broker.js';
 import { installScreenPanels } from './ui/panels.js';
 import { DevMode } from './ui/dev.js';
 import { Backdrop } from './ui/backdrop.js';
@@ -35,8 +36,9 @@ function boot() {
   const planet = new PlanetUI($('#overlays'));
   const skilltree = new SkillTreeUI($('#overlays'));
   const comms = new CommsUI($('#overlays'));
+const broker = new BrokerUI($('#overlays'));
   const backdrop = new Backdrop(engine);
-  const ui = { toasts, hud, menus, dock, computer, planet, skilltree, comms };
+  const ui = { toasts, hud, menus, dock, computer, planet, skilltree, comms, broker };
   ui.panels = installScreenPanels(hud); // fold / drag the flight-screen panels
   menus.onToast = (text, kind) => toasts.push(text, kind); // berth exports report through the usual toasts
   const game = new Game({ engine, ui });
@@ -139,7 +141,7 @@ function boot() {
   game.onQuitToTitle = () => startMenu();
   startMenu();
 
-  // Dev entry hooks: #test=dock | #test=planet | #test=warp | #test=wormhole | #test=pirates | #test=rings | #test=chart | #test=yard | #test=yard10 | #test=yardout
+  // Dev entry hooks: #test=dock | #test=planet | #test=warp | #test=wormhole | #test=pirates | #test=rings | #test=chart | #test=yard | #test=yard10 | #test=yardout | #test=broker
   try {
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const test = params.get('test');
@@ -167,6 +169,17 @@ function boot() {
             else if (tries > 0) setTimeout(() => berth(tries - 1), 100);
           };
           berth(20);
+        }
+        if (test === 'broker') {
+          game.state.addCredits(400000);
+          const broker = game.debugGoToBroker();
+          if (broker) {
+            const hail = (tries) => {
+              if (game.universe && game.universe.nearBroker) game.openBroker();
+              else if (tries > 0) setTimeout(() => hail(tries - 1), 100);
+            };
+            hail(20);
+          }
         }
         if (test === 'chart') game.openComputer('map');
         if (test === 'missions') game.openComputer('missions');

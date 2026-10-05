@@ -1,11 +1,13 @@
 // The Game controller: flight input, docking, trade actions, missions, saves.
 
-import { GameState, computeStats, outfitInstallBlock, HOSTILE_REP } from './state.js';
+import { GameState, computeStats, outfitInstallBlock, HOSTILE_REP, DAY_SECONDS } from './state.js';
 import { Universe } from './universe.js';
 import { audio } from '../core/audio.js';
 import { input } from '../core/input.js';
 import { SYSTEMS, laneAngle, RIM_RADIUS } from '../data/systems.js';
 import { SHIP_BY_ID, yardStock, yardTier } from '../data/ships.js';
+import { BROKER_BY_ID, brokerCrate, brokerVisit } from '../data/brokers.js';
+import { buyCrateWeapon, buyCrateOutfit } from './brokerTrade.js';
 import { OUTFIT_BY_ID } from '../data/outfits.js';
 import { WEAPON_BY_ID } from '../data/weapons.js';
 import { COMMODITY_BY_ID } from '../data/commodities.js';
@@ -247,6 +249,15 @@ export class Game {
       input.endFrame();
       return;
     }
+    if (this.mode === 'parley') {
+      // alongside a broker: the manifest is open and the helm is idle
+      if (input.wasPressed(binds.get('pause')) || input.wasPressed(binds.get('dock'))) this.closeBroker();
+      if (input.wasPressed(binds.get('fullscreen'))) this.toggleFs();
+      if (input.wasPressed(binds.get('mute'))) audio.toggleMuted();
+      this.ui.hud.update(this.hudContext());
+      input.endFrame();
+      return;
+    }
     if (this.mode === 'paused') {
       if (input.wasPressed(binds.get('pause'))) this.resume();
       input.endFrame();
@@ -350,6 +361,7 @@ export class Game {
       // ---- interactions ----
       if (input.wasPressed(binds.get('dock'))) {
         if (this.universe.nearStation) this.dock();
+        else if (this.universe.nearBroker) this.openBroker();
         else if (this.universe.nearWormhole) this.enterWormhole();
         else if (this.universe.nearPlanet) this.beginScan('planet');
         else if (this.universe.nearStar) this.beginScan('star');
@@ -480,6 +492,11 @@ export class Game {
     if (u.nearStation) {
       return { text: `Slow to 30 to dock at ${u.nearStation.record.name}`, warn: true };
     }
+    if (u.nearBroker) {
+      const broker = BROKER_BY_ID[u.nearBroker.brokerId];
+      const pieces = broker ? brokerCrate(broker, this.state, this.state.systemId).length : 0;
+      return { key: 'E', text: `Come alongside ${u.nearBroker.name} — a crate of ${pieces} ${pieces === 1 ? 'piece' : 'pieces'} · T for the radio` };
+    }
     if (u.nearWormhole?.discovered) {
       const dest = SYSTEMS[wormholes.farEnd(u.nearWormhole.record, u.systemId)].name;
       if (this.state.cargoUsed() > 0 && !this.state.wormholeLicence) {
@@ -580,6 +597,14 @@ export class Game {
       case 'playerDestroyed':
         this.pendingRespawn = true;
         break;
+      case 'brokerArrived': {
+        const b = payload.broker;
+        const crate = brokerCrate(b, this.state, this.state.systemId);
+        const best = crate[0];
+        this.ui.toasts.push(`A crate trader is working these lanes today — ${b.name}, ${b.captain}, ${crate.length} ${crate.length === 1 ? 'piece' : 'pieces'} on the deck${best ? `, the ${best.name} at the head of them` : ''}.`, 'good');
+        this.hint('broker', 'Crate traders carry the gear you would otherwise have to earn: licensed guns and fittings, relic vault loot. Come alongside and press E, or hail her on the radio with T. She asks a little over the odds — more if you cannot show papers.');
+        break;
+      }
       case 'shipSurrendered':
         this.ui.toasts.push(`A ${payload.ship.def.name} strikes its colours — close alongside and press C to claim the prize.`, 'good');
         this.hint('prize', 'Claimed prizes need a free escort slot or docking bay — otherwise the hulk is stripped for salvage credits.');
@@ -2041,6 +2066,98 @@ export class Game {
   }
 
   /* ------------------------------------------------------------------ */
+  /* The crate trade — hailing a broker alongside                       */
+  /* ------------------------------------------------------------------ */
+
+  /** Come alongside a broker and read her manifest. */
+  openBroker(ship = null, { fromRadio = false } = {}) {
+    const u = this.universe;
+    const target = ship || u?.nearBroker || u?.brokerShip;
+    if (!target || !target.brokerId || !u) return;
+    const broker = BROKER_BY_ID[target.brokerId];
+    if (!broker) return;
+    if (this.mode !== 'flight' && this.mode !== 'comms') return;
+    this._brokerFromComms = this.mode === 'comms' || fromRadio;
+    this.brokerShip = target;
+    this.broker = broker;
+    this.mode = 'parley';
+    this.ui.comms?.close();
+    this.ui.broker.open(this.brokerContext());
+    input.reset();
+  }
+
+  /** Close the manifest and get back to the helm. */
+  closeBroker() {
+    if (this.mode !== 'parley') return;
+    this.mode = this._brokerFromComms ? 'comms' : 'flight';
+    this.ui.broker.close();
+    if (this.mode === 'comms') this.ui.comms.open(this.commsContext());
+    input.reset();
+  }
+
+  brokerContext() {
+    const u = this.universe;
+    const broker = this.broker;
+    return {
+      state: this.state,
+      broker,
+      ship: this.brokerShip,
+      stock: broker ? brokerCrate(broker, this.state, this.state.systemId) : [],
+      systemId: this.state.systemId,
+      system: u?.system || null,
+      actions: {
+        buyWeapon: (id, slot) => this.actBrokerBuyWeapon(id, slot),
+        buyOutfit: (id) => this.actBrokerBuyOutfit(id),
+        log: (text, kind = '') => this.ui.toasts.push(text, kind),
+      },
+      onClose: () => this.closeBroker(),
+    };
+  }
+
+  /**
+   * Bolt a crate gun to a hardpoint. The asking price is worked out again from
+   * the crate itself, so a manifest left open while the day rolls over cannot
+   * sell yesterday's price.
+   */
+  actBrokerBuyWeapon(weaponId, slot) {
+    const broker = this.broker;
+    if (!broker) return;
+    const res = buyCrateWeapon(this.state, broker.id, this.state.systemId, weaponId, slot);
+    if (!res.ok) {
+      this.ui.toasts.push(res.reason, 'warn');
+      return;
+    }
+    if (this.universe) {
+      this.universe.player.weapons = this.state.weapons;
+      this.universe.player.ammo = this.state.ammo;
+      this.rebuildPlayerShip(true);
+    } else {
+      this.applyStatsToPlayer();
+    }
+    audio.coin();
+    const refund = res.refund ? ` The old gun came off the books at ${Math.round(res.refund).toLocaleString()}.` : '';
+    this.ui.toasts.push(`${res.weapon.name} mounted to hardpoint ${slot + 1} — ${res.spent.toLocaleString()} credits to ${broker.name}.${refund}`, 'good');
+    this.ui.broker.refresh();
+    this.autosave();
+  }
+
+  actBrokerBuyOutfit(outfitId) {
+    const broker = this.broker;
+    if (!broker) return;
+    const res = buyCrateOutfit(this.state, broker.id, this.state.systemId, outfitId);
+    if (!res.ok) {
+      this.ui.toasts.push(res.reason, 'warn');
+      return;
+    }
+    if (this.universe) this.rebuildPlayerShip(true);
+    else this.applyStatsToPlayer();
+    audio.coin();
+    this.ui.toasts.push(`${res.outfit.name} fitted — ${res.spent.toLocaleString()} credits to ${broker.name}. The papers came with the crate.`, 'good');
+    this.ui.broker.refresh();
+    this.autosave();
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Vector Challenge — the holo-sim circuit                             */
   /* ------------------------------------------------------------------ */
 
@@ -2127,6 +2244,8 @@ export class Game {
         postings: (station) => this._commsPostings(station),
         surrender: (ship) => this._commsSurrender(ship),
         release: (ship) => this._commsRelease(ship),
+        openBroker: (ship) => this.openBroker(ship),
+        brokerCrate: (ship) => (ship?.brokerId ? brokerCrate(BROKER_BY_ID[ship.brokerId], this.state, this.state.systemId) : []),
       },
       onClose: () => this.closeComms(),
     };
@@ -2332,6 +2451,42 @@ export class Game {
     p.vz = 0;
     p.heading = Math.atan2(pl.x - p.x, pl.z - p.z);
   }
+
+  /**
+   * Dev hook: jump to a system where a broker is working, park alongside, and
+   * hand back the broker. Rolls the stardate forward if nobody is trading today,
+   * which keeps `day` derived from `playtime` exactly as the clock expects.
+   */
+  debugGoToBroker() {
+    const st = this.state;
+    if (!st) return null;
+    const baseDay = st.day || 1;
+    for (let step = 0; step < 21; step++) {
+      st.day = baseDay + step;
+      for (const sys of Object.values(SYSTEMS)) {
+        const broker = brokerVisit(st, sys.id);
+        if (!broker) continue;
+        st.playtime = st.day * DAY_SECONDS - DAY_SECONDS; // keep the clock honest
+        this.state.systemId = sys.id;
+        this.state.pos = { x: 0, z: 0 };
+        this.universe.load(sys.id);
+        const ship = this.universe.brokerShip;
+        if (!ship) continue;
+        const p = this.universe.player;
+        const a = Math.atan2(p.z - ship.z, p.x - ship.x);
+        p.x = ship.x + Math.cos(a) * 120;
+        p.z = ship.z + Math.sin(a) * 120;
+        p.vx = 0;
+        p.vz = 0;
+        p.heading = Math.atan2(ship.x - p.x, ship.z - p.z);
+        return broker;
+      }
+    }
+    st.day = baseDay;
+    return null;
+  }
+
+  /* ------------------------------------------------------------------ */
 
   /** Dev hook: jump to a yard of the given tier and park off it (default: a great port). */
   debugGoToYard(tier = 'capital', minTech = 0) {
