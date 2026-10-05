@@ -1332,13 +1332,30 @@ export class Universe {
     if (attacker.isPlayer) {
       victim.hunting = true;
       // civilian crews do not brawl — they run for open space
-      if (victim.role === 'trader' || victim.role === 'transit' || victim.role === 'courier') {
+      if (victim.role === 'trader' || victim.role === 'transit' || victim.role === 'courier' || victim.role === 'broker') {
         if (victim.ai) victim.ai.state = 'flee';
       }
       this.noteGrudge(victim.faction);
     }
     if (victim._rallyT && this.time - victim._rallyT < 1.5) return;
     victim._rallyT = this.time;
+
+    // a broker's wing answers for her crate: her escorts drop the loiter and
+    // turn on whoever opened fire, then break off like anyone else once the
+    // range is open — nothing in the lanes holds a grudge for its own sake
+    if (victim.role === 'broker') {
+      for (const s of this.ships) {
+        if (s === victim || !s.alive || s.isPlayer || s.role !== 'broker' || s.brokerId !== victim.brokerId) continue;
+        if (dist2(s.x, s.z, victim.x, victim.z) > 900) continue;
+        s.aggroed = true;
+        if (attacker.isPlayer) s.hunting = true;
+        if (s.ai) {
+          s.ai.role = 'navy'; // bodyguards fight rather than cruise
+          s.ai.witnessed = attacker;
+          s.ai.target = attacker;
+        }
+      }
+    }
 
     // only the lines and the clans answer a real attack, and only for their own —
     // freighters passing through never get drafted into someone else's war

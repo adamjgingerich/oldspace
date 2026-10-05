@@ -17,6 +17,7 @@ import {
 } from '../src/data/brokers.js';
 import { buyCrateWeapon, buyCrateOutfit, grantBrokerPapers } from '../src/game/brokerTrade.js';
 import { GameState, computeStats } from '../src/game/state.js';
+import { Universe } from '../src/game/universe.js';
 import { SYSTEMS } from '../src/data/systems.js';
 import { SHIP_BY_ID } from '../src/data/ships.js';
 import { WEAPON_BY_ID } from '../src/data/weapons.js';
@@ -285,6 +286,52 @@ for (const b of BROKERS) {
       if (!(st.story.unlocked || []).includes(gun.id)) fail(`the mechanic would not see the ${gun.name}`);
     }
   }
+}
+
+/* ---- a broker's wing answers for her crate, and nobody else does ---- */
+{
+  const ship = (over) => ({
+    alive: true, isPlayer: false, surrendered: false, disabled: false,
+    role: 'trader', faction: 'free', x: 0, z: 0, shield: 100, hull: 200,
+    stats: { hull: 200 }, weapons: [], ai: { role: 'broker', state: 'cruise' },
+    ...over,
+  });
+  const stub = (victimRole = 'broker') => {
+    const player = ship({ role: 'player', isPlayer: true, role_: 'player' });
+    const victim = ship({ role: victimRole, brokerId: 'faraday', hull: 1250, stats: { hull: 1250 } });
+    const near = ship({ role: 'broker', brokerId: 'faraday', x: 200, z: 120 });
+    const far = ship({ role: 'broker', brokerId: 'faraday', x: 900, z: 900 });
+    const other = ship({ role: 'broker', brokerId: 'ashgrove', x: 150, z: 90 });
+    const hauler = ship({ role: 'trader', x: 210, z: 130 });
+    const u = {
+      time: 10, freefire: false, ships: [player, victim, near, far, other, hauler],
+      npcHostileToPlayer: () => false,
+      isHostile: () => true,
+      noteGrudge: () => {},
+      state: { day: 3, grudge: {} },
+    };
+    return { u, player, victim, near, far, other, hauler };
+  };
+
+  const a = stub('broker');
+  Universe.prototype.onShipAttacked.call(a.u, a.victim, a.player, 400);
+  checks += 1;
+  if (!a.near.aggroed || !a.near.hunting) fail('a broker’s escort ignored an attack on her crate');
+  if (a.near.ai.role !== 'navy') fail('a broker’s escort took up arms but kept cruising');
+  if (a.near.ai.witnessed !== a.player || a.near.ai.target !== a.player) {
+    fail('a broker’s escort was not handed the hull that opened fire');
+  }
+  if (a.far.aggroed) fail('a broker’s escort answered from 1300 units away');
+  if (a.other.aggroed) fail('another broker’s escort joined a fight that was not hers');
+  if (a.hauler.aggroed) fail('attacking a broker drafted an innocent hauler into the fight');
+  if (a.victim.ai.state !== 'flee') fail('a broker under fire stood her ground instead of running');
+  if (a.near.ai.role === 'broker' && !a.near.aggroed) fail('a broker escort stayed neutral after her crate was hit');
+
+  const b = stub('trader');
+  Universe.prototype.onShipAttacked.call(b.u, b.victim, b.player, 400);
+  checks += 1;
+  if (b.victim.ai.state !== 'flee') fail('a hauler under fire stood her ground');
+  if (b.near.aggroed || b.other.aggroed) fail('attacking a hauler turned the crate traders hostile');
 }
 
 console.log(`brokers: ${BROKERS.length}  checks: ${checks}  bad: ${bad}`);
