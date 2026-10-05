@@ -549,7 +549,8 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
 .slot .sship { font-size: 11px; color: var(--dim); margin-top: 2px; }
 .slot .smeta { font-family: var(--mono); font-size: 10px; color: var(--dimmer); letter-spacing: 0.05em; }
 .slot .sfoot { display: flex; gap: 6px; align-items: center; }
-.slot .del {
+.slot .del,
+.slot .dl {
   font-family: var(--mono); font-size: 11px;
   padding: 5px 9px;
   background: transparent;
@@ -558,6 +559,38 @@ canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: bl
   cursor: pointer;
 }
 .slot .del:hover { color: var(--danger); border-color: rgba(255, 107, 74, 0.5); }
+.slot .dl { font-size: 13px; }
+.slot .dl:hover { color: var(--amber); border-color: rgba(255, 196, 86, 0.5); }
+
+/* A recovered log, described before it is placed: what is in the file, which
+   build wrote it, and anything about it this build should warn about. */
+.import-card {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  background: var(--grain) 0 0 / 140px 140px repeat, var(--plate);
+  box-shadow: 0 0 0 2px #0a4456, inset 2px 2px 0 rgba(190, 247, 255, 0.12);
+}
+.import-card .ic-head {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 6px;
+}
+.import-card .ic-body {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.85;
+  color: var(--dim);
+}
+.import-card .ic-warn {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #ffb45c;
+}
+.file-pick { display: none; }
 
 .overlay {
   position: absolute;

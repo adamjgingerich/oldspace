@@ -21,7 +21,7 @@ import { installScreenPanels } from './ui/panels.js';
 import { DevMode } from './ui/dev.js';
 import { Backdrop } from './ui/backdrop.js';
 import { Game } from './game/game.js';
-import { hasAnySave, latestSlot, readSlot } from './game/saves.js';
+import { hasAnySave, latestSlot, readSlot, parseSaveFile, importSlot } from './game/saves.js';
 
 function boot() {
   document.title = GAME_PAGE_TITLE;
@@ -38,6 +38,7 @@ function boot() {
   const backdrop = new Backdrop(engine);
   const ui = { toasts, hud, menus, dock, computer, planet, skilltree, comms };
   ui.panels = installScreenPanels(hud); // fold / drag the flight-screen panels
+  menus.onToast = (text, kind) => toasts.push(text, kind); // berth exports report through the usual toasts
   const game = new Game({ engine, ui });
   ui.dev = new DevMode($('#app'), game);
   input.attach(window);
@@ -61,6 +62,7 @@ function boot() {
 
   const startMenu = () => {
     menus.closeAll();
+    menus.hideTitle(); // rebuild from scratch, so a recovered log wakes Continue up
     menus.showTitle({
       hasSave: hasAnySave(),
       onNew: () => {
@@ -103,6 +105,33 @@ function boot() {
           onClose: () => {},
         });
       },
+      onUpload: () => menus.pickSaveFile((text, file) => {
+        if (text == null) {
+          toasts.push('That file could not be read.', 'warn');
+          return;
+        }
+        const res = parseSaveFile(text, { from: file?.name || null });
+        if (!res.ok) {
+          toasts.push(res.error, 'warn');
+          return;
+        }
+        for (const w of res.warnings) toasts.push(w, 'warn');
+        menus.openSave({
+          mode: 'import',
+          importInfo: res,
+          onPick: (slot) => {
+            const wrote = importSlot(slot, res.data);
+            if (!wrote.ok) {
+              toasts.push(wrote.error, 'warn');
+              return;
+            }
+            menus.closeSave();
+            toasts.push(`Recovered ${res.summary.commander} — day ${res.summary.day} — into berth #${slot}.`, 'good');
+            startMenu(); // rebuild the title so Continue and Load wake up
+          },
+          onClose: () => {},
+        });
+      }),
       onHelp: () => menus.openHelp(),
     });
   };

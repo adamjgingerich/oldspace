@@ -146,6 +146,19 @@ has its own governments, tech levels, markets, pirates and patrols.
   lane. Manual saves are in the pause menu (`Esc`) and the station Berth tab.
 - The load screen shows commander, ship, credits, system, day, playtime and
   real-world save time for each slot, with per-slot delete.
+- **A berth travels as a `.os` file.** The `⤓` button on any berth downloads it
+  as `oldspace-<commander>-day<day>-v<build>.os`, and **Upload Save (.os)** on
+  the title screen reads one back into a berth — an empty one, or one you are
+  willing to lose. The file is a self-describing document: the game, the build
+  that wrote it, the save layout, the export date, the berth it came from, a
+  plain-language summary (commander, ship, level, system, day, credits, playtime,
+  contracts, kills, reputation, hull and shields) and then the state itself,
+  untouched.
+- Because of that, a file written by any build can be read by any later one. A
+  log from a newer build imports with a warning rather than a refusal — whatever
+  that build added is simply missing and the defaults take over — and an old log
+  keeps its own save version, so the migrations that shipped with v2 still apply
+  to it (a v1 log's hull and shields are rescaled on the way in).
 
 ---
 

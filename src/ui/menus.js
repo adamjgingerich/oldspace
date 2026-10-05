@@ -1,10 +1,10 @@
 // Title screen, the 15-slot adventure browser, pause menu, help, dialogs.
 
 import { el, clear, btn } from './dom.js';
-import { listSlots, deleteSlot } from '../game/saves.js';
+import { listSlots, deleteSlot, exportSlot, firstEmptySlot } from '../game/saves.js';
 import { SYSTEMS } from '../data/systems.js';
 import { fmtCredits, fmtPlaytime, fmtDate, escapeHtml } from '../core/util.js';
-import { GAME_TITLE_HTML, GAME_SUBTITLE } from '../data/branding.js';
+import { GAME_TITLE_HTML, GAME_SUBTITLE, GAME_VERSION } from '../data/branding.js';
 import { randomQuote } from '../data/quotes.js';
 import { BACKGROUNDS, DRIVES, describePerks } from '../game/character.js';
 import { FACTIONS, FACTION_IDS, STARTING_SWEAR_REP } from '../data/factions.js';
@@ -54,12 +54,13 @@ export class Menus {
   /* Title screen                                                       */
   /* ------------------------------------------------------------------ */
 
-  showTitle({ hasSave, onNew, onContinue, onLoad, onHelp }) {
+  showTitle({ hasSave, onNew, onContinue, onLoad, onUpload, onHelp }) {
     if (this._title) return;
     const menu = el('div', { class: 'menu' }, [
       btn('New Adventure', () => onNew(), 'btn primary'),
       btn('Continue', () => onContinue(), 'btn'),
       btn('Load Adventure', () => onLoad(), 'btn'),
+      btn('Upload Save (.os)', () => onUpload?.(), 'btn'),
       btn('How to Play', () => onHelp(), 'btn ghost'),
     ]);
     if (!hasSave) {
@@ -72,7 +73,7 @@ export class Menus {
         el('div', { class: 'sub', text: GAME_SUBTITLE }),
         el('div', { class: 'tagline', text: randomQuote(), title: 'A new line every time the title screen is drawn.' }),
         menu,
-        el('div', { class: 'menu-note', html: `15 adventure slots · saved in your browser · <span class="key">${codeLabel(binds.get('thrust'))}</span> to burn · corner keyboard button rebinds` }),
+        el('div', { class: 'menu-note', html: `15 adventure slots · saved in your browser · any berth can be downloaded as a <span class="key">.os</span> file and read back here later · <span class="key">${codeLabel(binds.get('thrust'))}</span> to burn · corner keyboard button rebinds` }),
       ]),
     ]);
     this._title = screen;
@@ -298,27 +299,33 @@ export class Menus {
   /* The 15-slot adventure browser                                      */
   /* ------------------------------------------------------------------ */
 
-  openSave({ mode = 'load', onPick, onClose }) {
+  openSave({ mode = 'load', onPick, onClose, importInfo = null }) {
     this.closeSave();
     const titles = {
       load: 'Load Adventure',
       save: 'Save Adventure',
       new: 'Choose a berth for your new log',
+      import: 'Place a recovered log',
     };
     const hints = {
-      load: 'Click a log to fly again.',
-      save: 'Click a berth to overwrite it with your current log.',
+      load: 'Click a log to fly again. The ⤓ button on a berth downloads it as a .os file.',
+      save: 'Click a berth to overwrite it with your current log. The ⤓ button downloads a berth as it stands.',
       new: 'Pick an empty berth — or overwrite one.',
+      import: 'Pick a berth for the recovered log — an empty one, or one you are willing to lose.',
     };
     this._saveMode = mode;
     this._saveOnPick = onPick;
     this._saveOnClose = onClose;
+    this._saveImport = mode === 'import' ? importInfo : null;
 
     this._saveGrid = el('div', { class: 'slots' });
+    const head = el('div');
+    if (this._saveImport) head.append(this._importNote(this._saveImport));
     const wrap = el('div', { class: 'overlay' }, [
       el('div', { class: 'panel modal wide' }, [
         el('h2', { text: titles[mode] }),
         el('p', { class: 'note', text: hints[mode] }),
+        head,
         this._saveGrid,
         el('div', { class: 'modal-actions' }, [btn('Close', () => {
           this.closeSave();
@@ -331,12 +338,31 @@ export class Menus {
     this.refreshSave();
   }
 
+  /** What came out of the file the pilot handed over, before it is placed. */
+  _importNote(res) {
+    const s = res.summary || {};
+    const lines = [
+      `${s.commander} · ${s.shipName}${s.shipClass ? ` (${s.shipClass})` : ''} · level ${s.level}`,
+      `${s.systemName} · day ${s.day} · ${fmtCredits(s.credits)} · ${fmtPlaytime(s.playtime)}`,
+      `${s.missionsDone} contract${s.missionsDone === 1 ? '' : 's'} closed · ${s.kills} kill${s.kills === 1 ? '' : 's'}`,
+      `Flown on v${res.data?.gameVersion || '—'} · save layout ${s.saveVersion ?? '—'} · this build v${GAME_VERSION}`,
+    ];
+    const node = el('div', { class: 'import-card' }, [
+      el('div', { class: 'ic-head', text: res.data?.from ? `From ${res.data.from}` : 'The recovered log' }),
+      el('div', { class: 'ic-body', html: lines.map((t) => escapeHtml(t)).join('<br>') }),
+      ...(res.warnings || []).map((w) => el('div', { class: 'ic-warn', text: w })),
+    ]);
+    return node;
+  }
+
   refreshSave() {
     if (!this._saveGrid) return;
     clear(this._saveGrid);
     const slots = listSlots();
+    const open = this._saveMode === 'import' ? firstEmptySlot() : null;
     for (const info of slots) {
       const node = this._slotNode(info);
+      if (open === info.slot) node.classList.add('here');
       this._saveGrid.append(node);
     }
   }
@@ -349,9 +375,7 @@ export class Menus {
         el('div', { class: 'snum', text: '+', style: 'font-size:26px;top:auto;right:auto;' }),
       ]);
       node.addEventListener('click', () => {
-        if (mode === 'save' || mode === 'new' || mode === 'load') {
-          this._saveOnPick?.(info.slot);
-        }
+        if (this._saveOnPick) this._saveOnPick(info.slot);
       });
       return node;
     }
@@ -359,10 +383,19 @@ export class Menus {
     const node = el('div', { class: 'slot' }, [
       el('div', { class: 'snum', text: `#${info.slot}` }),
       el('div', { class: 'sname', text: info.commander }),
-      el('div', { class: 'sship', text: info.shipName }),
+      el('div', { class: 'sship', text: `${info.shipName}${info.imported ? ' · recovered' : ''}` }),
       el('div', { class: 'smeta', html: `${escapeHtml(sysName)} · day ${info.day}<br>${fmtCredits(info.credits)} · ${fmtPlaytime(info.playtime)}` }),
       el('div', { class: 'sfoot' }, [
         el('span', { text: fmtDate(info.savedAt) }),
+        el('button', {
+          class: 'dl',
+          text: '⤓',
+          title: 'Download this log as a .os file',
+          onclick: (e) => {
+            e.stopPropagation();
+            this.downloadSlot(info.slot);
+          },
+        }),
         el('button', {
           class: 'del',
           text: '✕',
@@ -386,8 +419,8 @@ export class Menus {
         } else {
           this._saveOnPick?.(info.slot);
         }
-      } else if (mode === 'new') {
-        this.confirm('Overwrite berth?', `Slot ${info.slot} (${info.commander}) will be replaced by your new commander.`, () => {
+      } else if (mode === 'new' || mode === 'import') {
+        this.confirm('Overwrite berth?', `Slot ${info.slot} (${info.commander}) will be replaced by ${mode === 'import' ? 'the recovered log' : 'your new commander'}.`, () => {
           this._saveOnPick?.(info.slot);
         });
       }
@@ -395,10 +428,56 @@ export class Menus {
     return node;
   }
 
+  /** Hand a berth to the browser as a .os download. */
+  downloadSlot(slot) {
+    const res = exportSlot(slot);
+    if (!res.ok) {
+      this.onToast?.(res.error, 'warn');
+      return;
+    }
+    try {
+      const url = URL.createObjectURL(new Blob([res.text], { type: 'application/json' }));
+      const a = el('a', { href: url, download: res.filename, style: 'display:none' });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      this.onToast?.(`Exported ${res.filename}.`, 'good');
+    } catch (err) {
+      console.error('[saves] download failed', err);
+      this.onToast?.('The browser refused the download.', 'warn');
+    }
+  }
+
+  /**
+   * Ask the browser for a file and hand its text on. Kept here because it is the
+   * one part of the import that only a browser can do: the reading, the checking
+   * and the placing all live in game/saves.js.
+   */
+  pickSaveFile(onText) {
+    const input = el('input', {
+      type: 'file',
+      accept: `${'.os'},.json,application/json`,
+      class: 'file-pick',
+    });
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      input.remove();
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => onText(String(reader.result || ''), file);
+      reader.onerror = () => onText(null, file);
+      reader.readAsText(file);
+    });
+    document.body.append(input);
+    input.click();
+  }
+
   closeSave() {
     this._save?.remove();
     this._save = null;
     this._saveGrid = null;
+    this._saveImport = null;
   }
 
   /* ------------------------------------------------------------------ */
