@@ -53,7 +53,7 @@ export const SHIPS = [
     id: 'halcyon', name: 'Halcyon Frigate', cls: 'Frigate', price: 188000, minTech: 9,
     hull: 740, shield: 540, shieldRegen: 5.4, energy: 150, energyRegen: 17,
     accel: 44, maxSpeed: 205, brake: 80, turn: 1.9, cargo: 60,
-    len: 46, radius: 24, shape: 'frigate', color: 0xcfe8ff,
+    len: 46, radius: 24, shape: 'keel', color: 0xcfe8ff,
     mounts: 3, maxMounts: 5, bays: 1, maxBays: 2, defaultWeapons: ['pulse', 'sunbeam', null],
     desc: 'Vigil-built frigate: a warship that deigns to carry your luggage.',
   },
@@ -69,7 +69,7 @@ export const SHIPS = [
     id: 'anvil', name: 'Anvil Cruiser', cls: 'Cruiser', price: 320000, minTech: 8,
     hull: 980, shield: 780, shieldRegen: 6.7, energy: 180, energyRegen: 19,
     accel: 38, maxSpeed: 190, brake: 70, turn: 1.7, cargo: 120,
-    len: 62, radius: 31, shape: 'frigate', color: 0xa8c4e8,
+    len: 62, radius: 31, shape: 'citadel', color: 0xa8c4e8,
     mounts: 4, maxMounts: 6, bays: 2, maxBays: 4, defaultWeapons: ['flenser', 'flenser', 'pulse', 'harpoon', null],
     desc: 'A line cruiser built around its gun decks and two small launch bays. Fleet captains park their reputations in this hull.',
   },
@@ -77,7 +77,7 @@ export const SHIPS = [
     id: 'hearth', name: 'Hearth Carrier', cls: 'Carrier', price: 420000, minTech: 9,
     hull: 1025, shield: 610, shieldRegen: 6.1, energy: 200, energyRegen: 20,
     accel: 26, maxSpeed: 150, brake: 55, turn: 1.2, cargo: 260,
-    len: 74, radius: 37, shape: 'galleon', color: 0xd8e0ea,
+    len: 74, radius: 37, shape: 'ark', variant: 'fleet', color: 0xd8e0ea,
     mounts: 2, maxMounts: 4, bays: 4, maxBays: 6, defaultWeapons: ['pulse', 'pulse', 'harpoon', null],
     desc: 'Less a warship than a flying harbour: four launch bays, workshops, and room for everything that follows you home.',
   },
@@ -157,7 +157,7 @@ export const SHIPS = [
     id: 'breaker', name: 'Breaker Tug', cls: 'Salvage Tug', price: 88000, minTech: 4, yards: ['rusthaven'],
     hull: 520, shield: 190, shieldRegen: 3.6, energy: 125, energyRegen: 15,
     accel: 32, maxSpeed: 158, brake: 70, turn: 1.7, cargo: 130,
-    len: 44, radius: 22, shape: 'freighter', color: 0xc8b8a8,
+    len: 44, radius: 22, shape: 'cradle', color: 0xc8b8a8,
     mounts: 2, maxMounts: 3, bays: 1, maxBays: 1, defaultWeapons: ['needler', null],
     desc: 'A wrecker’s tug with cutters on the bow and a hold for what the cutters find. Rusthaven builds them; Rusthaven is where they find their work.',
   },
@@ -165,7 +165,7 @@ export const SHIPS = [
     id: 'litany', name: 'Litany Pilgrim', cls: 'Pilgrim Liner', price: 96000, minTech: 6, yards: ['vekta'],
     hull: 520, shield: 260, shieldRegen: 3.8, energy: 135, energyRegen: 15,
     accel: 24, maxSpeed: 142, brake: 50, turn: 1.2, cargo: 180,
-    len: 52, radius: 27, shape: 'galleon', color: 0xe8d8c8,
+    len: 52, radius: 27, shape: 'spire', color: 0xe8d8c8,
     mounts: 2, maxMounts: 3, bays: 1, maxBays: 2, defaultWeapons: ['needler', null],
     desc: 'The Houses’ answer to a passenger liner: wine racks, shrine alcoves, and a hold for the pilgrims’ luggage. Sold only from Kor’vath, to those the Houses judge worth carrying.',
   },
@@ -173,7 +173,7 @@ export const SHIPS = [
     id: 'tortoise', name: 'Tortoise Bulwark', cls: 'Bulwark', price: 124000, minTech: 7,
     hull: 640, shield: 430, shieldRegen: 4.6, energy: 140, energyRegen: 15,
     accel: 26, maxSpeed: 138, brake: 50, turn: 1.3, cargo: 55,
-    len: 50, radius: 26, shape: 'galleon', color: 0xc8b890,
+    len: 50, radius: 26, shape: 'block', color: 0xc8b890,
     mounts: 2, maxMounts: 4, bays: 0, maxBays: 0, defaultWeapons: ['flenser', null],
     desc: 'A wall that can be convinced to move. Convoy captains pray to it; raider captains curse it.',
   },
@@ -197,7 +197,7 @@ export const SHIPS = [
     id: 'magnate', name: 'Magnate Yacht', cls: 'Yacht', price: 190000, minTech: 8, unique: 'broker',
     hull: 480, shield: 420, shieldRegen: 5.4, energy: 155, energyRegen: 18,
     accel: 40, maxSpeed: 260, brake: 78, turn: 1.8, cargo: 140,
-    len: 48, radius: 24, shape: 'frigate', color: 0xf8e8b8,
+    len: 48, radius: 24, shape: 'crown', color: 0xf8e8b8,
     mounts: 2, maxMounts: 4, bays: 1, maxBays: 2, defaultWeapons: ['pulse', null],
     desc: 'Walnut panels, gold trim, a bar the size of a gun deck, and a registry that makes inspectors find urgent business elsewhere. The broker’s own yard builds one a year, for one client.',
   },
@@ -213,7 +213,7 @@ export const SHIPS = [
     id: 'ironclad', name: 'Foundry Ironclad', cls: 'Ironclad', price: 265000, minTech: 9,
     hull: 1050, shield: 760, shieldRegen: 5.6, energy: 160, energyRegen: 17,
     accel: 30, maxSpeed: 165, brake: 60, turn: 1.5, cargo: 90,
-    len: 58, radius: 29, shape: 'galleon', color: 0xb0a888,
+    len: 58, radius: 29, shape: 'drum', color: 0xb0a888,
     mounts: 4, maxMounts: 6, bays: 1, maxBays: 3, defaultWeapons: ['flenser', 'pulse', null],
     desc: 'Poured, not built. The Foundry’s answer to a question nobody survived to repeat.',
   },
@@ -221,7 +221,7 @@ export const SHIPS = [
     id: 'caravan', name: 'Caravan Barge', cls: 'Bulk Freighter', price: 340000, minTech: 8,
     hull: 920, shield: 320, shieldRegen: 3.6, energy: 150, energyRegen: 14,
     accel: 18, maxSpeed: 112, brake: 40, turn: 0.9, cargo: 520,
-    len: 68, radius: 34, shape: 'galleon', color: 0xe0d0a8,
+    len: 68, radius: 34, shape: 'stack', color: 0xe0d0a8,
     mounts: 2, maxMounts: 3, bays: 0, maxBays: 0, defaultWeapons: ['needler', null],
     desc: 'Not a ship so much as a warehouse that resigned itself to travel. Escorts are not optional; they are arithmetic.',
   },
@@ -237,7 +237,7 @@ export const SHIPS = [
     id: 'theseus', name: 'Theseus Amalgam', cls: 'Patchwork', price: 132000, minTech: 7, unique: 'hullbone',
     hull: 700, shield: 380, shieldRegen: 4.8, energy: 145, energyRegen: 16,
     accel: 36, maxSpeed: 172, brake: 66, turn: 1.6, cargo: 100,
-    len: 54, radius: 27, shape: 'galleon', color: 0xcfcfc0,
+    len: 54, radius: 27, shape: 'cross', color: 0xcfcfc0,
     mounts: 3, maxMounts: 5, bays: 1, maxBays: 3, defaultWeapons: ['flenser', 'needler', null],
     desc: 'Every plate numbered, every weld signed by a different berth. Rebuilt so many times the original hull is a rumour — and it still flies.',
   },
@@ -269,7 +269,7 @@ export const SHIPS = [
     id: 'relict', name: 'Relict Marauder', cls: 'Relict', price: 230000, capture: true,
     hull: 900, shield: 500, shieldRegen: 5.8, energy: 160, energyRegen: 18,
     accel: 40, maxSpeed: 196, brake: 74, turn: 1.8, cargo: 90,
-    len: 56, radius: 28, shape: 'frigate', color: 0x9fb8d0,
+    len: 56, radius: 28, shape: 'truss', color: 0x9fb8d0,
     mounts: 3, maxMounts: 5, bays: 1, maxBays: 3, defaultWeapons: ['flenser', 'flenser', null],
     desc: 'Pre-descent bones, dredged out of the quiet graves and refit by hands that know old machinery. The Clans fly them when the water is deep and the law is thin.',
   },
@@ -372,7 +372,7 @@ export const SHIPS = [
     id: 'marlin', name: 'Marlin Lancer', cls: 'Lancer', price: 44000, minTech: 6,
     hull: 210, shield: 160, shieldRegen: 5.0, energy: 105, energyRegen: 14,
     accel: 68, maxSpeed: 252, brake: 95, turn: 2.6, cargo: 20,
-    len: 30, radius: 16, shape: 'arrow', variant: 'heavy', color: 0xb0d8e8,
+    len: 30, radius: 16, shape: 'dart', variant: 'heavy', color: 0xb0d8e8,
     mounts: 2, maxMounts: 3, bays: 0, maxBays: 0, defaultWeapons: ['pulse', 'needler'],
     desc: 'A heavy delta built for the charge: all its teeth forward, all its doubts left at the dock.',
   },
@@ -453,7 +453,7 @@ export const SHIPS = [
     id: 'sabre', name: 'Sabre Corvette', cls: 'Corvette', price: 86000, minTech: 7,
     hull: 320, shield: 270, shieldRegen: 5.8, energy: 140, energyRegen: 16,
     accel: 66, maxSpeed: 260, brake: 98, turn: 2.6, cargo: 30,
-    len: 36, radius: 19, shape: 'arrow', variant: 'heavy', color: 0xc8d8f0,
+    len: 36, radius: 19, shape: 'twin', variant: 'heavy', color: 0xc8d8f0,
     mounts: 3, maxMounts: 4, bays: 0, maxBays: 0, defaultWeapons: ['twinpulse', 'harpoon', null],
     desc: 'A heavy delta corvette that fights the way its name suggests: straight, fast, and only one of you walks away impressed.',
   },
@@ -486,7 +486,7 @@ export const SHIPS = [
     id: 'galleass', name: 'Galleass Cruiser', cls: 'Cruiser', price: 122000, minTech: 7,
     hull: 760, shield: 380, shieldRegen: 4.6, energy: 150, energyRegen: 16,
     accel: 28, maxSpeed: 162, brake: 58, turn: 1.5, cargo: 200,
-    len: 60, radius: 31, shape: 'galleon', color: 0xe0d0a0,
+    len: 60, radius: 31, shape: 'citadel', variant: 'cruiser', color: 0xe0d0a0,
     mounts: 3, maxMounts: 4, bays: 1, maxBays: 2, defaultWeapons: ['flenser', 'pulse', null],
     desc: 'A galleon with its teeth out: a trade hull armoured to the gunwales, built for captains who deliver their own cargo personally.',
   },
@@ -510,7 +510,7 @@ export const SHIPS = [
     id: 'express', name: 'Express Pinnace', cls: 'Fast Courier', price: 178000, minTech: 8,
     hull: 400, shield: 360, shieldRegen: 6.4, energy: 155, energyRegen: 17,
     accel: 72, maxSpeed: 288, brake: 105, turn: 2.5, cargo: 50,
-    len: 40, radius: 21, shape: 'arrow', variant: 'heavy', color: 0xe8f0f8,
+    len: 40, radius: 21, shape: 'star', variant: 'heavy', color: 0xe8f0f8,
     mounts: 2, maxMounts: 3, bays: 0, maxBays: 0, defaultWeapons: ['twinpulse', 'harpoon', null],
     desc: 'The express contract: sealed case, standing fee, no questions, no slowing down. Built entirely around the second half of that sentence.',
   },
@@ -599,7 +599,7 @@ export const SHIPS = [
     id: 'lynx', name: 'Lynx Prowler', cls: 'Prowler', price: 61000, minTech: 6,
     hull: 400, shield: 280, shieldRegen: 5.2, energy: 125, energyRegen: 15,
     accel: 58, maxSpeed: 255, brake: 92, turn: 2.4, cargo: 35,
-    len: 34, radius: 18, shape: 'arrow', color: 0xc8d4e8,
+    len: 34, radius: 18, shape: 'twinhull', color: 0xc8d4e8,
     mounts: 2, maxMounts: 3, bays: 0, maxBays: 0, defaultWeapons: ['pulse', 'needler'],
     desc: 'A delta hull that hunts in the gaps between patrols: quiet drives, sharp nose, very little patience.',
   },
@@ -623,7 +623,7 @@ export const SHIPS = [
     id: 'hussar', name: 'Hussar Lancer', cls: 'Lancer', price: 72000, minTech: 6,
     hull: 520, shield: 330, shieldRegen: 5.4, energy: 130, energyRegen: 15,
     accel: 50, maxSpeed: 245, brake: 88, turn: 2.15, cargo: 40,
-    len: 38, radius: 20, shape: 'arrow', variant: 'heavy', color: 0xd0c0b0,
+    len: 38, radius: 20, shape: 'wheel', variant: 'heavy', color: 0xd0c0b0,
     mounts: 3, maxMounts: 4, bays: 0, maxBays: 0, defaultWeapons: ['flenser', 'harpoon', null],
     desc: 'A strike hull built for one pass done properly: heavy nose gun, missile rails, and trim that argues with both.',
   },
@@ -631,7 +631,7 @@ export const SHIPS = [
     id: 'tinker', name: 'Tinker Workshop', cls: 'Workshop', price: 74000, minTech: 6,
     hull: 520, shield: 230, shieldRegen: 4.4, energy: 135, energyRegen: 15,
     accel: 32, maxSpeed: 172, brake: 64, turn: 1.4, cargo: 125,
-    len: 46, radius: 24, shape: 'boxcar', variant: 'stack', color: 0xc8c0a0,
+    len: 46, radius: 24, shape: 'boxcar', color: 0xc8c0a0,
     mounts: 2, maxMounts: 3, bays: 0, maxBays: 0, defaultWeapons: ['needler', null],
     desc: 'A flying machine shop: lathes, a forge, and a crew who will fix anything for anyone, cash first, stories after.',
   },
@@ -679,7 +679,7 @@ export const SHIPS = [
     id: 'grazier', name: 'Grazier Herder', cls: 'Grazier', price: 94000, minTech: 5,
     hull: 700, shield: 260, shieldRegen: 3.8, energy: 130, energyRegen: 14,
     accel: 26, maxSpeed: 150, brake: 56, turn: 1.3, cargo: 245,
-    len: 54, radius: 28, shape: 'boxcar', variant: 'stack', color: 0xcbbd93,
+    len: 54, radius: 28, shape: 'boxcar', color: 0xcbbd93,
     mounts: 2, maxMounts: 3, bays: 0, maxBays: 0, defaultWeapons: ['needler', null],
     desc: 'A livestock barge for the agri-worlds: stacked pens, vet bays, and a smell its crews stop noticing after the first week.',
   },
@@ -711,7 +711,7 @@ export const SHIPS = [
     id: 'dragoon', name: 'Dragoon Cavalry', cls: 'Strike Cruiser', price: 126000, minTech: 7,
     hull: 720, shield: 440, shieldRegen: 5.4, energy: 150, energyRegen: 15.5,
     accel: 44, maxSpeed: 228, brake: 84, turn: 1.9, cargo: 50,
-    len: 46, radius: 24, shape: 'arrow', variant: 'heavy', color: 0xc8b8a0,
+    len: 46, radius: 24, shape: 'spike', variant: 'heavy', color: 0xc8b8a0,
     mounts: 3, maxMounts: 5, bays: 0, maxBays: 0, defaultWeapons: ['flenser', 'twinpulse', null],
     desc: 'A strike hull for riders who fight mounted: it closes fast, hits once, and is already turning for the next pass.',
   },
@@ -783,7 +783,7 @@ export const SHIPS = [
     id: 'palladium', name: 'Palladium Liner', cls: 'Liner', price: 465000, minTech: 9,
     hull: 1250, shield: 850, shieldRegen: 6.8, energy: 210, energyRegen: 19,
     accel: 30, maxSpeed: 150, brake: 60, turn: 1.4, cargo: 380,
-    len: 84, radius: 42, shape: 'manta', variant: 'heavy', color: 0xf4e4c0,
+    len: 84, radius: 42, shape: 'gantry', color: 0xf4e4c0,
     mounts: 3, maxMounts: 4, bays: 2, maxBays: 4, defaultWeapons: ['pulse', 'flenser', null],
     desc: 'The grandest civilian keel afloat: promenades, vaults, and enough armour to sail the outer lanes like a diplomatic pouch.',
   },
@@ -1108,7 +1108,147 @@ export const SHIPS = [
     mounts: 7, maxMounts: 8, bays: 4, maxBays: 7, defaultWeapons: ['evenstar', 'griefheart', 'flenser', 'twinpulse', 'twinpulse', 'harpoon', null],
     desc: 'A monolith with a mast you can see across a system. Every flag that matters has one; every flag pretends it does not.',
   },
+
+  /* ------------------------------------------------------------------------
+   * The great keels: ten hulls above everything else on the lanes. They are
+   * ordered rather than stocked — only the greatest yards will even discuss
+   * them — and they are rare enough that most pilots finish their careers
+   * having seen two, both of them at a distance.
+   * --------------------------------------------------------------------- */
+  {
+    id: 'juggernaut', name: 'Juggernaut Dreadnought', cls: 'Dreadnought', price: 3400000, minTech: 10, yard: 'capital',
+    hull: 4600, shield: 3100, shieldRegen: 11.4, energy: 420, energyRegen: 30,
+    accel: 14, maxSpeed: 136, brake: 50, turn: 0.95, cargo: 260,
+    len: 168, radius: 84, shape: 'crab', variant: 'heavy', color: 0xa8b8c8,
+    mounts: 8, maxMounts: 10, bays: 3, maxBays: 6, defaultWeapons: ['gauss', 'flenser', 'flenser', 'twinpulse', 'twinpulse', 'harpoon', null, null],
+    desc: 'Eight hardpoints on four drive pods, and enough deck to lose a boarding party on. The clans build them from wrecks of each other and no two are the same size.',
+  },
+  {
+    id: 'everest', name: 'Everest Siege Platform', cls: 'Siege Platform', price: 3900000, minTech: 10, yard: 'capital',
+    hull: 5200, shield: 3400, shieldRegen: 11.0, energy: 460, energyRegen: 31,
+    accel: 11, maxSpeed: 124, brake: 44, turn: 0.85, cargo: 320,
+    len: 156, radius: 78, shape: 'obelisk', variant: 'heavy', color: 0xbcb4a4,
+    mounts: 8, maxMounts: 10, bays: 2, maxBays: 5, defaultWeapons: ['siege', 'breach', 'gauss', 'flenser', 'twinpulse', 'harpoon', null, null],
+    desc: 'A magazine with a hull wrapped round it. It cannot chase anything, which it regards as someone else’s problem.',
+  },
+  {
+    id: 'halo', name: 'Halo Ring Fortress', cls: 'Ring Fortress', price: 4400000, minTech: 10, yard: 'capital',
+    hull: 4400, shield: 3600, shieldRegen: 12.2, energy: 480, energyRegen: 32,
+    accel: 12, maxSpeed: 128, brake: 46, turn: 0.9, cargo: 640,
+    len: 164, radius: 88, shape: 'torus', variant: 'fleet', color: 0xdcd0b4,
+    mounts: 6, maxMounts: 9, bays: 8, maxBays: 12, defaultWeapons: ['arbiter', 'flenser', 'flenser', 'twinpulse', null, null],
+    desc: 'A Ring Fortress is a yard that grew a driveshaft: the rim is armour, hangar and customs house at once, and it will happily do business with whoever is winning.',
+  },
+  {
+    id: 'concord', name: 'Concord Star Bastion', cls: 'Star Bastion', price: 4900000, minTech: 10, yard: 'capital',
+    hull: 5600, shield: 3800, shieldRegen: 12.0, energy: 500, energyRegen: 32,
+    accel: 13, maxSpeed: 132, brake: 48, turn: 0.9, cargo: 400,
+    len: 172, radius: 90, shape: 'bastion', variant: 'heavy', color: 0xc4d4e4,
+    mounts: 8, maxMounts: 11, bays: 4, maxBays: 8, defaultWeapons: ['arbiter', 'gauss', 'flenser', 'flenser', 'twinpulse', 'harpoon', null, null],
+    desc: 'The Vigil’s answer to a siege: a bastion with a jump drive, ribbed like a dry dock and lit like a cathedral. Four of them exist and the Watch will not say where.',
+  },
+  {
+    id: 'suzerain', name: 'Suzerain Battlecruiser', cls: 'Battlecruiser', price: 5600000, minTech: 10, yard: 'capital',
+    hull: 5000, shield: 4200, shieldRegen: 12.8, energy: 520, energyRegen: 34,
+    accel: 16, maxSpeed: 142, brake: 52, turn: 1.0, cargo: 300,
+    len: 166, radius: 82, shape: 'lance', variant: 'heavy', color: 0xe0d4f0,
+    mounts: 9, maxMounts: 11, bays: 3, maxBays: 6, defaultWeapons: ['evenstar', 'griefheart', 'flenser', 'flenser', 'twinpulse', 'harpoon', null, null, null],
+    desc: 'One spinal lance with a whole ship built around its recoil, and enough secondary battery that the lance is almost a courtesy.',
+  },
+  {
+    id: 'behemoth', name: 'Behemoth Assault Ark', cls: 'Assault Ark', price: 6400000, minTech: 10, yard: 'capital',
+    hull: 6400, shield: 4400, shieldRegen: 12.6, energy: 560, energyRegen: 35,
+    accel: 12, maxSpeed: 130, brake: 48, turn: 0.9, cargo: 720,
+    len: 186, radius: 96, shape: 'citadel', variant: 'heavy', color: 0xc8bca8,
+    mounts: 8, maxMounts: 10, bays: 6, maxBays: 10, defaultWeapons: ['gauss', 'gauss', 'flenser', 'flenser', 'twinpulse', 'harpoon', null, null],
+    desc: 'Half troop ship, half gun deck, all of it bolted together in orbit over a world that no longer exists. It carries a war with it and lands it.',
+  },
+  {
+    id: 'praetor', name: 'Praetor Fleet Carrier', cls: 'Fleet Carrier', price: 7300000, minTech: 10, yard: 'capital',
+    hull: 5800, shield: 4600, shieldRegen: 13.0, energy: 580, energyRegen: 36,
+    accel: 13, maxSpeed: 134, brake: 50, turn: 0.95, cargo: 860,
+    len: 182, radius: 94, shape: 'cat', variant: 'heavy', color: 0xd4e0ec,
+    mounts: 6, maxMounts: 9, bays: 10, maxBays: 14, defaultWeapons: ['arbiter', 'flenser', 'flenser', 'twinpulse', null, null],
+    desc: 'Two hundred metres of flight deck on twin hulls, with the hangars set so deep that a launch runs the length of the ship first. Nothing it sends out has to turn.',
+  },
+  {
+    id: 'monolith', name: 'Monolith Citadel', cls: 'Citadel', price: 8500000, minTech: 10, yard: 'capital',
+    hull: 7400, shield: 5200, shieldRegen: 13.4, energy: 620, energyRegen: 38,
+    accel: 11, maxSpeed: 126, brake: 46, turn: 0.85, cargo: 520,
+    len: 196, radius: 100, shape: 'monolith', variant: 'heavy', color: 0xb4b0b8,
+    mounts: 9, maxMounts: 12, bays: 4, maxBays: 8, defaultWeapons: ['breach', 'flenser', 'flenser', 'twinpulse', 'twinpulse', 'harpoon', null, null, null],
+    desc: 'Terrace after terrace of armour, each one a generation’s answer to the last war, still carrying the scars of both. The lower decks have their own weather.',
+  },
+  {
+    id: 'crownworld', name: 'Crownworld Command Titan', cls: 'Command Titan', price: 10200000, minTech: 10, yard: 'capital',
+    hull: 8600, shield: 6000, shieldRegen: 14.2, energy: 680, energyRegen: 40,
+    accel: 10, maxSpeed: 120, brake: 44, turn: 0.8, cargo: 620,
+    len: 208, radius: 106, shape: 'dome', variant: 'heavy', color: 0xe8e4d8,
+    mounts: 9, maxMounts: 12, bays: 6, maxBays: 10, defaultWeapons: ['arbiter', 'arbiter', 'flenser', 'flenser', 'twinpulse', 'harpoon', null, null, null],
+    desc: 'A fleet command that happens to be a ship: half a disc of armour over a ring of drives, with a staff deck where the flag sits and watches the plot fill in.',
+  },
+  {
+    id: 'apex', name: 'Apex Warspire', cls: 'Warspire', price: 12500000, minTech: 10, yard: 'capital',
+    hull: 9800, shield: 7200, shieldRegen: 15.0, energy: 760, energyRegen: 44,
+    accel: 9, maxSpeed: 116, brake: 40, turn: 0.75, cargo: 760,
+    len: 224, radius: 112, shape: 'apex', variant: 'heavy', color: 0xf0dca8,
+    mounts: 10, maxMounts: 12, bays: 5, maxBays: 9, defaultWeapons: ['evenstar', 'evenstar', 'flenser', 'flenser', 'flenser', 'twinpulse', 'harpoon', null, null, null],
+    desc: 'The last word in the argument: a spire of gantries, batteries and pressure decks, most of it built while the war that ordered it was still being lost. Two were laid down. One answered a hail.',
+  },
 ];
+
+/** How big a yard is, and therefore what it will even talk about. */
+export const YARD_TIERS = { outpost: 0, port: 1, capital: 2 };
+
+const MAJOR_YARD_TYPES = new Set(['bastion', 'spacedock', 'yard']);
+
+/** Above this price a hull is a line capital: only a great port keeps the slips. */
+export const CAPITAL_PRICE = 1000000;
+
+/** Below this price a hull is ordinary trade: any yard with a slip will quote her. */
+export const PORT_PRICE = 250000;
+
+/**
+ * The tier of the yard at a station. A slip in a backwater can patch a hull;
+ * it cannot order you a battleship, and it will not read you the specification
+ * of one either. Only the great ports — the bastions, the high docks and the
+ * yards that build for a fleet — carry everything.
+ */
+export function yardTier(system, station) {
+  const tech = system?.tech ?? 0;
+  const type = station?.type || '';
+  if (MAJOR_YARD_TYPES.has(type) && tech >= 9) return 'capital';
+  if (tech >= 5) return 'port';
+  return 'outpost';
+}
+
+/**
+ * What a yard makes of a hull:
+ *   'stocked'   — on the slips, and the berth can fit her out
+ *   'gated'     — stocked by this class of yard, but the berth's tech is too low
+ *                 (the yard will not even show you the sheet)
+ *   'unstocked' — not a hull this size of yard ever carries
+ *
+ * Built-to-order hulls (`yards`) are only ever stocked at their own yards; the
+ * great keels (`yard: 'capital'`) and the line capitals (`CAPITAL_PRICE` and up)
+ * are stocked only at the great yards. An ordinary port shows nothing above its
+ * own station in life, and a frontier slip nothing above a freighter.
+ */
+export function yardStock(def, system, station) {
+  if (!def) return 'unstocked';
+  if (def.capture) return 'unstocked'; // prizes are never sold anywhere
+  if (def.yards && !def.yards.includes(system?.id)) return 'unstocked';
+  const tier = YARD_TIERS[yardTier(system, station)] ?? 0;
+  const need = def.yard ? YARD_TIERS[def.yard] ?? 2 : (def.price || 0) >= CAPITAL_PRICE ? 2 : (def.price || 0) >= PORT_PRICE ? 1 : 0;
+  if (need > tier) return 'unstocked';
+  return (def.minTech || 0) > (system?.tech ?? 0) ? 'gated' : 'stocked';
+}
+
+/**
+ * The ten great keels, in one place: the hulls a yard needs a licence, a dock
+ * and a customer with a war to order.
+ */
+export const CAPITAL_SHIPS = SHIPS.filter((s) => s.yard === 'capital');
 
 /**
  * Handling calibration: the lanes read too quick in the view, so hull top

@@ -194,6 +194,19 @@ function threatLevel(state) {
   return lvl + wealth + skill;
 }
 
+/**
+ * Which great keels a flag will put on the lanes. A hull this size crossing a
+ * system is an event: it is not hunting, it is not stopping, and the wisest
+ * thing to do with the news is tell somebody in a bar.
+ */
+const GREAT_KEEL_TRANSITS = {
+  reaver: ['juggernaut', 'monolith'],
+  vigil: ['concord', 'halo'],
+  kreth: ['everest', 'praetor'],
+  free: ['suzerain', 'crownworld'],
+  combine: ['behemoth', 'apex', 'crownworld'],
+};
+
 function disposeScene(scene) {
   scene.traverse((o) => {
     o.geometry?.dispose?.();
@@ -646,6 +659,13 @@ export class Universe {
       if (threat >= 30 && danger >= 0.55 && rng.chance(0.14)) pool.push('balefire'); // a spinal cruiser with one very long argument
       if (threat >= 34 && danger >= 0.62 && rng.chance(0.1)) pool.push('harrow', 'halfmoon'); // alpha cruisers on the clan rolls
       if (threat >= 37 && danger >= 0.68 && rng.chance(0.06)) pool.push('thunderhead', 'matriarch'); // and the monoliths behind them
+      // the great keels: seen once a career, and only by captains famous enough
+      // to be worth the fuel. Even here they are a rumour with engines.
+      if (threat >= 38 && danger >= 0.72 && rng.chance(0.03)) pool.push('juggernaut');
+      if (threat >= 40 && danger >= 0.75 && rng.chance(0.025)) pool.push('everest', 'suzerain');
+      if (threat >= 42 && danger >= 0.78 && rng.chance(0.02)) pool.push('behemoth', 'halo');
+      if (threat >= 44 && danger >= 0.8 && rng.chance(0.015)) pool.push('praetor', 'monolith');
+      if (threat >= 46 && danger >= 0.85 && rng.chance(0.01)) pool.push('crownworld', 'apex'); // if one of these answers your hail, run
     }
     const ace = threat >= 18 && rng.chance(0.15); // a named killer, living off this lane
     const shipId = rng.pick(pool);
@@ -675,6 +695,17 @@ export class Universe {
     if (shipId === 'halfmoon') weapons = ['hellbore', 'flenser', 'flenser', 'pulse', null, null];
     if (shipId === 'thunderhead') weapons = ['gauss', 'gauss', 'flenser', 'twinpulse', 'harpoon', null];
     if (shipId === 'matriarch') weapons = ['griefheart', 'flenser', 'flenser', 'twinpulse', 'harpoon', null];
+    // the great keels arrive with a full battery, because a half-armed one would
+    // be an insult to whoever built it
+    if (shipId === 'juggernaut') weapons = ['gauss', 'gauss', 'flenser', 'flenser', 'twinpulse', 'twinpulse', null, null];
+    if (shipId === 'everest') weapons = ['siege', 'breach', 'gauss', 'flenser', 'twinpulse', null, null, null];
+    if (shipId === 'suzerain') weapons = ['evenstar', 'griefheart', 'flenser', 'flenser', 'twinpulse', 'harpoon', null, null, null];
+    if (shipId === 'behemoth') weapons = ['gauss', 'gauss', 'flenser', 'flenser', 'twinpulse', null, null, null];
+    if (shipId === 'halo') weapons = ['arbiter', 'flenser', 'flenser', 'twinpulse', null, null];
+    if (shipId === 'praetor') weapons = ['arbiter', 'flenser', 'flenser', 'twinpulse', 'harpoon', null];
+    if (shipId === 'monolith') weapons = ['breach', 'flenser', 'flenser', 'twinpulse', 'twinpulse', null, null, null, null];
+    if (shipId === 'crownworld') weapons = ['arbiter', 'arbiter', 'flenser', 'flenser', 'twinpulse', 'harpoon', null, null, null];
+    if (shipId === 'apex') weapons = ['evenstar', 'evenstar', 'flenser', 'flenser', 'flenser', 'twinpulse', 'harpoon', null, null, null];
     // veteran clans hunt prizes as readily as kills — a snare coil goes into a
     // free hardpoint once the lanes get serious, and shows on the hull
     if (threat >= 15 && rng.chance(0.3)) {
@@ -839,6 +870,13 @@ export class Universe {
       shipId = rng.pick(['palladium', 'leviathan', 'worldheart', 'cataract', 'coliseum']);
       faction = 'combine'; name = 'Combine grand convoy';
       weapons = ['pulse', null];
+    }
+    // …and, much more rarely, something out of the register of great keels: a
+    // hull most captains finish their careers having seen once, at a distance
+    if (rng.chance(clamp((threat - 30) * 0.004, 0, 0.12))) {
+      shipId = rng.pick(GREAT_KEEL_TRANSITS[faction] || GREAT_KEEL_TRANSITS.combine);
+      name = `${name} — great keel`;
+      weapons = [...(SHIP_BY_ID[shipId]?.defaultWeapons || ['pulse', null])];
     }
     const ship = Ship.npc(shipId, {
       scene: this.scene, x: from.x, z: from.z,

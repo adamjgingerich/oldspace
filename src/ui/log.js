@@ -189,6 +189,9 @@ function acquisitionText(def, unlocked) {
     const where = def.yards.map((id) => SYSTEMS[id]?.name || id).join(' and ');
     return `Built to order — stocked only at the ${where} yards.`;
   }
+  if (def.yard === 'capital') {
+    return `A great keel — ordered only at the great ports (tech ${def.minTech || 10}), and never stock in numbers. Most hulls of this class are seen once, at a distance.`;
+  }
   return `On sale at shipyards with tech ${def.minTech || 0} or better.`;
 }
 

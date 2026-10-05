@@ -9,10 +9,11 @@ import { emblemSVG } from '../core/emblem.js';
 import { COMMODITY_BY_ID } from '../data/commodities.js';
 import { OUTFITS, OUTFIT_BY_ID } from '../data/outfits.js';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons.js';
-import { SHIPS, SHIP_BY_ID } from '../data/ships.js';
+import { SHIPS, SHIP_BY_ID, yardTier, yardStock } from '../data/ships.js';
+import { SHIP_SORTS, nextSort, sortShips } from '../data/shipSort.js';
 import { computeStats, outfitInstallBlock } from '../game/state.js';
 import { marketRows } from '../game/economy.js';
-import { fleetSellValue } from '../game/fleet.js';
+import { fleetSellValue, freeEscortSlots, freeBays, isMini } from '../game/fleet.js';
 import * as missions from '../game/missions.js';
 import * as story from '../game/story.js';
 import * as sidequests from '../game/sidequests.js';
@@ -109,12 +110,33 @@ function shipStatSheet(ship) {
   return el('div', { class: 'statsheet' }, shipStatGroups(ship).map(([label, cells]) => statGroup(label, cells)));
 }
 
+/**
+ * What a yard of each size says about itself. Only the great ports will discuss
+ * everything; the rest stock what they can fit out and no more.
+ */
+const YARD_BLURB = {
+  capital:
+    'A yard with a licence, a graving dock and a navy for a customer: every hull on the register can be ordered here, up to the great keels — if your credits and your paperwork both hold.',
+  port:
+    'A working yard, good for anything up to a cruiser. The battleships and the great keels are ordered elsewhere, at the ports that keep the docks and the licences for them.',
+  outpost:
+    'A repair slip with a counter: light hulls, honest work, and no appetite for anything with a spinal mount. Take your fleet to a larger port for the heavy tonnage.',
+};
+
+/** A note about the yard, for a hull it will not show you. */
+const tierNote = (tier) => (tier === 'outpost' ? 'a slip this size' : tier === 'port' ? 'a port this size' : 'this yard');
+
+/** "an outpost yard", not "a outpost yard". */
+const tierWord = (tier) => (tier === 'outpost' ? 'an outpost' : tier === 'capital' ? 'a capital' : 'a port');
+
 export class DockUI {
   constructor(root) {
     this.root = root;
     this.wrap = null;
     this.ctx = null;
     this.tab = 'trade';
+    this.yardSel = null;
+    this.yardSort = { key: 'price', dir: -1 };
   }
 
   open(ctx) {
@@ -636,30 +658,38 @@ export class DockUI {
   /* ------------------------------------------------------------------ */
 
   _renderShipyard() {
-    const { state, system, actions } = this.ctx;
+    const { state, system, actions, station } = this.ctx;
     const current = SHIP_BY_ID[state.shipId];
     const tradein = Math.round((current?.price || 0) * 0.7);
+    const tier = yardTier(system, station);
 
     this.body.append(el('div', { class: 'panel', style: 'margin-bottom:16px' }, [
       el('h2', { text: 'In the slips' }),
-      el('p', { class: 'note', text: `Your ${current.name} (${current.cls}) will fetch about ${fmtCredits(tradein)} in trade. Outfits, weapons and cargo transfer with you.` }),
-      el('p', { class: 'note', text: 'Click a hull to walk around her on the cradle. Most hulls travel the lanes; a few are built to order and stocked only at their home yards. Prize hulls are never sold at all — take one in flight.' }),
+      el('p', { class: 'note', text: `Your ${current.name} (${current.cls}) will fetch about ${fmtCredits(tradein)} in trade. Outfits, weapons and cargo transfer with you — or keep her in your fleet instead of trading her in.` }),
+      el('p', { class: 'note', text: YARD_BLURB[tier] }),
     ]));
 
-    // ---- every hull this yard can show ----
+    // ---- every hull this yard will admit to having heard of ----
     const unlocked = new Set(story.ensureStory(state).unlocked);
-    const offered = [];
+    const stocked = [];
+    let heldBack = 0;
     for (const ship of SHIPS) {
-      if (ship.capture) continue; // prizes are never sold — claim one in flight
-      if (ship.yards && !ship.yards.includes(state.systemId)) continue; // built-to-order hull
-      if (ship.unique && !unlocked.has(ship.id)) continue;
-      offered.push(ship);
+      const stock = yardStock(ship, system, station);
+      if (stock === 'unstocked') { heldBack++; continue; }
+      if (ship.unique && !unlocked.has(ship.id)) { heldBack++; continue; }
+      stocked.push({ ship, gated: stock === 'gated' });
     }
-    if (!offered.length) {
+    if (!stocked.length) {
       this.body.append(el('p', { class: 'note', text: 'No hulls on offer at this yard today.' }));
       return;
     }
-    if (!offered.some((s) => s.id === this.yardSel)) this.yardSel = offered[0].id;
+    const offered = stocked.filter((s) => !s.gated).map((s) => s.ship);
+    const gatedShips = stocked.filter((s) => s.gated).map((s) => s.ship);
+    const visible = [...offered, ...gatedShips];
+    this._yardOffered = visible;
+    if (!offered.some((s) => s.id === this.yardSel) && !gatedShips.some((s) => s.id === this.yardSel)) {
+      this.yardSel = (offered[0] || gatedShips[0] || {}).id;
+    }
 
     // ---- right column: the viewing cradle ----
     const viewCol = el('div', {}, [
@@ -672,13 +702,15 @@ export class DockUI {
     this._yardViewer = new ShipViewer(viewCol.querySelector('.yard-stage'));
     this._yardInfo = viewCol.querySelector('.yard-info');
 
+    // ---- sort bar: the same board, read the way the pilot wants it ----
+    const sorted = sortShips(offered, this.yardSort);
+
     // ---- left column: the hulls for sale ----
     const grid = el('div', { class: 'card-grid yard-grid' });
     const cards = new Map();
-    for (const ship of offered) {
+    for (const ship of sorted) {
       actions.noteSighting?.(ship.id, 'yard');
       const isCurrent = ship.id === state.shipId;
-      const gated = ship.minTech > system.tech;
       const net = ship.price - tradein;
       const card = el('div', { class: `card ${isCurrent ? 'owned' : ''}` }, [
         el('h4', {}, [ship.name, el('span', { class: 'h4tag', text: ship.cls })]),
@@ -686,24 +718,96 @@ export class DockUI {
         shipStatSheet(ship),
         ship.mini ? el('div', { class: 'cnote', text: 'small craft' }) : null,
         el('div', { class: 'cfoot' }, [
-          el('span', { class: 'price', text: isCurrent ? 'YOUR SHIP' : gated ? `requires tech ${ship.minTech}` : `${fmtCredits(ship.price)} (net ${fmtCredits(Math.max(0, net))})` }),
+          el('span', { class: 'price', text: isCurrent ? 'YOUR SHIP' : `${fmtCredits(ship.price)} (net ${fmtCredits(Math.max(0, net))})` }),
           el('div', { style: 'display:flex;gap:5px;flex-wrap:wrap' }, [
-            isCurrent ? null : btn('Take command', () => actions.actBuyShip(ship.id), 'btn small primary'),
+            isCurrent ? null : btn('Take command', () => this._offerBuy(ship.id), 'btn small primary'),
             isCurrent ? null : btn('Add to fleet', () => actions.actBuyFleetShip(ship.id), 'btn small'),
           ]),
         ]),
       ]);
       const cbtns = card.querySelectorAll('button');
-      if (cbtns[0]) cbtns[0].disabled = gated || net > state.credits;
-      if (cbtns[1]) cbtns[1].disabled = gated || ship.price > state.credits;
+      if (cbtns[0]) cbtns[0].disabled = net > state.credits;
+      if (cbtns[1]) cbtns[1].disabled = ship.price > state.credits;
+      card.addEventListener('click', () => this._selectYardShip(ship.id));
+      grid.append(card);
+      cards.set(ship.id, card);
+    }
+    // hulls the berth is not cleared to fit out: names are not on the board
+    for (const ship of gatedShips) {
+      const card = el('div', { class: 'card redacted' }, [
+        el('h4', {}, ['REDACTED', el('span', { class: 'h4tag', text: 'licence withheld' })]),
+        el('div', { class: 'cdesc', text: `This berth's yardmaster will discuss the hull in writing only, once the customer can show a licence and a berth rated for it.` }),
+        el('div', { class: 'cfoot' }, [
+          el('span', { class: 'price', text: `${tierNote(tier)} · needs tech ${ship.minTech}` }),
+          el('div', {}, [btn('Ask anyway', () => this._selectYardShip(ship.id), 'btn small ghost')]),
+        ]),
+      ]);
       card.addEventListener('click', () => this._selectYardShip(ship.id));
       grid.append(card);
       cards.set(ship.id, card);
     }
     this._yardCards = cards;
 
+    this.body.append(el('div', { class: 'yard-bar' }, [
+      el('span', { class: 'yb-label', text: 'Sort' }),
+      ...SHIP_SORTS.map((s) => {
+        const on = this.yardSort.key === s.key;
+        return btn(
+          `${s.label}${on ? (this.yardSort.dir < 0 ? ' ▾' : ' ▴') : ''}`,
+          () => {
+            this.yardSort = nextSort(this.yardSort, s.key);
+            this.render();
+          },
+          `btn tiny ${on ? 'primary' : 'ghost'}`,
+        );
+      }),
+      heldBack ? el('span', { class: 'yb-note', text: `${heldBack} hull${heldBack === 1 ? '' : 's'} are not stocked at ${tierWord(tier)} yard.` }) : null,
+    ].filter(Boolean)));
+
     this.body.append(el('div', { class: 'cols' }, [grid, viewCol]));
     this._refreshYard();
+  }
+
+  /**
+   * “Take command” is two decisions, not one: the new hull, and what becomes of
+   * the old one. Trading her in is the cheap way; keeping her costs the full
+   * price and a place in the fleet.
+   */
+  _offerBuy(shipId) {
+    const { state, actions } = this.ctx;
+    const def = SHIP_BY_ID[shipId];
+    if (!def) return;
+    const old = SHIP_BY_ID[state.shipId];
+    const tradein = Math.round((old?.price || 0) * 0.7);
+    const net = Math.max(0, def.price - tradein);
+    const canBay = isMini(state.shipId) && freeBays(state) > 0;
+    const keepRoom = freeEscortSlots(state) > 0 || canBay;
+    const modal = el('div', { class: 'overlay' }, [
+      el('div', { class: 'panel modal' }, [
+        el('h2', { text: `Take command of the ${def.name}` }),
+        el('p', { class: 'note', text: `${state.shipName} is a ${old.name} (${old.cls}). What becomes of her?` }),
+        el('div', { class: 'kv' }, [el('span', { text: 'Trade-in value' }), el('b', { text: fmtCredits(tradein) })]),
+        el('div', { class: 'kv' }, [el('span', { text: `${def.name} costs` }), el('b', { text: fmtCredits(def.price) })]),
+        keepRoom
+          ? el('p', { class: 'note', text: `Keep her and she flies as ${canBay ? 'a docked small craft' : 'an escort in your wing'}; trade her in and the yard takes ${fmtCredits(tradein)} off the price.` })
+          : el('p', { class: 'note', text: 'No free escort slot or cradle for her — she would have to be traded in. A Fleet Command Uplink or Docking Bays would give her somewhere to live.' }),
+        el('div', { class: 'modal-actions' }, [
+          btn('Cancel', () => modal.remove(), 'btn ghost'),
+          keepRoom
+            ? btn(`Keep her · ${fmtCredits(def.price)}`, () => {
+              modal.remove();
+              actions.actBuyShip(shipId, { keepOld: true });
+            }, 'btn')
+            : null,
+          btn(`Trade her in · ${fmtCredits(net)}`, () => {
+            modal.remove();
+            actions.actBuyShip(shipId, { keepOld: false });
+          }, 'btn primary'),
+        ].filter(Boolean)),
+      ]),
+    ]);
+    this._buyModal = modal;
+    this.root.append(modal);
   }
 
   /** Put a hull on the cradle: highlight her card, spin her up, print the sheet. */
@@ -713,11 +817,25 @@ export class DockUI {
   }
 
   _refreshYard() {
-    const { state, system } = this.ctx;
+    const { state, system, station } = this.ctx;
     if (!this._yardCards || !this._yardViewer || !this._yardInfo) return;
     for (const [id, node] of this._yardCards) node.classList.toggle('sel', id === this.yardSel);
     const ship = SHIP_BY_ID[this.yardSel];
     if (!ship) return;
+    const gated = yardStock(ship, system, station) === 'gated';
+    const tier = yardTier(system, station);
+
+    clear(this._yardInfo);
+    if (gated) {
+      // the yard will not put her on the cradle, and will not talk about her
+      this._yardViewer.clear?.();
+      this._yardInfo.append(...[
+        el('div', { class: 'yard-name' }, ['REDACTED', el('span', { class: 'yard-cls', text: 'licence withheld' })]),
+        el('div', { class: 'cdesc', text: `The yardmaster keeps the sheet behind the counter. A berth rated for tech ${ship.minTech} or better can fit this hull out; ${tierNote(tier)} cannot.` }),
+        el('div', { class: 'yard-price', text: `Needs tech ${ship.minTech} · this berth is tech ${system.tech}` }),
+      ]);
+      return;
+    }
 
     // she flies with your guns, rigging and colours — show what you would get
     const cap = Math.max(2, ship.mounts ?? 2);
@@ -726,15 +844,14 @@ export class DockUI {
     this._yardViewer.show(ship, { weapons, outfits: state.outfits, mountCap: cap, showEmpty: true });
 
     const isCurrent = ship.id === state.shipId;
-    const gated = ship.minTech > system.tech;
     const net = ship.price - Math.round((SHIP_BY_ID[state.shipId]?.price || 0) * 0.7);
-    clear(this._yardInfo);
     this._yardInfo.append(...[
       el('div', { class: 'yard-name' }, [ship.name, el('span', { class: 'yard-cls', text: ship.cls })]),
       el('div', { class: 'cdesc', text: ship.desc }),
       shipStatSheet(ship),
+      ship.yard === 'capital' ? el('div', { class: 'cnote', text: 'great keel — ordered only, never stocked in numbers' }) : null,
       ship.mini ? el('div', { class: 'cnote', text: 'small craft' }) : null,
-      el('div', { class: 'yard-price', text: isCurrent ? 'YOUR SHIP — no trade needed' : gated ? `Requires tech ${ship.minTech} to fit out.` : `${fmtCredits(ship.price)} · net ${fmtCredits(Math.max(0, net))} after trade-in` }),
+      el('div', { class: 'yard-price', text: isCurrent ? 'YOUR SHIP — no trade needed' : `${fmtCredits(ship.price)} · net ${fmtCredits(Math.max(0, net))} after trade-in` }),
     ].filter(Boolean));
   }
 

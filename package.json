@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "audit": "node tools/audit-systems.mjs && node tools/audit-vector.mjs && node tools/audit-aggro.mjs && node tools/audit-missions.mjs"
+    "audit": "node tools/audit-systems.mjs && node tools/audit-vector.mjs && node tools/audit-aggro.mjs && node tools/audit-ships.mjs && node tools/audit-missions.mjs",
+    "audit:fast": "node tools/audit-ships.mjs && node tools/audit-vector.mjs",
+    "check": "vite build"
   },
   "dependencies": {
     "three": "^0.186.1"

@@ -139,7 +139,7 @@ function boot() {
   game.onQuitToTitle = () => startMenu();
   startMenu();
 
-  // Dev entry hooks: #test=dock | #test=planet | #test=warp | #test=wormhole | #test=pirates | #test=rings | #test=chart
+  // Dev entry hooks: #test=dock | #test=planet | #test=warp | #test=wormhole | #test=pirates | #test=rings | #test=chart | #test=yard | #test=yard10 | #test=yardout
   try {
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const test = params.get('test');
@@ -158,6 +158,15 @@ function boot() {
         if (test === 'rich') {
           game.state.addCredits(150000);
           game.debugTeleportToStation();
+        }
+        if (test === 'yard' || test === 'yardout' || test === 'yard10') {
+          game.state.addCredits(24000000);
+          game.debugGoToYard(test === 'yardout' ? 'outpost' : 'capital', test === 'yard10' ? 10 : 0);
+          const berth = (tries) => {
+            if (game.mode === 'flight' && game.universe && game.universe.nearStation) game.dock();
+            else if (tries > 0) setTimeout(() => berth(tries - 1), 100);
+          };
+          berth(20);
         }
         if (test === 'chart') game.openComputer('map');
         if (test === 'missions') game.openComputer('missions');

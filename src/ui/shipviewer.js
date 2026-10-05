@@ -76,6 +76,11 @@ export class ShipViewer {
     this.ship = null;
   }
 
+  /** Take whatever is on the cradle away, for a hull the yard will not show. */
+  clear() {
+    this._clearShip();
+  }
+
   _resize() {
     const w = Math.max(1, this.host.clientWidth);
     const h = Math.max(1, this.host.clientHeight);

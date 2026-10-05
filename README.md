@@ -88,9 +88,16 @@ when you want to cross a system in a hurry. Your choice is remembered.
 - **Outfit & upgrade** — weapons (needlers, pulse lances, railguns, homing
   harpoons), shields, capacitors, engines, plating, bigger holds, repair
   drones, sensors, lumen tanks.
-- **Ships** — over a hundred hulls, from starter cutters up to rare capital
-  ships, each built from a procedural model. Shipyards trade in your old hull
-  at 70%.
+- **Ships** — over a hundred and forty hulls, from starter cutters up to the
+  great keels, each built from a procedural model. Yards are not equal: a
+  frontier outpost stocks light hulls, a port stocks the working trade, and only
+  the great ports — bastions, spacedocks and the big yards at tech 9 and 10 —
+  keep the capital slips and the ten great keels. A yard that cannot sell you a
+  hull still knows it exists: the card shows up redacted, with nothing but the
+  berth it would need. Shipyards trade in your old hull at 70%, and when you buy
+  bigger the desk asks whether to **trade her in** or **keep her in the fleet** —
+  a paid-for escort that will fly with you. Sort the slips by price, hull,
+  shield, speed, hold, mounts, bays or name.
 - **The Vector Challenge** — every port with a bar keeps a holo-sim rig older
   than half the hulls outside. Press `R` to fly a *duel* (three pilots, last one
   flying), a *harvest* (two minutes on the crystal field) or a *chute run* (six

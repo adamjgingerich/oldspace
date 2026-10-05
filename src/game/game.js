@@ -5,7 +5,7 @@ import { Universe } from './universe.js';
 import { audio } from '../core/audio.js';
 import { input } from '../core/input.js';
 import { SYSTEMS, laneAngle, RIM_RADIUS } from '../data/systems.js';
-import { SHIP_BY_ID } from '../data/ships.js';
+import { SHIP_BY_ID, yardStock, yardTier } from '../data/ships.js';
 import { OUTFIT_BY_ID } from '../data/outfits.js';
 import { WEAPON_BY_ID } from '../data/weapons.js';
 import { COMMODITY_BY_ID } from '../data/commodities.js';
@@ -1260,7 +1260,11 @@ export class Game {
     this.ui.dock.refreshIfOpen();
   }
 
-  actBuyShip(shipId) {
+  /**
+   * Take command of a new hull. `keepOld` decides what becomes of the one being
+   * left behind: traded in against the price, or kept flying in the fleet.
+   */
+  actBuyShip(shipId, { keepOld = false } = {}) {
     const st = this.state;
     const def = SHIP_BY_ID[shipId];
     if (!def) return;
@@ -1274,14 +1278,31 @@ export class Game {
       return;
     }
     const oldDef = SHIP_BY_ID[st.shipId];
-    const tradein = Math.round((oldDef?.price || 0) * 0.7);
+    const oldName = st.shipName;
+    const tradein = keepOld ? 0 : Math.round((oldDef?.price || 0) * 0.7);
     const net = def.price - tradein;
     if (net > st.credits) {
-      this.ui.toasts.push(`Not enough credits (need ₡${net.toLocaleString()} after trade-in).`, 'warn');
+      this.ui.toasts.push(
+        keepOld
+          ? `Not enough credits (₡${def.price.toLocaleString()} to keep her as well).`
+          : `Not enough credits (need ₡${net.toLocaleString()} after trade-in).`,
+        'warn',
+      );
       return;
+    }
+    // keeping the old hull needs somewhere to keep her
+    let kept = null;
+    if (keepOld) {
+      const room = addToFleet(st, st.shipId, oldName);
+      if (!room.ok) {
+        this.ui.toasts.push(room.error, 'warn');
+        return;
+      }
+      kept = room.entry;
     }
     const newCap = computeStats({ ...st.toJSON(), shipId }).cargo;
     if (st.cargoUsed() > newCap) {
+      if (kept) removeFromFleet(st, kept.uid); // put her back before anything is charged
       this.ui.toasts.push(`Cargo too large for the ${def.name} (${st.cargoUsed()}/${newCap}). Sell some crates first.`, 'warn');
       return;
     }
@@ -1294,9 +1315,19 @@ export class Game {
     st.weapons = st.weapons.slice(0, mountCap);
     while (st.weapons.length < mountCap) st.weapons.push(null);
     audio.dock();
-    this.ui.toasts.push(`You take command of the ${def.name}.`, 'good');
+    this.ui.toasts.push(
+      kept
+        ? `You take command of the ${def.name}. ${oldName} stays with you — ${kept.status === 'bay' ? 'docked in a cradle' : 'flying your wing'}.`
+        : `You take command of the ${def.name}.`,
+      'good',
+    );
+    if (kept && kept.status === 'escort' && this.universe) {
+      const slot = this.universe.ships.filter((s) => s.role === 'escort').length;
+      this.universe.spawnFleetShip(kept, slot);
+    }
     // rebuild the player's model in place
     this.rebuildPlayerShip();
+    this.autosave();
     this.ui.dock.refreshIfOpen();
   }
 
@@ -1760,7 +1791,7 @@ export class Game {
   }
 
   /** Purchase gates shared by “Take command” and “Add to fleet”. */
-  _shipBuyBlock(def) {
+  _shipBuyBlock(def, station = this.station) {
     const st = this.state;
     if (def.capture) return 'That hull is never sold — take one as a prize out in the lanes.';
     if (def.unique && !story.ensureStory(st).unlocked.includes(def.id)) {
@@ -1770,8 +1801,14 @@ export class Game {
       const where = def.yards.map((id) => SYSTEMS[id]?.name || id).join(' and ');
       return `The ${def.name} is built to order — only the ${where} yards stock it.`;
     }
-    const tech = SYSTEMS[st.systemId]?.tech ?? 0;
-    if ((def.minTech || 0) > tech) return `This berth's tech (${tech}) is too low to fit out a ${def.name}.`;
+    const system = SYSTEMS[st.systemId] || { id: st.systemId, tech: 0 };
+    const stock = yardStock(def, system, station || null);
+    if (stock === 'unstocked') {
+      return `No yard of this size has ever carried a ${def.name}. Take the order to a great port.`;
+    }
+    if (stock === 'gated') {
+      return `This berth's tech (${system.tech}) is too low to fit out a ${def.name}.`;
+    }
     return null;
   }
 
@@ -2296,8 +2333,27 @@ export class Game {
     p.heading = Math.atan2(pl.x - p.x, pl.z - p.z);
   }
 
-  /* ------------------------------------------------------------------ */
-  /* Planet surveys                                                     */
+  /** Dev hook: jump to a yard of the given tier and park off it (default: a great port). */
+  debugGoToYard(tier = 'capital', minTech = 0) {
+    for (const sys of Object.values(SYSTEMS)) {
+      if ((sys.tech ?? 0) < minTech) continue;
+      const st = sys.stations.find((s) => s.services.includes('shipyard') && yardTier(sys, s) === tier);
+      if (!st) continue;
+      this.state.systemId = sys.id;
+      this.state.pos = { x: 0, z: 0 };
+      this.universe.load(sys.id);
+      const live = this.universe.stations.find((s) => (s.record?.id || s.id) === st.id) || this.universe.stations[0];
+      if (!live) return;
+      const p = this.universe.player;
+      p.x = live.x + live.radius + 60;
+      p.z = live.z + 30;
+      p.vx = 0;
+      p.vz = 0;
+      p.heading = Math.atan2(live.x - p.x, live.z - p.z);
+      return;
+    }
+  }
+
   /* ------------------------------------------------------------------ */
 
   /** Start (or continue) a held survey — it finishes only if the ship keeps station. */
