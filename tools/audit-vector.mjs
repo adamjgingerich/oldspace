@@ -1277,6 +1277,35 @@ function makeRacer(c, i, isPlayer = false) {
     fail(`a ticker read is not a sponsor and a line: "${c._tickerText.textContent}"`);
   }
 
+  // a term on the rig paints a fresh set of canvases every match, so the boards
+  // have to hand their textures back rather than leaving one set per heat on the
+  // card. The chase lamps must keep theirs: those come from the shared cache.
+  {
+    let texDrops = 0;
+    let matDrops = 0;
+    let lampDrops = 0;
+    const watch = (g, onTex) => g.traverse((n) => {
+      if (!n.material) return;
+      if (n.material.map) {
+        n.material.map.addEventListener('dispose', () => { if (onTex) onTex(); });
+      }
+      n.material.addEventListener('dispose', () => { matDrops++; });
+    });
+    for (const g of c.ads) watch(g, () => { texDrops++; });
+    watch(c._jumbo, () => { texDrops++; });
+    for (const l of c._chase) {
+      if (l.spr.material.map) l.spr.material.map.addEventListener('dispose', () => { lampDrops++; });
+    }
+    const boards = c.ads.length;
+    c._dropAds();
+    if (texDrops !== boards + 1) {
+      fail(`${texDrops} of the ${boards + 1} canvases the house painted were given back at the end of a heat`);
+    }
+    if (matDrops < texDrops) fail('a house board kept its material after the heat');
+    if (lampDrops) fail('the chase lamps gave back a glow texture the rest of the game shares');
+    if (c.ads.length || c._jumbo) fail('the rig still holds boards after the heat');
+  }
+
   // and the orb hangs its own boards outside the walls, with the screen over it
   const o = makeOrb(3200, 13);
   o.orb = { name: 'TEST ORB', r: 3200 };

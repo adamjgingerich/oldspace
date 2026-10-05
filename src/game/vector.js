@@ -1828,8 +1828,27 @@ export class VectorChallenge {
     this._board.classList.add('hidden');
     this._markers.classList.add('hidden');
     this.gauges.classList.add('hidden');
-    this.ads = [];
     this._chase = [];
+    this._dropAds();
+  }
+
+  /**
+   * Hand back what the house boards and the screen were drawn with. Each match
+   * paints its own canvases, so a term of heats on the same rig would otherwise
+   * leave every one of them on the card. The chase lamps are left alone — their
+   * glow sprites come from the shared cache. Nothing here is in the scene any
+   * more, so only the texture and the material are ours to give back.
+   */
+  _dropAds() {
+    for (const g of [...(this.ads || []), this._jumbo]) {
+      if (!g) continue;
+      g.traverse((n) => {
+        if (!n.material) return;
+        if (n.material.map) n.material.map.dispose();
+        n.material.dispose();
+      });
+    }
+    this.ads = [];
     this._jumbo = null;
     this._jumboCtx = null;
     this._jumboTex = null;
